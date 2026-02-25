@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${AGENT_ACTION:-}" in
+  describe)
+    echo "name: openclaw"
+    echo "description: OpenClaw AI agent"
+    echo "timeout: 600"
+    echo "retries: 1"
+    ;;
+  execute)
+    INPUT=$(cat)
+    PROMPT=$(echo "$INPUT" | jq -r '.prompt')
+    SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
+    TIMEOUT=$(echo "$INPUT" | jq -r '.timeout // 600')
+
+    OUTPUT=$(openclaw agent \
+      --session-id "$SESSION_ID" \
+      --message "$PROMPT" \
+      --json \
+      --timeout "$TIMEOUT")
+
+    echo "$OUTPUT" | jq -r '.result.payloads[0].text'
+    ;;
+  *)
+    echo "Unknown AGENT_ACTION: ${AGENT_ACTION:-<unset>}" >&2
+    exit 1
+    ;;
+esac

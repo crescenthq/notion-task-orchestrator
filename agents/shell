@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${AGENT_ACTION:-}" in
+  describe)
+    echo "name: shell"
+    echo "description: Run prompt as shell command"
+    echo "timeout: 120"
+    echo "retries: 0"
+    ;;
+  execute)
+    INPUT=$(cat)
+    PROMPT=$(echo "$INPUT" | jq -r '.prompt')
+    WORKDIR=$(echo "$INPUT" | jq -r '.workdir // "."')
+
+    cd "$WORKDIR"
+    bash -c "$PROMPT"
+    ;;
+  *)
+    echo "Unknown AGENT_ACTION: ${AGENT_ACTION:-<unset>}" >&2
+    exit 1
+    ;;
+esac

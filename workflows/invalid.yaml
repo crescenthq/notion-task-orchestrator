@@ -1,0 +1,5 @@
+id: invalid
+name: Invalid Example
+steps:
+  - id: plan
+    prompt: Missing agent should fail validation

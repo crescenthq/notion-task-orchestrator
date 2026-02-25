@@ -1,0 +1,53 @@
+id: default-task
+name: Default Task Workflow
+description: Plan-build-verify flow for general Notion tasks.
+steps:
+  - id: plan
+    agent: openclaw
+    timeout: 420
+    retries: 1
+    prompt: |
+      Create a concise execution plan for this task: {{task_name}}.
+      Repository working directory: {{workdir}}
+      Plan should assume implementation happens in that directory.
+      Task context from Notion page body (authoritative):
+      {{task_context}}
+      Output must be clean markdown with headings and bullet points.
+      Include: Goal, Plan, Build Steps, Verification Steps, Risks.
+    on_success: next
+    on_fail: blocked
+
+  - id: build
+    agent: openclaw
+    timeout: 900
+    retries: 2
+    prompt: |
+      Implement the task now: {{task_name}}.
+      Repository working directory: {{workdir}}
+      Do all edits/commands in that directory unless the task says otherwise.
+      Task context from Notion page body (authoritative):
+      {{task_context}}
+      Plan output from previous step:
+      {{step_plan_output}}
+      Primary artifact must be this Notion task page (not local artifact files).
+      Return markdown with sections: Implementation Summary, Deliverable, Verification, Next Notes.
+      If code is needed, include it in fenced code blocks inside markdown.
+      Run at least one concrete verification check and report exact result.
+    on_success: next
+    on_fail: retry
+
+  - id: verify
+    agent: openclaw
+    timeout: 480
+    retries: 1
+    prompt: |
+      Verify outputs for task: {{task_name}}.
+      Repository working directory: {{workdir}}
+      Plan output:
+      {{step_plan_output}}
+      Build output:
+      {{step_build_output}}
+      Run concrete verification checks against the deliverable.
+      Summarize pass/fail with evidence.
+    on_success: done
+    on_fail: blocked

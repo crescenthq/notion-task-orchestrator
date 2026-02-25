@@ -1,0 +1,27 @@
+{
+  "name": "notion-task-orchestrator",
+  "version": "0.1.0",
+  "description": "Agent-agnostic task orchestrator for Notion boards",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "check": "tsc --noEmit",
+    "picker:once": "tsx src/index.ts --once",
+    "queue:list": "tsx src/index.ts --list-queue",
+    "task:run": "tsx src/index.ts --run-task",
+    "comments:once": "tsx src/index.ts --comments-once",
+    "notionflow": "tsx src/notionflow.ts"
+  },
+  "bin": {
+    "notionflow": "./src/notionflow.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
