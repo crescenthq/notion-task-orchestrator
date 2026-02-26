@@ -12,8 +12,8 @@ A factory is a workflow + a cohort of specialized executors. Each executor wraps
 ## Pre-flight
 
 ```bash
-npx notionflow executor list
-npx notionflow workflow list
+bun run dev -- executor list
+bun run dev -- workflow list
 ```
 
 ## Phase 1 — Design the Factory
@@ -121,13 +121,13 @@ Replace `<command>` with the agent invocation. Use `--` before `"$PROMPT"` when 
 
 ```bash
 chmod +x ~/.config/notionflow/agents/<factory>_<role>
-npx notionflow executor install --path ~/.config/notionflow/agents/<factory>_<role> --id <factory>_<role>
+bun run dev -- executor install --path ~/.config/notionflow/agents/<factory>_<role> --id <factory>_<role>
 ```
 
 ## Phase 4 — Scaffold Workflow
 
 ```bash
-npx notionflow workflow create --id <factory> --skip-notion-board
+bun run dev -- workflow create --id <factory> --skip-notion-board
 ```
 
 Overwrite `~/.config/notionflow/workflows/<factory>.yaml` with steps chaining the executors.
@@ -186,23 +186,23 @@ prompt: |
 
 Unresolved variables (no matching key from prior steps) render as empty string.
 
-### Human feedback (waiting state)
+### Human feedback (feedback state)
 
-A step can pause execution, post a question to Notion, and resume once a human responds. Use `STATUS: waiting` with a `WAITING_FOR:` question:
+A step can pause execution, post a question as a Notion comment, and auto-resume once the human replies. Use `STATUS: feedback` with a `QUESTION:` key:
 
 ```
-STATUS: waiting
-WAITING_FOR: Should this target enterprise developers or indie hackers? Research supports both.
+STATUS: feedback
+QUESTION: Should this target enterprise developers or indie hackers? Research supports both.
 ```
 
 What happens:
 
 1. NotionFlow stores step variables to the DB and records `waiting_since`
-2. Posts a "🤔 Feedback needed" callout to the Notion page with the question and instructions: _"Type your answer as a new paragraph on this page, then set State → Queue to resume"_
-3. Sets Notion State to "Waiting"
-4. Human types their answer directly on the Notion page (as a new paragraph — not a comment)
-5. Human sets Notion State → Queue
-6. Next `integrations notion sync --run`: task resumes from this step with `{{human_feedback}}` injected
+2. Posts the question text as a **Notion page comment** (via the Comments API)
+3. Appends a "💬 Feedback needed" callout to the page: _"Reply to the comment on this page to continue"_
+4. Sets Notion State to "Feedback" (purple)
+5. Human replies to the comment in Notion — no page editing, no manual state change
+6. Next `integrations notion sync --run`: tick detects any comment newer than `waiting_since`, injects the text as `{{human_feedback}}`, and automatically re-queues the task
 
 The step prompt should handle both the first run (no feedback yet) and the resume (feedback available):
 
@@ -219,14 +219,16 @@ The step prompt should handle both the first run (no feedback yet) and the resum
 
     If the research supports multiple strong angles and you genuinely cannot choose,
     ask the human:
-    STATUS: waiting
-    WAITING_FOR: <specific question — what exactly you need to know>
+    STATUS: feedback
+    QUESTION: <specific question — what exactly you need to know>
 
     Otherwise commit to the best angle:
     STATUS: done
     ANGLE: <chosen angle>
     REASONING: <why this angle>
 ```
+
+If `QUESTION:` is absent, NotionFlow falls back to: _"Agent requested feedback at step `<step_id>`"_.
 
 ### Example (code factory)
 
@@ -247,8 +249,8 @@ steps:
       Explore the codebase first, then produce a concrete plan.
 
       If the task is genuinely ambiguous:
-      STATUS: waiting
-      WAITING_FOR: <your specific question>
+      STATUS: feedback
+      QUESTION: <your specific question>
 
       Otherwise:
       STATUS: done
@@ -309,7 +311,7 @@ npx notionflow integrations notion provision-board --board <factory>
 
 This creates a Notion database with:
 
-- **State** column — operational states: Queue / In Progress / Waiting / Done / Blocked / Failed
+- **State** column — operational states: Queue / In Progress / Feedback / Done / Blocked / Failed
 - **Status** column — step labels (e.g. `📋 plan`, `💻 implement`), auto-derived from the workflow
 
 Remind the user to **share the database with the "NotionFlow" integration** in Notion (click `...` → "Connect to" → select "NotionFlow").
@@ -330,16 +332,15 @@ Watch the output. Each step should print `step <id> via <executor>: done`. The N
 
 ### Testing human feedback
 
-If your factory has steps that can output `STATUS: waiting`:
+If your factory has steps that can output `STATUS: feedback`:
 
 1. Create a task with an ambiguous or intentionally vague title so the step asks for clarification
 2. Run `integrations notion sync --board <factory> --run`
-3. The step outputs `STATUS: waiting` — task pauses
-4. Open Notion — you'll see a "🤔 Feedback needed" callout with the question and instructions
-5. Type your answer as a new paragraph on the page
-6. Set State → Queue in Notion
-7. Run `integrations notion sync --board <factory> --run` again
-8. The step resumes with your answer in `{{human_feedback}}`
+3. The step outputs `STATUS: feedback` — task pauses, Notion State becomes "Feedback" (purple)
+4. Open the Notion page — you'll see a comment posted with the question and a "💬 Feedback needed" callout
+5. **Reply to the comment** in Notion (no page editing, no state change needed)
+6. Run `integrations notion sync --board <factory> --run` again
+7. Tick detects the new comment, injects it as `{{human_feedback}}`, and resumes automatically
 
 ### Testing failure recovery
 
@@ -396,12 +397,12 @@ If `{{plan_plan}}` is empty in the next step's prompt, the prior step didn't out
 
 **Notion State vs Status**
 
-- **State** = operational lifecycle (Queue → In Progress → Waiting → Done / Blocked / Failed)
+- **State** = operational lifecycle (Queue → In Progress → Feedback → Done / Blocked / Failed)
 - **Status** = which step is currently running (set by NotionFlow, matches step icons)
   Never manually set Status — NotionFlow controls it.
 
-**Task loops on waiting**
-If a task stays waiting after you add feedback, the `{{human_feedback}}` variable was empty — either the paragraph was added before `waiting_since`, or it wasn't a plain paragraph block (e.g. a callout). Type a regular paragraph, not a styled block.
+**Task stays in Feedback**
+If a task stays in Feedback after you reply, the comment was posted before `waiting_since` (i.e. before the agent paused). Only comments newer than when the task entered Feedback state are picked up. Check that your reply is a fresh comment, not an edit to the agent's original comment.
 
 **`tick` with `--board` produces no output**
 Use `integrations notion sync --board <id> --run` instead of `tick --board <id>`. The sync command is more reliable for board-scoped operations.
