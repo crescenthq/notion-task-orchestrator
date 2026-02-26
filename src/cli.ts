@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { defineCommand, runMain } from "citty";
 import { boardCmd } from "./commands/board";
+import { configCmd } from "./commands/config";
 import { doctorCmd } from "./commands/doctor";
 import { executorCmd } from "./commands/executor";
 import { initCmd } from "./commands/init";
@@ -20,6 +21,7 @@ const main = defineCommand({
   subCommands: {
     init: initCmd,
     setup: setupCmd,
+    config: configCmd,
     doctor: doctorCmd,
     board: boardCmd,
     executor: executorCmd,

@@ -24,23 +24,26 @@ If this fails, ensure Node.js ≥18 is installed and run `npm install` first.
 Check for existing token:
 
 ```bash
-grep -q NOTION_API_TOKEN .env 2>/dev/null && echo "HAS_TOKEN=true" || echo "HAS_TOKEN=false"
+npx notionflow doctor
 ```
 
-If `HAS_TOKEN=false`:
+If the doctor output shows the Notion token is missing:
 
 1. Tell the user: "To connect to Notion, you need an integration token."
 2. Direct them to https://www.notion.so/profile/integrations
 3. Ask them to create a new internal integration named "NotionFlow"
 4. Use AskUserQuestion: "Paste your Notion integration token (starts with ntn* or secret*)"
-5. Write to `.env`:
+5. Save the token:
    ```bash
-   echo 'NOTION_API_TOKEN=<token>' >> .env
+   npx notionflow config set NOTION_API_TOKEN <token>
    ```
 
 Then use AskUserQuestion: "Do you have a specific Notion page where you want NotionFlow boards created? (paste the page ID, or 'no' to skip)"
 
-If yes, also write `NOTION_WORKSPACE_PAGE_ID` to `.env`.
+If yes:
+   ```bash
+   npx notionflow config set NOTION_WORKSPACE_PAGE_ID <page-id>
+   ```
 
 Validate:
 
@@ -185,7 +188,7 @@ Setup complete. The user can now:
 
 ## Troubleshooting
 
-**`doctor` shows NOTION_API_TOKEN missing:** Check `.env` file exists in the working directory with the token.
+**`doctor` shows NOTION_API_TOKEN missing:** Check `~/.config/notionflow/config.json` contains the token, or that `NOTION_API_TOKEN` is set as an environment variable.
 
 **`tick` finds no boards:** Run `board list`. If empty, re-run step 5.
 
