@@ -1,6 +1,6 @@
 {
   "name": "notionflow",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Agent-agnostic workflow orchestrator for Notion",
   "type": "module",
   "scripts": {
@@ -15,15 +15,13 @@
     "notionflow": "./dist/cli.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.9.1",
+    "@libsql/client": "^0.15.0",
     "citty": "^0.1.6",
-    "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.5",
     "yaml": "^2.8.1",
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
     "drizzle-kit": "^0.31.4",
     "tsx": "^4.19.4",

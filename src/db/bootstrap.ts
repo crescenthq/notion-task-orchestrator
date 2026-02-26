@@ -5,8 +5,8 @@ export async function ensureDbDirectory(dbPath: string): Promise<void> {
   await mkdir(path.dirname(dbPath), { recursive: true });
 }
 
-export function bootstrapSchema(sqlite: { exec: (sql: string) => void }): void {
-  sqlite.exec(`
+export async function bootstrapSchema(client: { executeMultiple: (sql: string) => Promise<void> }): Promise<void> {
+  await client.executeMultiple(`
 CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
   adapter TEXT NOT NULL,

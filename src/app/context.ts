@@ -11,7 +11,7 @@ export async function openApp() {
   await ensureDbDirectory(paths.db);
   await mkdir(paths.agentsDir, { recursive: true });
   await mkdir(paths.workflowsDir, { recursive: true });
-  const { db, sqlite } = openDatabase(paths.db);
-  bootstrapSchema(sqlite);
-  return { db, sqlite };
+  const { db, client } = openDatabase(paths.db);
+  await bootstrapSchema(client);
+  return { db, client };
 }

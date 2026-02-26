@@ -60,7 +60,7 @@ npx notionflow status --task <notion_page_id>
 
 ## Skills
 
-NotionFlow uses skills for guided setup and executor configuration:
+NotionFlow ships these primary skills:
 
 - `.claude/skills/setup` — onboarding, workspace init, first workflow
 - `.claude/skills/add-claude` — add Claude Code as an executor
