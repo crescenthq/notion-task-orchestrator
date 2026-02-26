@@ -1,0 +1,23 @@
+src/services/notion.ts
+  b3fbecc9205f95f6 109,194-195,212,436-459
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d9d00d4f9b6b1cbce128f362ef1c5ff844b43911",
+  "prompts": {
+    "b3fbecc9205f95f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c15cadce-9af6-4f7e-af72-9540bba68e46",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 4,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  }
+}
