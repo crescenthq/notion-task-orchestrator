@@ -31,9 +31,9 @@ export function workflowStepById(workflow: WorkflowDefinition, stepId: string): 
   return workflow.steps.find((step) => step.id === stepId) ?? null;
 }
 
-export function parseStatusDirective(output: string): "done" | "retry" | "blocked" | "failed" | "waiting" | null {
-  const match = output.match(/^STATUS:\s*(done|retry|blocked|failed|waiting)\s*$/im);
-  return (match?.[1] as "done" | "retry" | "blocked" | "failed" | "waiting" | undefined) ?? null;
+export function parseStatusDirective(output: string): "done" | "retry" | "blocked" | "failed" | "feedback" | null {
+  const match = output.match(/^STATUS:\s*(done|retry|blocked|failed|feedback)\s*$/im);
+  return (match?.[1] as "done" | "retry" | "blocked" | "failed" | "feedback" | undefined) ?? null;
 }
 
 export function parseKeyValues(output: string): Record<string, string> {

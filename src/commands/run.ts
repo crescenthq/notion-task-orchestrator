@@ -6,7 +6,7 @@ import { nowIso, openApp } from "../app/context";
 import { notionToken } from "../config/env";
 import { parseKeyValues, parseStatusDirective, renderTemplate, workflowSchema, workflowStepIcon } from "../core/workflow";
 import { boards, executors, tasks, workflows } from "../db/schema";
-import { notionAppendStepToggle, notionAppendTaskPageLog, notionGetNewPageBodyText, notionGetPage, notionGetPageBodyText, notionUpdateTaskPageState, pageTitle } from "../services/notion";
+import { notionAppendStepToggle, notionAppendTaskPageLog, notionGetPage, notionGetPageBodyText, notionPostComment, notionUpdateTaskPageState, pageTitle } from "../services/notion";
 import { STEP_STATUS_ICON } from "../services/statusIcons";
 
 function isExecutorAuthError(detail: string): boolean {
@@ -127,34 +127,22 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     task_context: taskContext,
   };
 
-  // Detect resume from waiting state: task has stored step vars and a waiting step
+  // Detect resume from feedback state: task has stored step vars and a paused step
   let resumeFromStepId: string | null = null;
   if (task.currentStepId && task.stepVarsJson) {
     try {
       const storedVars = JSON.parse(task.stepVarsJson) as Record<string, string>;
-      Object.assign(stepVars, storedVars);
+      Object.assign(stepVars, storedVars); // human_feedback already inside if injected by tick sync
     } catch {
       console.log("[warn] failed to restore stored step vars; starting from scratch");
     }
     resumeFromStepId = task.currentStepId;
-
-    // Read human feedback from new paragraphs added to the page since the task entered waiting state
-    if (token && board?.adapter === "notion" && task.waitingSince) {
-      try {
-        const newText = await notionGetNewPageBodyText(token, task.externalTaskId, task.waitingSince);
-        if (newText) {
-          stepVars.human_feedback = newText;
-          console.log(`Resuming with human feedback (${newText.length} chars)`);
-        } else {
-          console.log(`Resuming from step ${resumeFromStepId} (no new feedback found)`);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.log(`[warn] failed to read Notion page feedback: ${message}`);
-      }
+    if (stepVars.human_feedback) {
+      console.log(`Resuming with human feedback (${stepVars.human_feedback.length} chars)`);
+    } else {
+      console.log(`Resuming from step ${resumeFromStepId}`);
     }
-
-    // Clear stored wait state before resuming
+    // Clear stored pause state before resuming
     await db
       .update(tasks)
       .set({ stepVarsJson: null, waitingSince: null })
@@ -246,13 +234,21 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     console.log(`step ${step.id} via ${executorUsed}: ${status}`);
     await syncNotionStepResult(stepLabel, executorUsed, status, stdout);
 
-    if (status === "waiting") {
-      const waitingFor = kv["waiting_for"] ?? kv["blocked_on"] ?? "Human input required";
-      console.log(`step ${step.id} waiting for human feedback: ${waitingFor}`);
+    if (status === "feedback") {
+      const question = kv["question"] ?? kv["waiting_for"] ?? `Agent requested feedback at step ${step.id}`;
+      console.log(`step ${step.id} requesting human feedback: ${question}`);
+      if (token && board?.adapter === "notion") {
+        try {
+          await notionPostComment(token, task.externalTaskId, question);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.log(`[warn] failed to post Notion comment: ${message}`);
+        }
+      }
       await db
         .update(tasks)
         .set({
-          state: "waiting",
+          state: "feedback",
           currentStepId: step.id,
           stepVarsJson: JSON.stringify(stepVars),
           waitingSince: nowIso(),
@@ -260,11 +256,8 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
           lastError: null,
         })
         .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
-      await syncNotionState("waiting");
-      await syncNotionLog(
-        `Feedback needed: ${stepLabel}`,
-        `${waitingFor}\n\nTo respond: type your answer as a new paragraph directly on this Notion page, then set State → Queue to resume.`,
-      );
+      await syncNotionState("feedback");
+      await syncNotionLog(`Feedback needed: ${stepLabel}`, `${question}\n\nReply to the comment on this Notion page to continue.`);
       return;
     }
 
