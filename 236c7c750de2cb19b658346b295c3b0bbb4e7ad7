@@ -1,0 +1,25 @@
+workflows/feedback-test.yaml
+  b1465fdfd2b38780 1-22
+src/commands/notion.ts
+  b1465fdfd2b38780 2,64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "236c7c750de2cb19b658346b295c3b0bbb4e7ad7",
+  "prompts": {
+    "b1465fdfd2b38780": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da2bddd5-04e9-462d-8dd1-1cfe81f81fb6",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 25,
+      "total_deletions": 2,
+      "accepted_lines": 25,
+      "overriden_lines": 0
+    }
+  }
+}
