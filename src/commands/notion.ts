@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import YAML from "yaml";
 import { nowIso, openApp } from "../app/context";
 import { runTaskByExternalId } from "./run";
@@ -61,7 +61,8 @@ async function upsertTask(
       target: [tasks.boardId, tasks.externalTaskId],
       set: {
         workflowId,
-        state,
+        // Don't overwrite agent-managed states (feedback, running) with a stale Notion value
+        state: sql`CASE WHEN ${tasks.state} IN ('feedback', 'running') THEN ${tasks.state} ELSE ${state} END`,
         updatedAt: now,
       },
     });

@@ -1,0 +1,22 @@
+id: feedback-test
+name: Feedback Loop E2E Test
+steps:
+  - id: ask
+    agent: shell
+    prompt: |
+      echo "STATUS: feedback"
+      echo "QUESTION: Should I proceed with approach A or B? Please reply to the comment on this Notion page."
+    timeout: 30
+    retries: 0
+    on_success: next
+    on_fail: blocked
+
+  - id: confirm
+    agent: shell
+    prompt: |
+      echo "STATUS: done"
+      echo "RESULT: Received human feedback: {{human_feedback}}"
+    timeout: 30
+    retries: 0
+    on_success: done
+    on_fail: blocked
