@@ -1,0 +1,35 @@
+{
+  "name": "notionflow",
+  "version": "0.0.1",
+  "description": "Agent-agnostic workflow orchestrator for Notion",
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx src/cli.ts",
+    "notionflow": "npx tsx src/cli.ts",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "bun build src/cli.ts --target=node --outdir=dist",
+    "publish:npm": "bun run build && npm publish"
+  },
+  "bin": {
+    "notionflow": "./dist/cli.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "citty": "^0.1.6",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.44.5",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.0",
+    "drizzle-kit": "^0.31.4",
+    "tsx": "^4.19.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.1"
+  },
+  "author": "Kamal <https://github.com/Kamalnrf>",
+  "license": "MIT"
+}

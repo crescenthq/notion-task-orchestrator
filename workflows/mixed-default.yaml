@@ -1,0 +1,35 @@
+id: mixed-default
+name: Mixed Executor Default
+steps:
+  - id: plan
+    agent: claude
+    prompt: |
+      Create a concise execution plan for task {{task_name}}.
+      Reply using:
+      STATUS: done
+      PLAN: <summary>
+    timeout: 900
+    retries: 0
+    on_success: next
+    on_fail: blocked
+  - id: build
+    agent: codex
+    prompt: |
+      Implement using this plan:
+      {{plan_plan}}
+      Reply using:
+      STATUS: done
+      SUMMARY: <what changed>
+    timeout: 900
+    retries: 0
+    on_success: next
+    on_fail: blocked
+  - id: verify
+    agent: shell
+    prompt: |
+      echo "STATUS: done"
+      echo "CHECK: verification placeholder"
+    timeout: 120
+    retries: 0
+    on_success: done
+    on_fail: blocked
