@@ -10,6 +10,13 @@ import { workflowSchema } from "../core/workflow";
 import { boards, workflows } from "../db/schema";
 import { notionCreateBoardDataSource, notionFindPageByTitle, notionGetDataSource } from "../services/notion";
 
+function prettifyBoardId(id: string): string {
+  return id
+    .split(/[-_]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 async function saveWorkflow(workflowPath: string) {
   const yaml = await readFile(workflowPath, "utf8");
   const parsed = workflowSchema.parse(YAML.parse(yaml));
@@ -120,15 +127,15 @@ export const workflowCmd = defineCommand({
       meta: { name: "install", description: "Install workflow YAML into ~/.config/notionflow/workflows" },
       args: {
         path: { type: "string", required: true },
-        noNotionBoard: { type: "boolean", required: false, alias: "no-notion-board" },
+        skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
         parentPage: { type: "string", required: false, alias: "parent-page" },
       },
       async run({ args }) {
         const parsed = await installWorkflowFromPath(String(args.path));
-        if (!args.noNotionBoard) {
+        if (!args.skipNotionBoard) {
           await maybeProvisionNotionBoard(
             parsed.id,
-            `NotionFlow • ${parsed.id}`,
+            prettifyBoardId(parsed.id),
             args.parentPage ? String(args.parentPage) : undefined,
           );
         }
@@ -138,15 +145,15 @@ export const workflowCmd = defineCommand({
       meta: { name: "add", description: "Alias of workflow install" },
       args: {
         path: { type: "string", required: true },
-        noNotionBoard: { type: "boolean", required: false, alias: "no-notion-board" },
+        skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
         parentPage: { type: "string", required: false, alias: "parent-page" },
       },
       run: async ({ args }) => {
         const parsed = await installWorkflowFromPath(String(args.path));
-        if (!args.noNotionBoard) {
+        if (!args.skipNotionBoard) {
           await maybeProvisionNotionBoard(
             parsed.id,
-            `NotionFlow • ${parsed.id}`,
+            prettifyBoardId(parsed.id),
             args.parentPage ? String(args.parentPage) : undefined,
           );
         }
@@ -156,7 +163,7 @@ export const workflowCmd = defineCommand({
       meta: { name: "create", description: "Create a new workflow scaffold" },
       args: {
         id: { type: "string", required: true },
-        noNotionBoard: { type: "boolean", required: false, alias: "no-notion-board" },
+        skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
         parentPage: { type: "string", required: false, alias: "parent-page" },
       },
       async run({ args }) {
@@ -181,8 +188,8 @@ steps:
         console.log(`Workflow scaffold created: ${id}`);
         console.log(`Edit: ${targetPath}`);
 
-        if (!args.noNotionBoard) {
-          await maybeProvisionNotionBoard(id, `NotionFlow • ${id}`, args.parentPage ? String(args.parentPage) : undefined);
+        if (!args.skipNotionBoard) {
+          await maybeProvisionNotionBoard(id, prettifyBoardId(id), args.parentPage ? String(args.parentPage) : undefined);
         }
       },
     }),

@@ -76,6 +76,7 @@ export async function notionCreateBoardDataSource(
   token: string,
   parentPageId: string,
   title: string,
+  stepStatusOptions: Array<{ name: string; color: string }> = [],
 ): Promise<{ dataSourceId: string; databaseId: string; url: string | null }> {
   const createRes = await fetch("https://api.notion.com/v1/databases", {
     method: "POST",
@@ -98,19 +99,31 @@ export async function notionCreateBoardDataSource(
   const dataSourceId = database.data_sources?.[0]?.id;
   if (!dataSourceId) throw new Error("Notion board create succeeded but no data source id was returned");
 
-  await notionEnsureBoardSchema(token, dataSourceId);
+  await notionEnsureBoardSchema(token, dataSourceId, stepStatusOptions);
   return { dataSourceId, databaseId: database.id, url: database.url ?? null };
 }
 
-export async function notionEnsureBoardSchema(token: string, dataSourceId: string): Promise<void> {
+const STATE_OPTIONS = [
+  { name: "Queue", color: "gray" },
+  { name: "In Progress", color: "blue" },
+  { name: "Waiting", color: "yellow" },
+  { name: "Done", color: "green" },
+  { name: "Blocked", color: "orange" },
+  { name: "Failed", color: "red" },
+];
+
+export async function notionEnsureBoardSchema(
+  token: string,
+  dataSourceId: string,
+  stepOptions: Array<{ name: string; color: string }> = [],
+): Promise<void> {
   const patchRes = await fetch(`https://api.notion.com/v1/data_sources/${dataSourceId}`, {
     method: "PATCH",
     headers: notionHeaders(token),
     body: JSON.stringify({
       properties: {
-        Status: { select: {} },
-        Ready: { checkbox: {} },
-        Workflow: { rich_text: {} },
+        State: { select: { options: STATE_OPTIONS } },
+        Status: { select: { options: stepOptions } },
       },
     }),
   });
@@ -137,7 +150,7 @@ export async function notionGetDataSource(token: string, dataSourceId: string): 
 export async function notionCreateTaskPage(
   token: string,
   dataSourceId: string,
-  input: { title: string; status: string; ready: boolean; workflowId?: string },
+  input: { title: string; state: string },
 ): Promise<NotionCreatePageResult> {
   const res = await fetch("https://api.notion.com/v1/pages", {
     method: "POST",
@@ -146,11 +159,7 @@ export async function notionCreateTaskPage(
       parent: { data_source_id: dataSourceId },
       properties: {
         Name: { title: [{ text: { content: input.title } }] },
-        Status: { select: { name: input.status } },
-        Ready: { checkbox: input.ready },
-        Workflow: {
-          rich_text: input.workflowId ? [{ text: { content: input.workflowId } }] : [],
-        },
+        State: { select: { name: input.state } },
       },
     }),
   });
@@ -179,36 +188,50 @@ export async function notionGetPage(token: string, pageId: string): Promise<Noti
 export function mapTaskStateToNotionStatus(state: string): string {
   switch (state) {
     case "queued":
-      return "queue";
+      return "Queue";
     case "running":
-      return "in_progress";
+      return "In Progress";
+    case "waiting":
+      return "Waiting";
     case "done":
-      return "done";
+      return "Done";
     case "blocked":
-      return "blocked";
+      return "Blocked";
     case "failed":
-      return "failed";
+      return "Failed";
     default:
       return state;
   }
 }
 
-export async function notionUpdateTaskPageState(token: string, pageId: string, state: string): Promise<void> {
-  const page = await notionGetPage(token, pageId);
-  const statusType = page.properties.Status?.type;
-  const notionStatus = mapTaskStateToNotionStatus(state);
-  const statusProperty = statusType === "status" ? { status: { name: notionStatus } } : { select: { name: notionStatus } };
-  const ready = state === "queued";
+function inferCalloutEmoji(title: string): string {
+  const t = title.toLowerCase();
+  if (t.startsWith("task complete") || t.startsWith("done")) return "✅";
+  if (t.includes("failed") || t.includes("fail")) return "❌";
+  if (t.includes("blocked")) return "🛑";
+  if (t.includes("feedback needed") || t.includes("waiting for")) return "🤔";
+  if (t.includes("started") || t.includes("start")) return "🚀";
+  return "ℹ️";
+}
+
+export async function notionUpdateTaskPageState(
+  token: string,
+  pageId: string,
+  state: string,
+  stepLabel?: string,
+): Promise<void> {
+  const notionState = mapTaskStateToNotionStatus(state);
+  const properties: Record<string, unknown> = {
+    State: { select: { name: notionState } },
+  };
+  if (stepLabel !== undefined) {
+    properties.Status = { select: { name: stepLabel } };
+  }
 
   const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
     method: "PATCH",
     headers: notionHeaders(token),
-    body: JSON.stringify({
-      properties: {
-        Status: statusProperty,
-        Ready: { checkbox: ready },
-      },
-    }),
+    body: JSON.stringify({ properties }),
   });
 
   if (!res.ok) {
@@ -223,30 +246,26 @@ function clipNotionText(text: string, max = 1800): string {
 }
 
 export async function notionAppendTaskPageLog(token: string, pageId: string, title: string, detail?: string): Promise<void> {
-  const children: Array<Record<string, unknown>> = [
-    {
-      object: "block",
-      type: "heading_3",
-      heading_3: {
-        rich_text: [{ type: "text", text: { content: clipNotionText(title, 200) } }],
-      },
-    },
-  ];
-
-  if (detail && detail.trim().length > 0) {
-    children.push({
-      object: "block",
-      type: "paragraph",
-      paragraph: {
-        rich_text: [{ type: "text", text: { content: clipNotionText(detail.trim()) } }],
-      },
-    });
-  }
+  const emoji = inferCalloutEmoji(title);
+  const calloutText = detail && detail.trim().length > 0
+    ? clipNotionText(`${title} — ${detail.trim()}`, 2000)
+    : clipNotionText(title, 2000);
 
   const res = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
     method: "PATCH",
     headers: notionHeaders(token),
-    body: JSON.stringify({ children }),
+    body: JSON.stringify({
+      children: [
+        {
+          object: "block",
+          type: "callout",
+          callout: {
+            rich_text: [{ type: "text", text: { content: calloutText } }],
+            icon: { emoji },
+          },
+        },
+      ],
+    }),
   });
 
   if (!res.ok) {
@@ -255,7 +274,51 @@ export async function notionAppendTaskPageLog(token: string, pageId: string, tit
   }
 }
 
-function richTextToPlainText(richText: Array<{ plain_text?: string }> | undefined): string {
+export async function notionAppendStepToggle(
+  token: string,
+  pageId: string,
+  stepLabel: string,
+  executorId: string,
+  status: string,
+  output: string,
+): Promise<void> {
+  const statusEmoji = status === "done" ? "✅" : status === "failed" ? "❌" : "🛑";
+  const toggleTitle = clipNotionText(`${statusEmoji} ${stepLabel} via ${executorId}`, 200);
+  const clippedOutput = clipNotionText(output.trim() || "(no output)");
+
+  const res = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
+    method: "PATCH",
+    headers: notionHeaders(token),
+    body: JSON.stringify({
+      children: [
+        {
+          object: "block",
+          type: "toggle",
+          toggle: {
+            rich_text: [{ type: "text", text: { content: toggleTitle } }],
+            children: [
+              {
+                object: "block",
+                type: "code",
+                code: {
+                  language: "plain text",
+                  rich_text: [{ type: "text", text: { content: clippedOutput } }],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Notion step toggle append failed (${res.status}): ${text}`);
+  }
+}
+
+export function richTextToPlainText(richText: Array<{ plain_text?: string }> | undefined): string {
   if (!Array.isArray(richText)) return "";
   return richText.map((part) => part.plain_text ?? "").join("").trim();
 }
@@ -281,6 +344,37 @@ export async function notionGetPageBodyText(token: string, pageId: string, pageS
     .map((block) => blockPlainText(block))
     .filter((line) => line.length > 0);
   return lines.join("\n").trim();
+}
+
+// Block types a human would add as feedback (excludes our callout/toggle/code log blocks)
+const HUMAN_BLOCK_TYPES = new Set([
+  "paragraph",
+  "bulleted_list_item",
+  "numbered_list_item",
+  "quote",
+  "heading_1",
+  "heading_2",
+  "heading_3",
+]);
+
+export async function notionGetNewPageBodyText(token: string, pageId: string, since: string): Promise<string> {
+  if (!since) return "";
+
+  const res = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children?page_size=50`, {
+    headers: notionHeaders(token),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Notion page blocks read failed (${res.status}): ${text}`);
+  }
+
+  const body = (await res.json()) as { results?: Array<NotionBlock & { created_time: string }> };
+  const lines = (body.results ?? [])
+    .filter((block) => HUMAN_BLOCK_TYPES.has(block.type) && block.created_time > since)
+    .map((block) => blockPlainText(block))
+    .filter((line) => line.length > 0);
+  return lines.join("\n\n").trim();
 }
 
 export async function notionFindPageByTitle(token: string, title: string): Promise<string | null> {
@@ -314,22 +408,28 @@ export function pageTitle(page: NotionPage): string {
   return page.id;
 }
 
-export function pageStatus(page: NotionPage): string | null {
-  const statusProp = page.properties.Status;
-  if (statusProp?.type === "status") return statusProp.status?.name?.toLowerCase() ?? null;
-  if (statusProp?.type === "select") return statusProp.select?.name?.toLowerCase() ?? null;
+export function pageState(page: NotionPage): string | null {
+  const prop = page.properties.State;
+  if (prop?.type === "select") return prop.select?.name?.toLowerCase() ?? null;
   return null;
 }
 
-export function pageReady(page: NotionPage): boolean {
-  const ready = page.properties.Ready ?? page.properties["Ready to build"];
-  if (ready?.type === "checkbox") return Boolean(ready.checkbox);
-  return false;
-}
+type NotionComment = {
+  id: string;
+  created_time: string;
+  rich_text: Array<{ plain_text?: string }>;
+};
 
-export function pageWorkflowId(page: NotionPage): string | null {
-  const workflow = page.properties.Workflow;
-  if (workflow?.type !== "rich_text" || !Array.isArray(workflow.rich_text)) return null;
-  const value = workflow.rich_text.map((part: { plain_text?: string }) => part.plain_text ?? "").join("").trim();
-  return value.length > 0 ? value : null;
+export async function notionListComments(token: string, pageId: string): Promise<NotionComment[]> {
+  const res = await fetch(`https://api.notion.com/v1/comments?block_id=${pageId}`, {
+    headers: notionHeaders(token),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Notion list comments failed (${res.status}): ${text}`);
+  }
+
+  const body = (await res.json()) as { results?: NotionComment[] };
+  return body.results ?? [];
 }

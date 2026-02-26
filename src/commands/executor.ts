@@ -1,4 +1,5 @@
-import { access, copyFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, chmod, copyFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import { defineCommand } from "citty";
@@ -40,7 +41,7 @@ export async function installExecutorFromArgs(args: { path: string; id?: string;
   const id = String(args.id ?? path.basename(sourcePath));
   const targetPath = path.join(paths.agentsDir, id);
   await copyFile(sourcePath, targetPath);
-  await Bun.$`chmod +x ${targetPath}`;
+  await chmod(targetPath, 0o755);
 
   const timeout = args.timeout ? Number(args.timeout) : null;
   const retries = args.retries ? Number(args.retries) : null;
@@ -104,7 +105,7 @@ esac
 `;
 
         await writeFile(targetPath, script, "utf8");
-        await Bun.$`chmod +x ${targetPath}`;
+        await chmod(targetPath, 0o755);
         await saveExecutor(id, targetPath, null, null);
 
         console.log(`Executor scaffold created: ${id}`);
@@ -152,14 +153,27 @@ esac
         const [executor] = await db.select().from(executors).where(eq(executors.id, String(args.id)));
         if (!executor) throw new Error(`Executor not found: ${args.id}`);
 
-        const proc = Bun.spawn([executor.commandPath], {
-          env: { ...process.env, AGENT_ACTION: "describe" },
-          stdout: "pipe",
-          stderr: "pipe",
-        });
+        const { exitCode, stdout, stderr } = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
+          const proc = spawn(executor.commandPath, [], {
+            env: { ...process.env, AGENT_ACTION: "describe" },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
 
-        const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-        const exitCode = await proc.exited;
+          const stdoutChunks: Buffer[] = [];
+          const stderrChunks: Buffer[] = [];
+
+          proc.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+          proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+          proc.on("error", reject);
+          proc.on("close", (code) => {
+            resolve({
+              exitCode: code ?? 1,
+              stdout: Buffer.concat(stdoutChunks).toString(),
+              stderr: Buffer.concat(stderrChunks).toString(),
+            });
+          });
+        });
         if (exitCode !== 0) throw new Error(`describe failed (${exitCode}): ${stderr.trim()}`);
         console.log(stdout.trim());
       },

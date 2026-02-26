@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   workflow_id TEXT NOT NULL,
   state TEXT NOT NULL,
   current_step_id TEXT,
+  step_vars_json TEXT,
+  waiting_since TEXT,
   lock_token TEXT,
   lock_expires_at TEXT,
   last_error TEXT,
@@ -98,4 +100,5 @@ CREATE TABLE IF NOT EXISTS board_cursors (
   FOREIGN KEY(board_id) REFERENCES boards(id)
 );
 `);
+
 }

@@ -1,31 +1,36 @@
 import { defineCommand } from "citty";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import YAML from "yaml";
 import { nowIso, openApp } from "../app/context";
 import { runTaskByExternalId } from "./run";
 import { notionToken, notionWorkspacePageId } from "../config/env";
-import { boards, tasks } from "../db/schema";
+import { workflowSchema, workflowStepIcon } from "../core/workflow";
+import { boards, tasks, workflows } from "../db/schema";
 import {
   mapTaskStateToNotionStatus,
   notionCreateBoardDataSource,
   notionCreateTaskPage,
+  notionEnsureBoardSchema,
   notionFindPageByTitle,
   notionGetDataSource,
   notionQueryDataSource,
-  pageReady,
-  pageStatus,
+  pageState,
   pageTitle,
-  pageWorkflowId,
 } from "../services/notion";
 
-function localTaskStateFromNotion(status: string, ready: boolean): string {
-  const normalized = status.toLowerCase();
+function localStateToDisplayStatus(state: string): string {
+  return mapTaskStateToNotionStatus(localTaskStateFromNotion(state));
+}
+
+function localTaskStateFromNotion(state: string): string {
+  const normalized = state.toLowerCase();
   if (normalized === "done") return "done";
   if (normalized === "failed") return "failed";
   if (normalized === "blocked") return "blocked";
-  if (normalized === "in_progress" || normalized === "in progress") return "running";
-  if (normalized === "queue" && ready) return "queued";
-  // Treat custom in-flight statuses (e.g. step ids) as running when not ready.
-  return ready ? "queued" : "running";
+  if (normalized === "in progress" || normalized === "in_progress") return "running";
+  if (normalized === "waiting") return "waiting";
+  if (normalized === "queue") return "queued";
+  return "running"; // unknown/step labels treated as running
 }
 
 async function upsertTask(
@@ -91,12 +96,11 @@ export async function syncNotionBoards(options: {
       const pages = await notionQueryDataSource(token, board.externalId, 50);
 
       for (const page of pages) {
-        const state = pageStatus(page) ?? "unknown";
-        const isReady = pageReady(page);
-        const localState = localTaskStateFromNotion(state, isReady);
-        const inferredWorkflowId = pageWorkflowId(page) ?? board.id;
-        const workflowId = options.workflowId ?? inferredWorkflowId;
+        const notionState = pageState(page) ?? "unknown";
+        const localState = localTaskStateFromNotion(notionState);
+        const workflowId = options.workflowId ?? board.id;
         await upsertTask(board.id, page.id, workflowId, localState);
+
         imported += 1;
         totalImported += 1;
         if (options.runQueued && localState === "queued") queuedTaskIds.add(page.id);
@@ -158,8 +162,25 @@ export const notionCmd = defineCommand({
           throw new Error("No parent page found. Set NOTION_WORKSPACE_PAGE_ID or pass --parent-page");
         }
 
-        const title = String(args.title ?? `NotionFlow • ${boardId}`);
-        const board = await notionCreateBoardDataSource(token, parentPageId, title);
+        const title = String(args.title ?? boardId.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "));
+
+        // Derive step-level status options from the matching workflow (board ID = workflow ID by convention)
+        const { db: dbForWorkflow } = await openApp();
+        const [workflowRow] = await dbForWorkflow.select().from(workflows).where(eq(workflows.id, boardId));
+        const stepStatusOptions: Array<{ name: string; color: string }> = [];
+        const STEP_COLORS = ["purple", "pink", "brown", "default", "blue", "green", "yellow", "orange", "red", "gray"];
+        if (workflowRow) {
+          const workflow = workflowSchema.parse(YAML.parse(workflowRow.definitionYaml));
+          workflow.steps.forEach((step, i) => {
+            const icon = workflowStepIcon(step);
+            stepStatusOptions.push({
+              name: icon ? `${icon} ${step.id}` : step.id,
+              color: STEP_COLORS[i % STEP_COLORS.length] ?? "default",
+            });
+          });
+        }
+
+        const board = await notionCreateBoardDataSource(token, parentPageId, title, stepStatusOptions);
         const { db } = await openApp();
         const now = nowIso();
         await db
@@ -202,7 +223,6 @@ export const notionCmd = defineCommand({
         title: { type: "string", required: true },
         workflow: { type: "string", required: false },
         status: { type: "string", required: false },
-        ready: { type: "boolean", required: false },
       },
       async run({ args }) {
         const token = notionToken();
@@ -213,17 +233,14 @@ export const notionCmd = defineCommand({
         if (!board) throw new Error(`Board not found: ${args.board}`);
 
         await notionGetDataSource(token, board.externalId);
-        const status = String(args.status ?? "queue");
-        const ready = args.ready === undefined ? true : Boolean(args.ready);
+        const state = String(args.status ?? "queue");
         const workflowId = args.workflow ? String(args.workflow) : "mixed-default";
         const page = await notionCreateTaskPage(token, board.externalId, {
           title: String(args.title),
-          status,
-          ready,
-          workflowId,
+          state: localStateToDisplayStatus(state),
         });
 
-        await upsertTask(board.id, page.id, workflowId, localTaskStateFromNotion(status, ready));
+        await upsertTask(board.id, page.id, workflowId, localTaskStateFromNotion(state));
 
         console.log(`Task created: ${page.id}`);
         if (page.url) console.log(`Notion URL: ${page.url}`);

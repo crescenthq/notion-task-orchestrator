@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { defineCommand, runMain } from "citty";
 import { boardCmd } from "./commands/board";
 import { doctorCmd } from "./commands/doctor";

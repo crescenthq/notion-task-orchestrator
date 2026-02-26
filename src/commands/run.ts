@@ -1,11 +1,13 @@
+import { spawn } from "node:child_process";
 import { defineCommand } from "citty";
 import { and, eq } from "drizzle-orm";
 import YAML from "yaml";
 import { nowIso, openApp } from "../app/context";
 import { notionToken } from "../config/env";
-import { parseKeyValues, parseStatusDirective, renderTemplate, workflowSchema } from "../core/workflow";
+import { parseKeyValues, parseStatusDirective, renderTemplate, workflowSchema, workflowStepIcon } from "../core/workflow";
 import { boards, executors, tasks, workflows } from "../db/schema";
-import { notionAppendTaskPageLog, notionGetPage, notionGetPageBodyText, notionUpdateTaskPageState, pageTitle } from "../services/notion";
+import { notionAppendStepToggle, notionAppendTaskPageLog, notionGetNewPageBodyText, notionGetPage, notionGetPageBodyText, notionUpdateTaskPageState, pageTitle } from "../services/notion";
+import { STEP_STATUS_ICON } from "../services/statusIcons";
 
 function isExecutorAuthError(detail: string): boolean {
   const normalized = detail.toLowerCase();
@@ -31,19 +33,30 @@ async function executeStepWithExecutor(
   commandPath: string,
   payload: { prompt: string; session_id: string; timeout: number; workdir: string; step_id: string; task_id: string },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn([commandPath], {
-    env: { ...process.env, AGENT_ACTION: "execute" },
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+  return new Promise((resolve, reject) => {
+    const proc = spawn(commandPath, [], {
+      env: { ...process.env, AGENT_ACTION: "execute" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    proc.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      resolve({
+        exitCode: code ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString(),
+        stderr: Buffer.concat(stderrChunks).toString(),
+      });
+    });
+
+    proc.stdin.write(JSON.stringify(payload));
+    proc.stdin.end();
   });
-
-  proc.stdin.write(JSON.stringify(payload));
-  proc.stdin.end();
-
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-  const exitCode = await proc.exited;
-  return { exitCode, stdout, stderr };
 }
 
 export async function runTaskByExternalId(taskExternalId: string): Promise<void> {
@@ -53,13 +66,13 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
 
   const [board] = await db.select().from(boards).where(eq(boards.id, task.boardId));
   const token = notionToken();
-  const syncNotionState = async (state: string): Promise<void> => {
+  const syncNotionState = async (state: string, stepLabel?: string): Promise<void> => {
     if (!board || board.adapter !== "notion") return;
     if (!token) {
       console.log("[warn] skipping Notion task state update (NOTION_API_TOKEN missing)");
       return;
     }
-    await notionUpdateTaskPageState(token, task.externalTaskId, state);
+    await notionUpdateTaskPageState(token, task.externalTaskId, state, stepLabel);
   };
   const syncNotionLog = async (title: string, detail?: string): Promise<void> => {
     if (!board || board.adapter !== "notion") return;
@@ -69,6 +82,17 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(`[warn] failed to append Notion page log: ${message}`);
+    }
+  };
+
+  const syncNotionStepResult = async (stepLabel: string, executorId: string, status: string, output: string): Promise<void> => {
+    if (!board || board.adapter !== "notion") return;
+    if (!token) return;
+    try {
+      await notionAppendStepToggle(token, task.externalTaskId, stepLabel, executorId, status, output);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[warn] failed to append Notion step toggle: ${message}`);
     }
   };
 
@@ -103,21 +127,61 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     task_context: taskContext,
   };
 
+  // Detect resume from waiting state: task has stored step vars and a waiting step
+  let resumeFromStepId: string | null = null;
+  if (task.currentStepId && task.stepVarsJson) {
+    try {
+      const storedVars = JSON.parse(task.stepVarsJson) as Record<string, string>;
+      Object.assign(stepVars, storedVars);
+    } catch {
+      console.log("[warn] failed to restore stored step vars; starting from scratch");
+    }
+    resumeFromStepId = task.currentStepId;
+
+    // Read human feedback from new paragraphs added to the page since the task entered waiting state
+    if (token && board?.adapter === "notion" && task.waitingSince) {
+      try {
+        const newText = await notionGetNewPageBodyText(token, task.externalTaskId, task.waitingSince);
+        if (newText) {
+          stepVars.human_feedback = newText;
+          console.log(`Resuming with human feedback (${newText.length} chars)`);
+        } else {
+          console.log(`Resuming from step ${resumeFromStepId} (no new feedback found)`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(`[warn] failed to read Notion page feedback: ${message}`);
+      }
+    }
+
+    // Clear stored wait state before resuming
+    await db
+      .update(tasks)
+      .set({ stepVarsJson: null, waitingSince: null })
+      .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
+  }
+
   await db
     .update(tasks)
     .set({ state: "running", updatedAt: nowIso(), lastError: null })
     .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
   await syncNotionState("running");
-  await syncNotionLog("Run started", `Workflow: ${task.workflowId}`);
+  await syncNotionLog(resumeFromStepId ? `Resuming from step ${resumeFromStepId}` : "Run started", `Workflow: ${task.workflowId}`);
 
   for (const step of workflow.steps) {
+    // Skip steps before the resume point when resuming from waiting state
+    if (resumeFromStepId) {
+      if (step.id !== resumeFromStepId) continue;
+      resumeFromStepId = null; // found the resume step, stop skipping
+    }
+
     await db
       .update(tasks)
       .set({ state: "running", currentStepId: step.id, updatedAt: nowIso(), lastError: null })
       .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
-    // Surface per-step progress directly in Notion Status while running.
-    await syncNotionState(step.id);
-    await syncNotionLog(`Step started: ${step.id}`, `Executor: ${step.agent}`);
+    const stepIcon = workflowStepIcon(step) ?? STEP_STATUS_ICON;
+    const stepLabel = `${stepIcon} ${step.id}`;
+    await syncNotionState("running", stepLabel);
 
     const [executor] = await db.select().from(executors).where(eq(executors.id, step.agent));
     if (!executor) throw new Error(`Executor not found for step ${step.id}: ${step.agent}`);
@@ -157,7 +221,7 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
         .set({ state: "failed", currentStepId: step.id, updatedAt: nowIso(), lastError: message })
         .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
       await syncNotionState("failed");
-      await syncNotionLog(`Step failed: ${step.id}`, detail);
+      await syncNotionLog(`Step failed: ${stepLabel}`, detail);
       throw new Error(message);
     }
 
@@ -170,7 +234,7 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
         .set({ state: "failed", currentStepId: step.id, updatedAt: nowIso(), lastError: message })
         .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
       await syncNotionState("failed");
-      await syncNotionLog(`Step failed: ${step.id}`, detail);
+      await syncNotionLog(`Step failed: ${stepLabel}`, detail);
       throw new Error(message);
     }
 
@@ -180,7 +244,30 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     stepVars[`step_${step.id}_output`] = stdout;
 
     console.log(`step ${step.id} via ${executorUsed}: ${status}`);
-    await syncNotionLog(`Step ${step.id}: ${status}`, stdout.trim() || "no output");
+    await syncNotionStepResult(stepLabel, executorUsed, status, stdout);
+
+    if (status === "waiting") {
+      const waitingFor = kv["waiting_for"] ?? kv["blocked_on"] ?? "Human input required";
+      console.log(`step ${step.id} waiting for human feedback: ${waitingFor}`);
+      await db
+        .update(tasks)
+        .set({
+          state: "waiting",
+          currentStepId: step.id,
+          stepVarsJson: JSON.stringify(stepVars),
+          waitingSince: nowIso(),
+          updatedAt: nowIso(),
+          lastError: null,
+        })
+        .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
+      await syncNotionState("waiting");
+      await syncNotionLog(
+        `Feedback needed: ${stepLabel}`,
+        `${waitingFor}\n\nTo respond: type your answer as a new paragraph directly on this Notion page, then set State → Queue to resume.`,
+      );
+      return;
+    }
+
     if (status === "blocked" || status === "failed") {
       const detail = stderr.trim() || stdout.trim() || null;
       await db

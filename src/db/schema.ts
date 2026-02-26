@@ -34,6 +34,8 @@ export const tasks = sqliteTable("tasks", {
   workflowId: text("workflow_id").notNull(),
   state: text("state").notNull(),
   currentStepId: text("current_step_id"),
+  stepVarsJson: text("step_vars_json"),
+  waitingSince: text("waiting_since"),
   lockToken: text("lock_token"),
   lockExpiresAt: text("lock_expires_at"),
   lastError: text("last_error"),

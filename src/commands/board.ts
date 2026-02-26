@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
-import { boards } from "../db/schema";
+import { boards, boardCursors, inboxEvents, runs, stepResults, tasks } from "../db/schema";
 
 export const boardCmd = defineCommand({
   meta: { name: "board", description: "Manage boards" },
@@ -60,8 +60,26 @@ export const boardCmd = defineCommand({
       },
       async run({ args }) {
         const { db } = await openApp();
-        await db.delete(boards).where(eq(boards.id, String(args.id)));
-        console.log(`Board removed: ${args.id}`);
+        const boardId = String(args.id);
+
+        const boardTasks = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.boardId, boardId));
+        const taskIds = boardTasks.map((t) => t.id);
+
+        if (taskIds.length > 0) {
+          const boardRuns = await db.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds));
+          const runIds = boardRuns.map((r) => r.id);
+          if (runIds.length > 0) {
+            await db.delete(stepResults).where(inArray(stepResults.runId, runIds));
+          }
+          await db.delete(runs).where(inArray(runs.taskId, taskIds));
+        }
+
+        await db.delete(inboxEvents).where(eq(inboxEvents.boardId, boardId));
+        await db.delete(boardCursors).where(eq(boardCursors.boardId, boardId));
+        await db.delete(tasks).where(eq(tasks.boardId, boardId));
+        await db.delete(boards).where(eq(boards.id, boardId));
+
+        console.log(`Board removed: ${boardId}`);
       },
     }),
   },
