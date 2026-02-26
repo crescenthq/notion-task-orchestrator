@@ -13,6 +13,7 @@ import {
   notionEnsureBoardSchema,
   notionFindPageByTitle,
   notionGetDataSource,
+  notionGetNewComments,
   notionQueryDataSource,
   pageState,
   pageTitle,
@@ -119,6 +120,30 @@ export async function syncNotionBoards(options: {
       failedBoards += 1;
       const message = error instanceof Error ? error.message : String(error);
       console.log(`[warn] board sync failed: ${board.id} (${message})`);
+    }
+
+    // Auto-resume tasks waiting for comment feedback
+    const feedbackTasks = await db.select().from(tasks)
+      .where(and(eq(tasks.boardId, board.id), eq(tasks.state, "feedback")));
+
+    for (const ft of feedbackTasks) {
+      if (!ft.waitingSince) continue;
+      try {
+        const newComments = await notionGetNewComments(token, ft.externalTaskId, ft.waitingSince);
+        if (!newComments) continue;
+        const storedVars = ft.stepVarsJson ? JSON.parse(ft.stepVarsJson) as Record<string, string> : {};
+        storedVars.human_feedback = newComments;
+        await db.update(tasks).set({
+          state: "queued",
+          stepVarsJson: JSON.stringify(storedVars),
+          updatedAt: nowIso(),
+        }).where(and(eq(tasks.boardId, ft.boardId), eq(tasks.externalTaskId, ft.externalTaskId)));
+        console.log(`[feedback] task ${ft.externalTaskId} has new comment reply → re-queued`);
+        if (options.runQueued) queuedTaskIds.add(ft.externalTaskId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(`[warn] failed to check comments for feedback task ${ft.externalTaskId}: ${message}`);
+      }
     }
   }
 
