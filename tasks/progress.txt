@@ -1,0 +1,29 @@
+## Completed Tasks
+
+### 2026-02-27 — US-001 + US-002 partial: src/services/notion.ts (commit d9d00d4)
+- STATE_OPTIONS: replaced { name: "Waiting", color: "yellow" } with { name: "Feedback", color: "purple" }
+- mapTaskStateToNotionStatus(): removed waiting→Waiting, added feedback→Feedback
+- inferCalloutEmoji(): "feedback needed" now returns 💬 (was 🤔)
+- Added notionPostComment(token, pageId, text) — POST /v1/comments
+- Added notionGetNewComments(token, pageId, since) — filters notionListComments by timestamp
+
+### 2026-02-27 — US-001 + US-002: src/commands/run.ts + src/core/workflow.ts (commit 684fe78)
+- parseStatusDirective(): replaced "waiting" with "feedback" in regex and return type
+- Replaced STATUS: waiting block with STATUS: feedback block: extracts QUESTION: key, posts Notion comment via notionPostComment(), sets state="feedback", stores stepVarsJson + waitingSince
+- Simplified resume path: reads human_feedback from restored stepVarsJson (pre-injected by tick sync), removes notionGetNewPageBodyText call
+- Removed notionGetNewPageBodyText from import (no longer needed in run.ts)
+
+### 2026-02-27 — US-003: src/commands/notion.ts (commit 4adf7dd)
+- Added notionGetNewComments to import from ../services/notion
+- Added feedback auto-resume loop inside the board sync loop (after each board's main try/catch)
+- Queries DB for tasks in `feedback` state per board, checks for new Notion comments since `waitingSince`
+- Injects `human_feedback` into `stepVarsJson` and sets state to `queued` so tick picks them up
+- If `runQueued` is true, also adds re-queued tasks to `queuedTaskIds` for immediate execution
+
+### 2026-02-27 — Verification: fix failing tests (commit d0f38db)
+- notion.test.ts local STATE_OPTIONS had stale { name: "Waiting", color: "yellow" } — updated to { name: "Feedback", color: "purple" }
+- npm run check: passes (no TypeScript errors)
+- npm test: all 17 tests pass (5 test files)
+
+## Next Task
+All PRD tasks complete including verification. Remaining step: end-to-end tracer bullet (requires live Notion credentials — manual QA).
