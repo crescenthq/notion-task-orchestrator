@@ -1,6 +1,6 @@
 {
   "name": "notionflow",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Agent-agnostic workflow orchestrator for Notion",
   "type": "module",
   "scripts": {
