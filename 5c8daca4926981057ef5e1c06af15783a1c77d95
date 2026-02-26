@@ -1,0 +1,65 @@
+src/commands/board.ts
+  9ebb60a9232bcc7e 2,4,63-82
+src/db/bootstrap.ts
+  9ebb60a9232bcc7e 44-45,103
+src/core/workflow.ts
+  9ebb60a9232bcc7e 34-36,50-56
+src/services/notion.test.ts
+  9ebb60a9232bcc7e 13-21,27,40-41,44-62,65,95-97
+src/commands/notion.ts
+  9ebb60a9232bcc7e 2-3,7-8,13,17,21-26,30-33,99-100,103,165-183,236,240,243
+src/db/schema.ts
+  9ebb60a9232bcc7e 37-38
+src/services/notion.ts
+  9ebb60a9232bcc7e 79,102,106-115,117-118,125-126,153,162,191,193-195,197,199,201,207-214,220-221,223-229,249-252,258-267,277-317,321,349-379,411-413,417-421,423-431,433-434
+src/commands/run.ts
+  9ebb60a9232bcc7e 9-10,69,75,88-98,130-163,169,172-177,182,184,224,237,247-270
+src/commands/workflow.ts
+  9ebb60a9232bcc7e 13-19,130,135,138,148,153,156,166,191-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "5c8daca4926981057ef5e1c06af15783a1c77d95",
+  "prompts": {
+    "2d6f0cf72a0629eb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9728-2a1c-7f20-952b-64736b487b32",
+        "model": "gpt-5.1-codex-mini"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 145,
+      "total_deletions": 2,
+      "accepted_lines": 145,
+      "overriden_lines": 0
+    },
+    "9ebb60a9232bcc7e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab770c74-47e4-4bda-b76c-7a4409047eb5",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 712,
+      "total_deletions": 255,
+      "accepted_lines": 600,
+      "overriden_lines": 3
+    },
+    "ec70cff53f561699": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d930c764-386e-4e48-aba7-d7f92eeb47af",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 81,
+      "total_deletions": 67,
+      "accepted_lines": 50,
+      "overriden_lines": 0
+    }
+  }
+}
