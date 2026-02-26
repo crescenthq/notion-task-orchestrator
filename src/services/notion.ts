@@ -106,7 +106,7 @@ export async function notionCreateBoardDataSource(
 const STATE_OPTIONS = [
   { name: "Queue", color: "gray" },
   { name: "In Progress", color: "blue" },
-  { name: "Waiting", color: "yellow" },
+  { name: "Feedback", color: "purple" },
   { name: "Done", color: "green" },
   { name: "Blocked", color: "orange" },
   { name: "Failed", color: "red" },
@@ -191,8 +191,8 @@ export function mapTaskStateToNotionStatus(state: string): string {
       return "Queue";
     case "running":
       return "In Progress";
-    case "waiting":
-      return "Waiting";
+    case "feedback":
+      return "Feedback";
     case "done":
       return "Done";
     case "blocked":
@@ -209,7 +209,7 @@ function inferCalloutEmoji(title: string): string {
   if (t.startsWith("task complete") || t.startsWith("done")) return "✅";
   if (t.includes("failed") || t.includes("fail")) return "❌";
   if (t.includes("blocked")) return "🛑";
-  if (t.includes("feedback needed") || t.includes("waiting for")) return "🤔";
+  if (t.includes("feedback needed") || t.includes("waiting for")) return "💬";
   if (t.includes("started") || t.includes("start")) return "🚀";
   return "ℹ️";
 }
@@ -432,4 +432,28 @@ export async function notionListComments(token: string, pageId: string): Promise
 
   const body = (await res.json()) as { results?: NotionComment[] };
   return body.results ?? [];
+}
+
+export async function notionPostComment(token: string, pageId: string, text: string): Promise<void> {
+  const res = await fetch("https://api.notion.com/v1/comments", {
+    method: "POST",
+    headers: notionHeaders(token),
+    body: JSON.stringify({
+      parent: { page_id: pageId },
+      rich_text: [{ type: "text", text: { content: clipNotionText(text, 2000) } }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Notion post comment failed (${res.status}): ${err}`);
+  }
+}
+
+export async function notionGetNewComments(token: string, pageId: string, since: string): Promise<string> {
+  const comments = await notionListComments(token, pageId);
+  const newComments = comments
+    .filter((c) => c.created_time > since)
+    .map((c) => richTextToPlainText(c.rich_text))
+    .filter((t) => t.length > 0);
+  return newComments.join("\n\n").trim();
 }
