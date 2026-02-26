@@ -13,7 +13,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 const STATE_OPTIONS = [
   { name: "Queue", color: "gray" },
   { name: "In Progress", color: "blue" },
-  { name: "Waiting", color: "yellow" },
+  { name: "Feedback", color: "purple" },
   { name: "Done", color: "green" },
   { name: "Blocked", color: "orange" },
   { name: "Failed", color: "red" },
