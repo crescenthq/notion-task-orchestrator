@@ -1,6 +1,6 @@
 # NotionFlow
 
-Minimal agent-agnostic orchestration CLI using Notion
+Minimal agent-agnostic orchestration CLI using Notion.
 
 ## Quick Start
 
@@ -21,41 +21,42 @@ All state lives in:
 - `~/.config/notionflow/agents/`
 - `~/.config/notionflow/workflows/`
 
-## Core Commands
+## Commands
+
+Command model:
+
+- `common` commands are daily operations for running work.
+- `advanced` commands are lower-frequency management operations.
+- `integration` commands are provider-specific adapters (Notion today).
 
 ```bash
-# initialize workspace
+# common commands
 npx notionflow setup
+npx notionflow doctor
+npx notionflow tick
+npx notionflow run --task <notion_page_id>
+npx notionflow status --task <notion_page_id>
 
-# boards
+# advanced: boards
 npx notionflow board add --id main --external-id <notion_data_source_id>
 npx notionflow board list
 npx notionflow board remove --id main
 
-# executors
+# advanced: executors
 npx notionflow executor create --id my-agent
 npx notionflow executor list
 npx notionflow executor describe --id my-agent
 
-# workflows
+# advanced: workflows
 npx notionflow workflow create --id my-workflow
 npx notionflow workflow install --path ./workflows/mixed-default.yaml --parent-page <notion_page_id>
 npx notionflow workflow list
 
-# notion task ops
-npx notionflow notion create-task --board my-workflow --title "Implement auth" --workflow my-workflow --status queue --ready
-
-# notion sync (default: all Notion boards; use --board to target one)
-npx notionflow notion sync
-npx notionflow notion sync --board creative-writing
-
-# notion sync + execute queued tasks (cron-friendly tick)
-npx notionflow notion sync --run
-npx notionflow tick
-
-# run task locally using mixed executors
-npx notionflow run --task <notion_page_id>
-npx notionflow status --task <notion_page_id>
+# integration (Notion)
+npx notionflow integrations notion create-task --board my-workflow --title "Implement auth" --workflow my-workflow --status queue --ready
+npx notionflow integrations notion sync
+npx notionflow integrations notion sync --board creative-writing
+npx notionflow integrations notion sync --run
 ```
 
 ## Skills

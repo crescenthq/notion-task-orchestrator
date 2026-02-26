@@ -4,7 +4,7 @@ import { notionToken } from "../config/env";
 import { notionWhoAmI } from "../services/notion";
 
 export const doctorCmd = defineCommand({
-  meta: { name: "doctor", description: "Validate NotionFlow setup and Notion auth" },
+  meta: { name: "doctor", description: "[common] Validate NotionFlow setup and integration auth" },
   async run() {
     await openApp();
     console.log("[ok] Local workspace ready");

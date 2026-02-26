@@ -3,7 +3,7 @@ import { openApp } from "../app/context";
 import { writeConfig } from "../config/env";
 
 export const configCmd = defineCommand({
-  meta: { name: "config", description: "Manage NotionFlow configuration" },
+  meta: { name: "config", description: "[advanced] Manage NotionFlow configuration" },
   subCommands: {
     set: defineCommand({
       meta: { name: "set", description: "Set a config value (e.g. NOTION_API_TOKEN)" },

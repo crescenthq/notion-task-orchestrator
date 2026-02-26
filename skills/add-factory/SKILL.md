@@ -202,7 +202,7 @@ What happens:
 3. Sets Notion State to "Waiting"
 4. Human types their answer directly on the Notion page (as a new paragraph — not a comment)
 5. Human sets Notion State → Queue
-6. Next `notion sync --run`: task resumes from this step with `{{human_feedback}}` injected
+6. Next `integrations notion sync --run`: task resumes from this step with `{{human_feedback}}` injected
 
 The step prompt should handle both the first run (no feedback yet) and the resume (feedback available):
 
@@ -304,7 +304,7 @@ steps:
 ## Phase 5 — Connect Board
 
 ```bash
-npx notionflow notion provision-board --board <factory>
+npx notionflow integrations notion provision-board --board <factory>
 ```
 
 This creates a Notion database with:
@@ -320,10 +320,10 @@ Run a complete smoke test through every step of the factory:
 
 ```bash
 # Create a test task in Queue state
-npx notionflow notion create-task --board <factory> --title "Test: <short description>" --workflow <factory> --status queue
+npx notionflow integrations notion create-task --board <factory> --title "Test: <short description>" --workflow <factory> --status queue
 
 # Run it
-npx notionflow notion sync --board <factory> --run
+npx notionflow integrations notion sync --board <factory> --run
 ```
 
 Watch the output. Each step should print `step <id> via <executor>: done`. The Notion page should show State advancing from "In Progress" through each step's Status label to "Done".
@@ -333,12 +333,12 @@ Watch the output. Each step should print `step <id> via <executor>: done`. The N
 If your factory has steps that can output `STATUS: waiting`:
 
 1. Create a task with an ambiguous or intentionally vague title so the step asks for clarification
-2. Run `notion sync --board <factory> --run`
+2. Run `integrations notion sync --board <factory> --run`
 3. The step outputs `STATUS: waiting` — task pauses
 4. Open Notion — you'll see a "🤔 Feedback needed" callout with the question and instructions
 5. Type your answer as a new paragraph on the page
 6. Set State → Queue in Notion
-7. Run `notion sync --board <factory> --run` again
+7. Run `integrations notion sync --board <factory> --run` again
 8. The step resumes with your answer in `{{human_feedback}}`
 
 ### Testing failure recovery
@@ -366,8 +366,8 @@ npx notionflow board list
 npx notionflow doctor
 
 # Create and run tasks
-npx notionflow notion create-task --board <id> --title "..." --workflow <id> --status queue
-npx notionflow notion sync --board <id> --run
+npx notionflow integrations notion create-task --board <id> --title "..." --workflow <id> --status queue
+npx notionflow integrations notion sync --board <id> --run
 
 # Run a specific task directly (bypasses sync)
 npx notionflow run --task <notion-page-id>
@@ -404,4 +404,4 @@ If `{{plan_plan}}` is empty in the next step's prompt, the prior step didn't out
 If a task stays waiting after you add feedback, the `{{human_feedback}}` variable was empty — either the paragraph was added before `waiting_since`, or it wasn't a plain paragraph block (e.g. a callout). Type a regular paragraph, not a styled block.
 
 **`tick` with `--board` produces no output**
-Use `notion sync --board <id> --run` instead of `tick --board <id>`. The sync command is more reliable for board-scoped operations.
+Use `integrations notion sync --board <id> --run` instead of `tick --board <id>`. The sync command is more reliable for board-scoped operations.

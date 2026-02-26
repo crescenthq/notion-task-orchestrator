@@ -4,7 +4,7 @@ import { openApp } from "../app/context";
 import { tasks } from "../db/schema";
 
 export const statusCmd = defineCommand({
-  meta: { name: "status", description: "Show task status from local SQLite" },
+  meta: { name: "status", description: "[common] Show task status from local SQLite" },
   args: {
     task: { type: "string", required: true },
   },

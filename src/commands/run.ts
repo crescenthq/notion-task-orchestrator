@@ -291,7 +291,7 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
 }
 
 export const runCmd = defineCommand({
-  meta: { name: "run", description: "Run a workflow for one task using per-step executors" },
+  meta: { name: "run", description: "[common] Run a workflow for one task using per-step executors" },
   args: {
     task: { type: "string", required: true },
   },

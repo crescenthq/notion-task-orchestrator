@@ -134,7 +134,7 @@ npx notionflow executor list
 Provision a Notion database for the factory:
 
 ```bash
-npx notionflow notion provision-board --board <factory-id>
+npx notionflow integrations notion provision-board --board <factory-id>
 ```
 
 This creates a Notion database with Name, Status, and Ready columns.
@@ -152,7 +152,7 @@ npx notionflow board add --id <factory-id> --external-id <notion_database_id>
 Create a test task:
 
 ```bash
-npx notionflow notion create-task --board <factory-id> --title "Test task" --workflow <factory-id> --status queue --ready
+npx notionflow integrations notion create-task --board <factory-id> --title "Test task" --workflow <factory-id> --status queue --ready
 ```
 
 Run one tick:
@@ -181,7 +181,7 @@ All should show configured resources. The Notion board should show the test task
 
 Setup complete. The user can now:
 
-- Add tasks via Notion or `npx notionflow notion create-task`
+- Add tasks via Notion or `npx notionflow integrations notion create-task`
 - Run `npx notionflow tick` to process queued tasks
 - Add more executors with add-on skills (`add-claude`, `add-codex`, `add-openclaw`)
 - Build more factories with the `add-factory` skill

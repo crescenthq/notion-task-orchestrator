@@ -52,7 +52,7 @@ export async function installExecutorFromArgs(args: { path: string; id?: string;
 }
 
 export const executorCmd = defineCommand({
-  meta: { name: "executor", description: "Manage agent executors" },
+  meta: { name: "executor", description: "[advanced] Manage agent executors" },
   subCommands: {
     install: defineCommand({
       meta: { name: "install", description: "Install executor into ~/.config/notionflow/agents" },

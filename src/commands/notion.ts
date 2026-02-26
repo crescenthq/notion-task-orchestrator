@@ -82,7 +82,9 @@ export async function syncNotionBoards(options: {
   const notionBoards = targetBoards.filter((board) => board.adapter === "notion");
   if (notionBoards.length === 0) {
     if (options.boardId) throw new Error(`No Notion board found for: ${options.boardId}`);
-    throw new Error("No Notion boards registered. Use workflow install/create or notion provision-board first");
+    throw new Error(
+      "No Notion boards registered. Use workflow install/create or integrations notion provision-board first",
+    );
   }
 
   let totalImported = 0;

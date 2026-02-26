@@ -121,7 +121,7 @@ export async function maybeProvisionNotionBoard(boardId: string, title: string, 
 }
 
 export const workflowCmd = defineCommand({
-  meta: { name: "workflow", description: "Manage workflow definitions" },
+  meta: { name: "workflow", description: "[advanced] Manage workflow definitions" },
   subCommands: {
     install: defineCommand({
       meta: { name: "install", description: "Install workflow YAML into ~/.config/notionflow/workflows" },

@@ -4,7 +4,7 @@ import { nowIso, openApp } from "../app/context";
 import { boards, boardCursors, inboxEvents, runs, stepResults, tasks } from "../db/schema";
 
 export const boardCmd = defineCommand({
-  meta: { name: "board", description: "Manage boards" },
+  meta: { name: "board", description: "[advanced] Manage board registrations" },
   subCommands: {
     add: defineCommand({
       meta: { name: "add", description: "Add a Notion board" },

@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { syncNotionBoards } from "./notion";
 
 export const tickCmd = defineCommand({
-  meta: { name: "tick", description: "Sync Notion boards and run queued tasks once" },
+  meta: { name: "tick", description: "[common] Run one orchestration tick across queued tasks" },
   args: {
     board: { type: "string", required: false },
     workflow: { type: "string", required: false },
