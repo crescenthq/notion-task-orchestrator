@@ -1,10 +1,7 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
 
 export function openDatabase(dbPath: string) {
-  const sqlite = new Database(dbPath);
-  sqlite.exec("PRAGMA journal_mode = WAL;");
-  sqlite.exec("PRAGMA foreign_keys = ON;");
-  const db = drizzle(sqlite);
-  return { sqlite, db };
+  const client = createClient({ url: `file:${dbPath}` });
+  return { client, db: drizzle(client) };
 }
