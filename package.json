@@ -8,6 +8,7 @@
     "notionflow": "npx tsx src/cli.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "build": "bun build src/cli.ts --target=node --outdir=dist",
     "publish:npm": "bun run build && npm publish"
   },
