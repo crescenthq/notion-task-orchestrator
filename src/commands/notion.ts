@@ -8,12 +8,14 @@ import { workflowSchema, workflowStepIcon } from "../core/workflow";
 import { boards, tasks, workflows } from "../db/schema";
 import {
   mapTaskStateToNotionStatus,
+  notionAppendTaskPageLog,
   notionCreateBoardDataSource,
   notionCreateTaskPage,
   notionEnsureBoardSchema,
   notionFindPageByTitle,
   notionGetDataSource,
   notionGetNewComments,
+  notionUpdateTaskPageState,
   notionQueryDataSource,
   pageState,
   pageTitle,
@@ -138,8 +140,16 @@ export async function syncNotionBoards(options: {
         await db.update(tasks).set({
           state: "queued",
           stepVarsJson: JSON.stringify(storedVars),
+          waitingSince: null,
           updatedAt: nowIso(),
         }).where(and(eq(tasks.boardId, ft.boardId), eq(tasks.externalTaskId, ft.externalTaskId)));
+        await notionUpdateTaskPageState(token, ft.externalTaskId, "queued");
+        await notionAppendTaskPageLog(
+          token,
+          ft.externalTaskId,
+          "Feedback received",
+          "Human reply detected. Task re-queued for resume.",
+        );
         console.log(`[feedback] task ${ft.externalTaskId} has new comment reply → re-queued`);
         if (options.runQueued) queuedTaskIds.add(ft.externalTaskId);
       } catch (error) {

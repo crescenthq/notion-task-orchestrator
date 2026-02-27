@@ -31,3 +31,9 @@
 - Routed exhausted retries via configured `on.failed` target with transition reason `action.failed.exhausted`, persisted `last_error`, and transition-event attempt metadata.
 - Added runtime tests in `src/core/factoryRuntime.test.ts` for (1) retry-then-success path and (2) retry exhaustion to failure target.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-005: Feedback (human-in-the-loop) pause/resume
+- Implemented `feedback.resume` runtime behavior in `src/core/factoryRuntime.ts`: pause now persists a computed resume target that defaults to previous state and honors explicit override state IDs.
+- Updated feedback requeue handling in `src/commands/notion.ts` to clear `waitingSince` on resume enqueue, update Notion state back to `Queue`, and append a Notion log callout for feedback-received resume events.
+- Added runtime regression coverage in `src/core/factoryRuntime.test.ts` for explicit feedback resume override (`resume: "<stateId>"`) to verify resume starts from override target.
+- Verified with `npm run check` and `npm test`.

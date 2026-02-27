@@ -194,6 +194,92 @@ describe("factoryRuntime", () => {
     expect(events.map((event) => event.event)).toEqual(["feedback", "done"]);
   });
 
+  it("uses feedback resume override target when configured", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-feedback-resume-override-factory";
+    const externalTaskId = "task-feedback-override-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const ask = async ({ ctx }) => {\n` +
+        `  if (!ctx.human_feedback) {\n` +
+        `    return { status: "feedback", message: "Need approval" };\n` +
+        `  }\n` +
+        `  return { status: "done" };\n` +
+        `};\n` +
+        `const summarize = async () => ({ status: "done" });\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "work",\n` +
+        `  states: {\n` +
+        `    work: { type: "action", agent: ask, on: { done: "done", feedback: "await_human", failed: "failed" } },\n` +
+        `    await_human: { type: "feedback", resume: "summary" },\n` +
+        `    summary: { type: "action", agent: summarize, on: { done: "done", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const [paused] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(paused?.state).toBe("feedback");
+    expect(paused?.currentStepId).toBe("summary");
+
+    const resumedCtx = {
+      ...(JSON.parse(paused?.stepVarsJson ?? "{}") as Record<string, unknown>),
+      human_feedback: "approved",
+    };
+    await db
+      .update(schema.tasks)
+      .set({ state: "queued", stepVarsJson: JSON.stringify(resumedCtx), updatedAt: new Date().toISOString() })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId));
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, paused!.id));
+    expect(events.map((event) => `${event.fromStateId}->${event.toStateId}`)).toEqual([
+      "work->await_human",
+      "summary->done",
+    ]);
+  });
+
   it("retries failed action states and succeeds before exhaustion", async () => {
     const { db, paths, runtime, schema, timestamp } = await setupRuntime();
     const factoryId = "runtime-retry-success-factory";

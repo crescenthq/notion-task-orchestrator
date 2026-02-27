@@ -119,6 +119,16 @@ function getTaskSelector(task: { boardId: string; externalTaskId: string }) {
   return and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId));
 }
 
+function resolveFeedbackResumeTarget(
+  feedbackState: { resume?: "previous" | string },
+  previousStateId: string,
+): string {
+  if (feedbackState.resume && feedbackState.resume !== "previous") {
+    return feedbackState.resume;
+  }
+  return previousStateId;
+}
+
 export async function runFactoryTaskByExternalId(taskExternalId: string): Promise<void> {
   const { db } = await openApp();
   const [task] = await db.select().from(tasks).where(eq(tasks.externalTaskId, taskExternalId));
@@ -305,11 +315,12 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     }
 
     if (state.type === "feedback") {
+      const resumeTargetStateId = resolveFeedbackResumeTarget(state, currentStateId);
       await db
         .update(tasks)
         .set({
           state: "feedback",
-          currentStepId: currentStateId,
+          currentStepId: resumeTargetStateId,
           stepVarsJson: JSON.stringify(ctx),
           waitingSince: nowIso(),
           updatedAt: nowIso(),
@@ -504,6 +515,8 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     transitions += 1;
 
     if (definition.states[resolvedNextStateId]?.type === "feedback") {
+      const feedbackState = definition.states[resolvedNextStateId];
+      const resumeTargetStateId = resolveFeedbackResumeTarget(feedbackState, currentStateId);
       if (feedbackMessage && token && board?.adapter === "notion") {
         try {
           await notionPostComment(token, task.externalTaskId, feedbackMessage);
@@ -517,7 +530,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
         .update(tasks)
         .set({
           state: "feedback",
-          currentStepId: currentStateId,
+          currentStepId: resumeTargetStateId,
           stepVarsJson: JSON.stringify(ctx),
           waitingSince: nowIso(),
           updatedAt: nowIso(),
