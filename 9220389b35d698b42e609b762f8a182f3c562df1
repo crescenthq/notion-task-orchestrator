@@ -1,0 +1,29 @@
+src/commands/factory.ts
+  72cde6ae724dfc64 4,6,9-10,19-63
+src/commands/notion.ts
+  72cde6ae724dfc64 213
+src/commands/board.ts
+  72cde6ae724dfc64 4
+src/cli-structure.test.ts
+  72cde6ae724dfc64 5,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "9220389b35d698b42e609b762f8a182f3c562df1",
+  "prompts": {
+    "72cde6ae724dfc64": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7a6832d-e4e4-474d-bd24-5c9ccae6d944",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 54,
+      "total_deletions": 72,
+      "accepted_lines": 53,
+      "overriden_lines": 0
+    }
+  }
+}
