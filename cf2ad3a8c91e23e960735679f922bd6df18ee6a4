@@ -1,0 +1,54 @@
+src/core/factoryRuntime.ts
+  9d3d31576a657d3c 11,30-31,36,107-125,130,613,648,743-754
+  d535521f1ae231e3 274,276-279
+src/commands/notion.ts
+  d535521f1ae231e3 34
+src/services/notion.ts
+  9d3d31576a657d3c 437-452
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "cf2ad3a8c91e23e960735679f922bd6df18ee6a4",
+  "prompts": {
+    "8a9ef2c7c575cef9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c978e0ae-f1ba-48fe-a4c9-40084e42ff00",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 921,
+      "overriden_lines": 0
+    },
+    "9d3d31576a657d3c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc27c509-153f-406c-970a-a42f2a8458c2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 54,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    },
+    "d535521f1ae231e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59e151a9-1300-4475-8732-22a06b7fbefd",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 14,
+      "total_deletions": 1,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    }
+  }
+}
