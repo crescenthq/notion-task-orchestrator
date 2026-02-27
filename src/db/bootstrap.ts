@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
   status TEXT NOT NULL,
+  current_state_id TEXT,
+  context_json TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   created_at TEXT NOT NULL,
@@ -98,6 +100,22 @@ CREATE TABLE IF NOT EXISTS board_cursors (
   tasks_cursor TEXT,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(board_id) REFERENCES boards(id)
+);
+
+CREATE TABLE IF NOT EXISTS transition_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  tick_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  from_state_id TEXT NOT NULL,
+  to_state_id TEXT NOT NULL,
+  event TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  loop_iteration INTEGER NOT NULL DEFAULT 0,
+  timestamp TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(id),
+  FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
 `);
 

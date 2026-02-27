@@ -13,3 +13,12 @@
 - Added tests in `src/core/factorySchema.test.ts` and `src/core/factory.test.ts` for transition validation, loop-guard validation, loader behavior, and imported-function rejection.
 - Updated `src/cli.test.ts` bootstrap assertion to use `factory list` command surface.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-003: State-machine runtime core
+- Added `src/core/factoryRuntime.ts` and replaced linear step execution with a factory state-machine engine that executes `action` and `orchestrate` states via emitted events resolved through each state's `on` map.
+- Updated `src/commands/run.ts` to delegate task execution to the new runtime (`runFactoryTaskByExternalId`).
+- Added transition journaling schema in `src/db/schema.ts` (`transition_events`) and bootstrap SQL in `src/db/bootstrap.ts`; each transition now records `runId`, `tickId`, `fromStateId`, `toStateId`, `event`, `reason`, `attempt`, `loopIteration`, and timestamp.
+- Added run persistence support fields (`runs.current_state_id`, `runs.context_json`) in schema for state/context snapshot compatibility and kept task-level persisted context in `tasks.step_vars_json` for crash-safe resume.
+- Updated `src/commands/board.ts` cleanup to delete transition event rows when removing a board.
+- Added `src/core/factoryRuntime.test.ts` covering (1) sequence + conditional orchestration to terminal `done`, and (2) persisted feedback pause/resume from stored state/context.
+- Verified with `npm run check` and `npm test`.

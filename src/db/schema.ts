@@ -47,6 +47,8 @@ export const runs = sqliteTable("runs", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull(),
   status: text("status").notNull(),
+  currentStateId: text("current_state_id"),
+  contextJson: text("context_json"),
   startedAt: text("started_at").notNull(),
   endedAt: text("ended_at"),
   createdAt: text("created_at").notNull(),
@@ -81,4 +83,18 @@ export const boardCursors = sqliteTable("board_cursors", {
   commentsCursor: text("comments_cursor"),
   tasksCursor: text("tasks_cursor"),
   updatedAt: text("updated_at").notNull(),
+});
+
+export const transitionEvents = sqliteTable("transition_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  tickId: text("tick_id").notNull(),
+  taskId: text("task_id").notNull(),
+  fromStateId: text("from_state_id").notNull(),
+  toStateId: text("to_state_id").notNull(),
+  event: text("event").notNull(),
+  reason: text("reason").notNull(),
+  attempt: integer("attempt").notNull().default(0),
+  loopIteration: integer("loop_iteration").notNull().default(0),
+  timestamp: text("timestamp").notNull(),
 });
