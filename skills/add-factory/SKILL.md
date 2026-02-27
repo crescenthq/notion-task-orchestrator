@@ -1,408 +1,337 @@
 ---
 name: add-factory
-description: Create an agent factory — a workflow powered by multiple specialized executors. Agent-agnostic. Works with Claude, Codex, OpenClaw, shell, or any command. Use when the user wants to create a factory, build a multi-agent pipeline, set up specialized agents, or chain multiple executors into a workflow.
+description: Create a TypeScript state-machine factory with inline agent functions. Use when the user wants to create a factory, build a multi-agent pipeline, or chain states into a workflow.
 ---
 
-# Create Agent Factory
+# Create a TypeScript Factory
 
-A factory is a workflow + a cohort of specialized executors. Each executor wraps a command — any command. The workflow chains their outputs via `{{variables}}`.
+A factory is a TypeScript state machine. Each state has an inline `agent` function that runs your logic, and an `on` map that routes to the next state based on the result.
 
-**Principle:** The executor is a thin bridge. It translates the AGENT_ACTION protocol to whatever CLI the user wants. Don't reimplement what the agent runtime already does.
+**Principle:** One file, all logic inline. No separate executor scripts. No YAML.
 
-## Pre-flight
-
-```bash
-bun run dev -- executor list
-bun run dev -- workflow list
-```
-
-## Phase 1 — Design the Factory
+## Phase 1 — Design
 
 Use AskUserQuestion: "What kind of factory do you want to create?"
 
 Offer templates as starting points:
 
-- **Code factory** — planner → developer → reviewer → PR
-- **Content factory** — researcher → writer → editor
-- **Bug fix factory** — triager → investigator → fixer → verifier
-- **Custom** — describe your own roles and pipeline
+- **Code factory** — plan → implement → review → done
+- **Content factory** — research → write → review → publish
+- **Bug fix factory** — triage → investigate → fix → verify
+- **Custom** — describe your own states and logic
 
-Use AskUserQuestion: "What should this factory be called? (e.g. code-factory, content-pipeline, bug-squad)"
+Use AskUserQuestion: "What should this factory be called? (e.g. code-factory, content-pipeline)"
 
-The factory name namespaces everything: executor IDs become `<factory>_<role>`, the workflow ID is `<factory>`.
+Map out the states: what each state does, what agent logic it runs, and what success/failure routes it needs.
 
-## Phase 2 — Define Roles and Commands
-
-For each role, the user picks the command that runs it. Use AskUserQuestion for each role: "What command should run the <role> role?"
-
-Examples the user might give:
-
-- `openclaw agent --agent planner` — uses an existing OpenClaw agent (user configures identity via `openclaw agents add`)
-- `claude --print --output-format text` — Claude Code CLI
-- `codex exec --full-auto` — Codex CLI
-- `my-script.sh` — any executable
-- `shell` — the prompt IS the script (eval it directly)
-
-If the user says "openclaw", ask which OpenClaw agent ID to target (or whether they need to create one first via `openclaw agents add <id>`).
-
-If the user says "claude" or "codex", use the standard invocation. Don't add flags the user didn't ask for.
-
-## Phase 3 — Create Executors
-
-For each role, create an executor at `~/.config/notionflow/agents/<factory>_<role>`.
-
-### Executor anatomy
-
-The executor is a bash script that responds to two actions via the `AGENT_ACTION` environment variable:
-
-- `describe` — print metadata (name, description, timeout, retries) to stdout
-- `execute` — read a JSON payload from stdin, run the agent, write output to stdout
-
-The JSON payload has these fields:
-
-- `prompt` — the rendered step prompt (all `{{variables}}` already substituted)
-- `workdir` — the NotionFlow working directory
-- `task_id` — Notion page ID of the task
-- `step_id` — current step ID
-- `session_id` — stable session ID for the task
-
-### Clean executor template
+## Phase 2 — Scaffold
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-case "${AGENT_ACTION:-}" in
-  describe)
-    echo "name: <factory>_<role>"
-    echo "description: <one-line role description>"
-    echo "timeout: <seconds>"
-    echo "retries: 0"
-    ;;
-  execute)
-    # Read the JSON payload from stdin
-    INPUT=$(cat)
-    # Helper: extract a named field from the payload JSON
-    nf_field() { printf '%s' "$INPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(d)['$1']??''))"; }
-
-    PROMPT=$(nf_field prompt)   # The rendered step prompt
-    WORKDIR=$(nf_field workdir) # NotionFlow working directory
-
-    # Run the agent — stdout is what NotionFlow reads for STATUS and KEY: value lines
-    <command> -- "$PROMPT"
-    ;;
-  *)
-    echo "Unknown AGENT_ACTION: ${AGENT_ACTION:-}" >&2
-    exit 1
-    ;;
-esac
+npx notionflow factory create --id <factory-id> --skip-notion-board
 ```
 
-The `nf_field` helper is the readable way to extract JSON fields. Define it once, call it per field. It pipes `$INPUT` through a small Node.js snippet (Node is already required by NotionFlow).
+This writes a minimal scaffold to `~/.config/notionflow/workflows/<factory-id>.ts`. Edit it directly — it's just TypeScript.
 
-### Command reference
+## Phase 3 — Write the Factory
 
-Replace `<command>` with the agent invocation. Use `--` before `"$PROMPT"` when the command accepts flags — this tells the argument parser that everything after `--` is positional, preventing the prompt text from being misread as a flag.
+The factory is an `export default` object with:
 
-| Agent               | Command line                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| Claude (simple)     | `env -u CLAUDECODE claude --print --output-format text -- "$PROMPT"`                       |
-| Claude (extra dir)  | `env -u CLAUDECODE claude --print --output-format text --add-dir "$WORKTREE" -- "$PROMPT"` |
-| Codex               | `codex exec --full-auto -- "$PROMPT"`                                                      |
-| OpenClaw agent      | `openclaw agent --agent <id> --message "$PROMPT"`                                          |
-| Shell (eval prompt) | `eval "$PROMPT"`                                                                           |
-| Custom script       | `/path/to/script "$PROMPT"`                                                                |
+- `id` — matches the factory ID
+- `start` — initial state ID
+- `context` — initial context object (shared across all states)
+- `states` — record of state definitions
+- `guards` — optional pure functions used by loop `until` and orchestrate `select`
 
-`env -u CLAUDECODE` removes the `CLAUDECODE` env var so the Claude executor works when NotionFlow itself runs inside Claude Code.
+### State Types
 
-**`--add-dir` gotcha:** `--add-dir` accepts multiple paths. If you write `claude --add-dir "$DIR" "$PROMPT"`, Claude's parser treats `$PROMPT` as a second directory, leaving no prompt — you'll get "Input must be provided" errors. Always use `--` before `"$PROMPT"`.
+**`action`** — runs an async agent function, routes via `on`:
 
-### Register each executor
+```ts
+plan: {
+  type: "action",
+  agent: async ({ task, ctx }) => {
+    // ... agent logic ...
+    return { status: "done", data: { plan: "..." } };
+  },
+  on: { done: "implement", failed: "failed" },
+  retries: { max: 2, backoff: "fixed" }, // optional
+},
+```
+
+The agent receives `{ task, ctx }` and must return:
+- `status`: `"done"` | `"feedback"` | `"failed"`
+- `data?`: `Record<string, unknown>` — shallow-merged into `ctx` for later states
+- `message?`: string — logged to Notion on failure or feedback
+
+**`orchestrate`** — routes to a state via a pure `select` function or an agent router:
+
+```ts
+// Deterministic (pure function):
+route: {
+  type: "orchestrate",
+  select: ({ ctx }) => ctx.qualityScore >= 85 ? "publish" : "revise",
+  on: { publish: "publish", revise: "revise" },
+},
+
+// LLM-driven (agent returns the event key):
+route: {
+  type: "orchestrate",
+  agent: async ({ task, ctx }) => {
+    // must return { status: "done", data: { event: "<key in on>" } }
+    return { status: "done", data: { event: ctx.score >= 85 ? "publish" : "revise" } };
+  },
+  on: { publish: "publish", revise: "revise" },
+},
+```
+
+**`loop`** — repeats a body state up to `maxIterations`, exits via `on`:
+
+```ts
+refine_loop: {
+  type: "loop",
+  body: "refine",        // must match on.continue target
+  maxIterations: 3,
+  until: "qualityReached", // guard name; emits "done" when true
+  on: { continue: "refine", done: "publish", exhausted: "publish" },
+},
+```
+
+The loop emits `continue` if the guard is false, `done` if the guard is true, `exhausted` if the cap is reached.
+
+**`feedback`** — pauses for human input, resumes when a Notion comment reply arrives:
+
+```ts
+await_human: { type: "feedback", resume: "previous" },
+```
+
+`resume: "previous"` returns to the state that transitioned here. Or specify an explicit state ID to override.
+
+**Terminal states:**
+
+```ts
+done: { type: "done" },
+failed: { type: "failed" },
+blocked: { type: "blocked" },
+```
+
+### Guards
+
+```ts
+guards: {
+  qualityReached: ({ ctx }) => Number(ctx.qualityScore) >= 85,
+},
+```
+
+Guards are synchronous and pure — no side effects, no async.
+
+### Calling External Agent CLIs
+
+For states that need to call Claude, Codex, or any CLI tool, spawn the process inline:
+
+```ts
+import { spawn } from "node:child_process";
+
+type AgentResult = {
+  status: "done" | "feedback" | "failed";
+  data?: Record<string, unknown>;
+  message?: string;
+};
+
+async function callCli(
+  args: { command: string; prompt: string; timeoutSeconds?: number }
+): Promise<AgentResult> {
+  return new Promise((resolve) => {
+    const proc = spawn(args.command, ["--print", "--output-format", "json"], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const out: Buffer[] = [];
+    proc.stdout.on("data", (c: Buffer) => out.push(c));
+    proc.on("error", () => resolve({ status: "failed", message: "spawn error" }));
+    proc.on("close", (code) => {
+      if ((code ?? 1) !== 0) return resolve({ status: "failed", message: "non-zero exit" });
+      try {
+        resolve(JSON.parse(Buffer.concat(out).toString("utf8").trim()) as AgentResult);
+      } catch {
+        resolve({ status: "failed", message: "invalid JSON from agent" });
+      }
+    });
+    proc.stdin.write(args.prompt);
+    proc.stdin.end();
+  });
+}
+```
+
+**Calling `claude` from inside Claude Code:** prefix the command with `env -u CLAUDECODE` to avoid environment conflicts:
+
+```ts
+const proc = spawn(
+  "env",
+  ["-u", "CLAUDECODE", "claude", "--print", "--output-format", "json"],
+  { stdio: ["pipe", "pipe", "pipe"] }
+);
+```
+
+### Full Example (content factory)
+
+```ts
+import { spawn } from "node:child_process";
+
+const research = async ({ task, ctx }) => {
+  // inline logic, or call a CLI
+  return { status: "done", data: { sources: "..." } };
+};
+
+const write = async ({ task, ctx }) => {
+  return { status: "done", data: { draft: "..." } };
+};
+
+const review = async ({ task, ctx }) => {
+  const score = ctx.draft ? 90 : 40;
+  if (score < 60) {
+    return {
+      status: "feedback",
+      message: "Draft quality too low — please review and clarify the brief.",
+    };
+  }
+  return { status: "done", data: { qualityScore: score } };
+};
+
+export default {
+  id: "content-factory",
+  start: "research",
+  context: { sources: "", draft: "", qualityScore: 0 },
+  states: {
+    research: {
+      type: "action",
+      agent: research,
+      on: { done: "write", failed: "failed" },
+    },
+    write: {
+      type: "action",
+      agent: write,
+      on: { done: "review_loop", failed: "failed" },
+    },
+    review_loop: {
+      type: "loop",
+      body: "review",
+      maxIterations: 3,
+      until: "qualityReached",
+      on: { continue: "review", done: "done", exhausted: "done" },
+    },
+    review: {
+      type: "action",
+      agent: review,
+      on: { done: "review_loop", feedback: "await_human", failed: "failed" },
+    },
+    await_human: { type: "feedback", resume: "previous" },
+    done: { type: "done" },
+    failed: { type: "failed" },
+  },
+  guards: {
+    qualityReached: ({ ctx }) => Number(ctx.qualityScore) >= 85,
+  },
+};
+```
+
+## Phase 4 — Install
 
 ```bash
-chmod +x ~/.config/notionflow/agents/<factory>_<role>
-bun run dev -- executor install --path ~/.config/notionflow/agents/<factory>_<role> --id <factory>_<role>
+npx notionflow factory install --path ~/.config/notionflow/workflows/<factory-id>.ts
 ```
 
-## Phase 4 — Scaffold Workflow
+Verify:
 
 ```bash
-bun run dev -- workflow create --id <factory> --skip-notion-board
+npx notionflow factory list
 ```
 
-Overwrite `~/.config/notionflow/workflows/<factory>.yaml` with steps chaining the executors.
-
-Every step needs:
-
-- `id` — descriptive kebab-case name; appears as the Notion Status while the step runs (e.g. `research`, `write-draft`, `security-scan`). Never use generic names like `step1`.
-- `icon` — emoji shown as prefix in the Notion Status (e.g. `🔍`, `✍️`, `🧪`). Always set one per step.
-- `agent` — executor ID (`<factory>_<role>`)
-- `prompt` — what the agent should do, using `{{variables}}` for chaining
-- `timeout`, `retries`, `on_success`, `on_fail`
-
-### Step icons
-
-Pick an emoji that communicates the step's role at a glance:
-
-| Role               | Icon |
-| ------------------ | ---- |
-| Research / gather  | 🔍   |
-| Plan / outline     | 📋   |
-| Analyse / diagnose | 🔬   |
-| Write / draft      | ✍️   |
-| Code / implement   | 💻   |
-| Review / edit      | ✏️   |
-| Test / verify      | 🧪   |
-| Security scan      | 🔒   |
-| Performance        | ⚡   |
-| Summarise / report | 📝   |
-| Notify / publish   | 🚀   |
-| Fetch / shell      | 🛠️   |
-
-### Variable chaining
-
-Step outputs are parsed line by line for `KEY: value` pairs. A step with `id: plan` that outputs `PLAN: do x then y` makes `{{plan_plan}}` available to all later steps.
-
-Rules:
-
-- Keys are case-insensitive and lowercased (so `FILES_TO_CHANGE: foo` → `{{plan_files_to_change}}`)
-- Keys must start with a letter and contain only letters, digits, underscores
-- Multi-word values are captured up to the end of the line only (not multi-line)
-- `STATUS:` is consumed by NotionFlow and not stored as a variable
-
-Every step's prompt must instruct the agent to reply with `STATUS: done` plus the `KEY: value` lines the next step needs.
-
-### Conditionals in prompts
-
-Use `{{#if var}}content{{/if}}` to include content only when a variable is non-empty:
-
-```yaml
-prompt: |
-  Task: {{task_name}}
-  {{#if human_feedback}}Human guidance: {{human_feedback}}{{/if}}
-
-  ... rest of prompt
-```
-
-Unresolved variables (no matching key from prior steps) render as empty string.
-
-### Human feedback (feedback state)
-
-A step can pause execution, post a question as a Notion comment, and auto-resume once the human replies. Use `STATUS: feedback` with a `QUESTION:` key:
-
-```
-STATUS: feedback
-QUESTION: Should this target enterprise developers or indie hackers? Research supports both.
-```
-
-What happens:
-
-1. NotionFlow stores step variables to the DB and records `waiting_since`
-2. Posts the question text as a **Notion page comment** (via the Comments API)
-3. Appends a "💬 Feedback needed" callout to the page: _"Reply to the comment on this page to continue"_
-4. Sets Notion State to "Feedback" (purple)
-5. Human replies to the comment in Notion — no page editing, no manual state change
-6. Next `integrations notion sync --run`: tick detects any comment newer than `waiting_since`, injects the text as `{{human_feedback}}`, and automatically re-queues the task
-
-The step prompt should handle both the first run (no feedback yet) and the resume (feedback available):
-
-```yaml
-- id: angle-selection
-  icon: 🎯
-  agent: claude
-  prompt: |
-    Choose the best angle for this piece.
-
-    Topic: {{task_name}}
-    Research: {{research_angles}}
-    {{#if human_feedback}}Human guidance: {{human_feedback}}{{/if}}
-
-    If the research supports multiple strong angles and you genuinely cannot choose,
-    ask the human:
-    STATUS: feedback
-    QUESTION: <specific question — what exactly you need to know>
-
-    Otherwise commit to the best angle:
-    STATUS: done
-    ANGLE: <chosen angle>
-    REASONING: <why this angle>
-```
-
-If `QUESTION:` is absent, NotionFlow falls back to: _"Agent requested feedback at step `<step_id>`"_.
-
-### Example (code factory)
-
-```yaml
-id: code-factory
-name: Code Factory
-steps:
-  - id: plan
-    icon: 📋
-    agent: code-factory_planner
-    prompt: |
-      Break this task into ordered, implementable stories.
-
-      Task: {{task_name}}
-      Context: {{task_context}}
-      {{#if human_feedback}}Human clarification: {{human_feedback}}{{/if}}
-
-      Explore the codebase first, then produce a concrete plan.
-
-      If the task is genuinely ambiguous:
-      STATUS: feedback
-      QUESTION: <your specific question>
-
-      Otherwise:
-      STATUS: done
-      PLAN: <implementation strategy>
-      STORIES: <ordered steps separated by | characters>
-      FILES_TO_CHANGE: <comma-separated list>
-    timeout: 900
-    retries: 1
-    on_success: next
-    on_fail: blocked
-
-  - id: implement
-    icon: 💻
-    agent: code-factory_developer
-    prompt: |
-      Implement the plan.
-
-      Task: {{task_name}}
-      Plan: {{plan_plan}}
-      Stories: {{plan_stories}}
-      Files to change: {{plan_files_to_change}}
-
-      Write clean, idiomatic code. Run existing tests. Commit your changes.
-
-      STATUS: done
-      CHANGES: <summary of what was implemented>
-      FILES_CHANGED: <comma-separated list>
-      TESTS_RUN: <test results or "none">
-    timeout: 1800
-    retries: 1
-    on_success: next
-    on_fail: blocked
-
-  - id: verify
-    icon: 🧪
-    agent: code-factory_verifier
-    prompt: |
-      Verify the implementation.
-
-      Plan: {{plan_plan}}
-      Changes: {{implement_changes}}
-      Tests: {{implement_tests_run}}
-
-      STATUS: done
-      VERDICT: <approved or needs-work>
-      ISSUES: <any problems found, or "none">
-    timeout: 900
-    retries: 0
-    on_success: done
-    on_fail: blocked
-```
-
-## Phase 5 — Connect Board
+## Phase 5 — Provision Board
 
 ```bash
-npx notionflow integrations notion provision-board --board <factory>
+npx notionflow integrations notion provision-board --board <factory-id>
 ```
 
-This creates a Notion database with:
-
-- **State** column — operational states: Queue / In Progress / Feedback / Done / Blocked / Failed
-- **Status** column — step labels (e.g. `📋 plan`, `💻 implement`), auto-derived from the workflow
-
-Remind the user to **share the database with the "NotionFlow" integration** in Notion (click `...` → "Connect to" → select "NotionFlow").
+Remind the user to **share the database with the "NotionFlow" integration** in Notion (click `...` → "Connect to" → "NotionFlow").
 
 ## Phase 6 — End-to-End Test
 
-Run a complete smoke test through every step of the factory:
-
 ```bash
 # Create a test task in Queue state
-npx notionflow integrations notion create-task --board <factory> --title "Test: <short description>" --workflow <factory> --status queue
+npx notionflow integrations notion create-task \
+  --board <factory-id> --title "Test: <short description>" \
+  --factory <factory-id> --status queue
 
 # Run it
-npx notionflow integrations notion sync --board <factory> --run
+npx notionflow tick
 ```
 
-Watch the output. Each step should print `step <id> via <executor>: done`. The Notion page should show State advancing from "In Progress" through each step's Status label to "Done".
+Watch the output. Each state should transition and log to Notion.
 
 ### Testing human feedback
 
-If your factory has steps that can output `STATUS: feedback`:
+If a factory state returns `status: "feedback"`:
 
-1. Create a task with an ambiguous or intentionally vague title so the step asks for clarification
-2. Run `integrations notion sync --board <factory> --run`
-3. The step outputs `STATUS: feedback` — task pauses, Notion State becomes "Feedback" (purple)
-4. Open the Notion page — you'll see a comment posted with the question and a "💬 Feedback needed" callout
+1. Create a task with an ambiguous or vague title
+2. Run `npx notionflow tick`
+3. The state returns `status: "feedback"` — task pauses, Notion State becomes "Feedback"
+4. Open the Notion page — a comment is posted with the question
 5. **Reply to the comment** in Notion (no page editing, no state change needed)
-6. Run `integrations notion sync --board <factory> --run` again
-7. Tick detects the new comment, injects it as `{{human_feedback}}`, and resumes automatically
+6. Run `npx notionflow tick` again — detects the reply, resumes from where it paused
 
-### Testing failure recovery
+### Testing retry/failure
 
-1. Edit an executor to temporarily output `STATUS: failed` at the top (before the real command runs)
-2. Run the task — it should reach "Failed" state in Notion
-3. Revert the executor
-4. Set State → Queue in Notion, run sync again — confirms tasks restart cleanly
+1. Temporarily make an agent function return `{ status: "failed", message: "forced fail" }`
+2. Run `npx notionflow tick` — state retries up to `retries.max`, then routes via `on.failed`
+3. Revert the agent, reset the Notion State to Queue, run `tick` again
 
 ## Phase 7 — Verify
 
 ```bash
-npx notionflow executor list
-npx notionflow workflow list
-npx notionflow executor describe --id <factory>_<first-role>
+npx notionflow factory list
+npx notionflow board list
+npx notionflow doctor
 ```
 
 ## CLI Cheat Sheet
 
 ```bash
-# Check what's registered
-npx notionflow executor list
-npx notionflow workflow list
-npx notionflow board list
-npx notionflow doctor
+# Manage factories
+npx notionflow factory create --id <id>
+npx notionflow factory install --path <file.ts>
+npx notionflow factory list
 
 # Create and run tasks
-npx notionflow integrations notion create-task --board <id> --title "..." --workflow <id> --status queue
-npx notionflow integrations notion sync --board <id> --run
+npx notionflow integrations notion create-task \
+  --board <id> --title "..." --factory <id> --status queue
+npx notionflow tick
 
 # Run a specific task directly (bypasses sync)
 npx notionflow run --task <notion-page-id>
 
-# Re-install an executor after editing it
-npx notionflow executor install --path ~/.config/notionflow/agents/<id> --id <id>
-
-# Re-install a workflow after editing its YAML
-npx notionflow workflow install --path ~/.config/notionflow/workflows/<id>.yaml
+# Check setup
+npx notionflow doctor
+npx notionflow board list
 ```
 
 ## Modifying Later
 
-- **Swap a command:** Edit `~/.config/notionflow/agents/<factory>_<role>`. Change the command line. No re-registration needed — the file is read on every execution.
-- **Add a role:** Create a new executor, register it, add a step to the workflow YAML, re-install the workflow.
-- **Change agent behaviour:** Configure the underlying agent directly (OpenClaw: `openclaw agents`, Claude: its own config). NotionFlow only routes the prompt.
-- **Change the prompt:** Edit `~/.config/notionflow/workflows/<factory>.yaml` and re-install the workflow.
+- **Edit logic:** Open the `.ts` factory file, change the inline agent function, re-install with `factory install --path <file.ts>`.
+- **Add a state:** Add the state to `states`, wire up `on` maps in affected states, re-install.
+- **Change routing:** Update `select` or `orchestrate.agent` return value, update `on` map, re-install.
 
 ## Common Gotchas
 
-**`--add-dir` eats the prompt**
-`claude --add-dir "$DIR" "$PROMPT"` — Claude's parser treats `$PROMPT` as a second `--add-dir` argument. Fix: always use `--` before `"$PROMPT"` when there are flags before it.
+**Cross-file runtime imports are rejected**
+Agent functions (`agent`, `select`, guard functions) must be defined in the same factory file. Importing them from another module causes a load-time validation error. Shared helpers declared in the same file are fine.
 
-**Unresolved `{{variables}}` render as empty**
-If `{{plan_plan}}` is empty in the next step's prompt, the prior step didn't output a `PLAN:` line, or the key was different (e.g. `Plan:` with capital P). Check `parseKeyValues` only matches `KEY: value` (letter start, colon, space, value).
+**`data` returned by agents is merged into `ctx`**
+Whatever you return in `data` is shallow-merged into `ctx` for subsequent states. Later states can read `ctx.myKey` if a prior state returned `data: { myKey: "..." }`.
 
-**Notion State vs Status**
+**Loop `body` must match `on.continue` target**
+`loop.body` must equal the state ID in `on.continue`. The runtime validates this at load time.
 
-- **State** = operational lifecycle (Queue → In Progress → Feedback → Done / Blocked / Failed)
-- **Status** = which step is currently running (set by NotionFlow, matches step icons)
-  Never manually set Status — NotionFlow controls it.
+**Feedback pause resumes on Notion comment reply**
+After a state returns `status: "feedback"`, the task only resumes when a Notion comment reply arrives (newer than when the state paused). Only replies — not edits to the agent's original comment — are detected.
 
-**Task stays in Feedback**
-If a task stays in Feedback after you reply, the comment was posted before `waiting_since` (i.e. before the agent paused). Only comments newer than when the task entered Feedback state are picked up. Check that your reply is a fresh comment, not an edit to the agent's original comment.
-
-**`tick` with `--board` produces no output**
-Use `integrations notion sync --board <id> --run` instead of `tick --board <id>`. The sync command is more reliable for board-scoped operations.
+**`action` states require both `on.done` and `on.failed`**
+Both routes must be declared. The runtime rejects factories missing either route at load time.
