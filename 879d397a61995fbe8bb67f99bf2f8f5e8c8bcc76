@@ -1,0 +1,44 @@
+vitest.config.ts
+  e802d78857656e00 1-7
+vitest.e2e.config.ts
+  e802d78857656e00 1-9
+package.json
+  e802d78857656e00 11
+e2e/factory-verification.test.ts
+  e802d78857656e00 2-5,7-11,14-46,48-80,82-89,92-111,113-125,127-131,133-136,138-141,143,145-158,160,162-166,168-172,174-177,179-185,187-192,194-203,205-220,222-227,229-236,238-263,265-295,297-302,304-308,310-313,315-317,319-323,325-335,337-338,340-341,343-351,354-355,357-363,365-370,372-376,378-381,383-386,388-396,398-404,406-419,421-425,427-428,430-434,436-444,446-447,449,451-455,457-467,469-470,472-473,475-477,479-487,490-491,493-499,501-511,513-514,516-517,519-527,530,532,534-540,542-547,549-553,555-556,558,560-562,564-566,568-569,571-579,581-582,584-585
+tsconfig.json
+  e802d78857656e00 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "879d397a61995fbe8bb67f99bf2f8f5e8c8bcc76",
+  "prompts": {
+    "8a9ef2c7c575cef9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c978e0ae-f1ba-48fe-a4c9-40084e42ff00",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 921,
+      "total_deletions": 0,
+      "accepted_lines": 921,
+      "overriden_lines": 0
+    },
+    "e802d78857656e00": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "74664fc1-c1b2-41c7-aba2-1da54e390d57",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 476,
+      "total_deletions": 11,
+      "accepted_lines": 527,
+      "overriden_lines": 35
+    }
+  }
+}
