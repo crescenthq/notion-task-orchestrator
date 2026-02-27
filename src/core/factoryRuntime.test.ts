@@ -3,6 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { replayTransitionEvents } from "./transitionEvents";
 
 const homes: string[] = [];
 const originalHome = process.env.HOME;
@@ -104,6 +105,7 @@ describe("factoryRuntime", () => {
       "route->done",
     ]);
     expect(events[1]?.event).toBe("matched");
+    expect(replayTransitionEvents(events)).toBe("done");
   });
 
   it("persists feedback pause state and resumes from persisted state/context", async () => {
@@ -506,9 +508,12 @@ describe("factoryRuntime", () => {
     expect(doneCtx.attempts).toBe(3);
 
     const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, updatedTask!.id));
-    expect(events).toHaveLength(1);
-    expect(events[0]?.event).toBe("done");
-    expect(events[0]?.attempt).toBe(3);
+    expect(events).toHaveLength(3);
+    expect(events.map((event) => `${event.fromStateId}->${event.toStateId}:${event.reason}:${event.attempt}`)).toEqual([
+      "work->work:action.attempt.failed:1",
+      "work->work:action.attempt.failed:2",
+      "work->done:action.done:3",
+    ]);
   });
 
   it("routes to configured failed target when retries are exhausted", async () => {
@@ -573,9 +578,10 @@ describe("factoryRuntime", () => {
     expect(updatedTask?.lastError).toContain("hard-fail");
 
     const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, updatedTask!.id));
-    expect(events.map((event) => event.event)).toEqual(["failed"]);
-    expect(events[0]?.reason).toBe("action.failed.exhausted");
-    expect(events[0]?.attempt).toBe(2);
+    expect(events.map((event) => `${event.fromStateId}->${event.toStateId}:${event.reason}:${event.attempt}`)).toEqual([
+      "work->work:action.attempt.failed:1",
+      "work->failed:action.failed.exhausted:2",
+    ]);
   });
 
   it("pauses at maxTransitionsPerTick and resumes on later ticks", async () => {

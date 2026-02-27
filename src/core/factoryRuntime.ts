@@ -6,6 +6,7 @@ import { notionToken } from "../config/env";
 import { paths } from "../config/paths";
 import { loadFactoryFromPath } from "./factory";
 import { boards, runs, tasks, transitionEvents, workflows } from "../db/schema";
+import { parseTransitionEvent, TransitionEventReasonCode } from "./transitionEvents";
 import {
   notionAppendTaskPageLog,
   notionGetPage,
@@ -478,11 +479,11 @@ export async function runFactoryTaskByExternalId(
     fromStateId: string,
     toStateId: string,
     event: string,
-    reason: string,
+    reason: TransitionEventReasonCode,
     attempt: number,
     loopIteration: number,
   ): Promise<void> => {
-    await db.insert(transitionEvents).values({
+    const record = parseTransitionEvent({
       id: crypto.randomUUID(),
       runId,
       tickId,
@@ -491,10 +492,11 @@ export async function runFactoryTaskByExternalId(
       toStateId,
       event,
       reason,
-      attempt,
+      attempt: Math.max(0, Math.floor(attempt)),
       loopIteration: Math.max(0, Math.floor(loopIteration)),
       timestamp: nowIso(),
     });
+    await db.insert(transitionEvents).values(record);
   };
 
   await db
@@ -575,7 +577,7 @@ export async function runFactoryTaskByExternalId(
 
     let event = "";
     let nextStateId: string | undefined;
-    let reason = "";
+    let reason: TransitionEventReasonCode | null = null;
     let feedbackMessage: string | undefined;
     let transitionAttempt = 0;
     let transitionLoopIteration = 0;
@@ -610,7 +612,7 @@ export async function runFactoryTaskByExternalId(
           if (result.status !== "failed") {
             ctx = clearRetryAttempt(ctx, currentStateId);
             event = result.status;
-            reason = `action.${event}`;
+            reason = `action.${event}` as TransitionEventReasonCode;
             nextStateId = state.on[event];
             transitionAttempt = attempt;
             break;
@@ -629,6 +631,15 @@ export async function runFactoryTaskByExternalId(
             transitionAttempt = attempt;
             break;
           }
+
+          await persistTransition(
+            currentStateId,
+            currentStateId,
+            "failed",
+            "action.attempt.failed",
+            attempt,
+            0,
+          );
 
           await syncNotionLog(
             `Retrying state: ${currentStateId}`,
@@ -664,6 +675,15 @@ export async function runFactoryTaskByExternalId(
             transitionAttempt = attempt;
             break;
           }
+
+          await persistTransition(
+            currentStateId,
+            currentStateId,
+            "failed",
+            "action.attempt.error",
+            attempt,
+            0,
+          );
 
           await syncNotionLog(
             `Retrying state: ${currentStateId}`,
@@ -800,12 +820,16 @@ export async function runFactoryTaskByExternalId(
       await failRun("Encountered unsupported state type in runtime dispatcher");
     }
 
-    if (!event || !reason) {
+    if (!event) {
+      await failRun(`State \`${currentStateId}\` did not emit a valid transition event`);
+    }
+    if (reason === null) {
       await failRun(`State \`${currentStateId}\` did not emit a valid transition event`);
     }
     if (!nextStateId) {
       await failRun(`State \`${currentStateId}\` emitted event \`${event}\` with no matching transition`);
     }
+    const resolvedReason: TransitionEventReasonCode = reason!;
     const resolvedNextStateId: string =
       nextStateId ?? (await failRun(`State \`${currentStateId}\` missing next transition target`));
     if (!definition.states[resolvedNextStateId]) {
@@ -816,7 +840,7 @@ export async function runFactoryTaskByExternalId(
       currentStateId,
       resolvedNextStateId,
       event,
-      reason,
+      resolvedReason,
       Math.max(0, transitionAttempt),
       Math.max(0, transitionLoopIteration),
     );

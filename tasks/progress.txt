@@ -77,3 +77,10 @@
 - Added troubleshooting section for Notion auth/config, queued tasks not running, feedback resume behavior, lease contention, tick budget pauses, stale sync state, and imported runtime hook rejection.
 - Added `tasks/factory-dsl-v0-spec.md` documenting v0 DSL contract (module shape, state schemas, transition model, runtime inputs, tick safety, and transition event journal fields).
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-011: Transition event schema + replay harness
+- Added `src/core/transitionEvents.ts` with a strict transition-event parser and explicit reason-code enum (`action.*`, `orchestrate.*`, `loop.*`) enforcing reason/event pairing and required field validation at write/replay time.
+- Updated `src/core/factoryRuntime.ts` transition persistence to validate every event before insert and added side-effect attempt journaling for retried action failures (`action.attempt.failed` / `action.attempt.error`) using same-state transition events.
+- Added reusable replay harness (`replayTransitionEvents`) and wired live verification (`tasks/scripts/run-factory-verification.ts`) to consume it instead of local replay logic.
+- Expanded runtime assertions in `src/core/factoryRuntime.test.ts` for retry-attempt event persistence and replay terminal-state equivalence; added focused unit coverage in `src/core/transitionEvents.test.ts`.
+- Verified with `npm run check` and `npm test`.

@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { nowIso, openApp } from "../../src/app/context";
 import { notionToken } from "../../src/config/env";
+import { replayTransitionEvents } from "../../src/core/transitionEvents";
 import { runs, tasks, transitionEvents } from "../../src/db/schema";
 import { notionPostComment, notionAppendTaskPageLog, notionUpdateTaskPageState } from "../../src/services/notion";
 
@@ -74,32 +75,6 @@ async function execCli(args: string[]): Promise<void> {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function replayTerminalState(events: TransitionEventRow[]): string | null {
-  if (events.length === 0) return null;
-  let current = events[0]?.fromStateId ?? null;
-  if (!current) return null;
-  let previousEvent: TransitionEventRow | null = null;
-
-  for (const event of events) {
-    if (event.fromStateId !== current) {
-      const resumedFromFeedback = previousEvent?.event === "feedback";
-      if (!resumedFromFeedback) {
-        throw new Error(
-          `Replay mismatch for event ${event.id}: expected fromState=${current}, got ${event.fromStateId}`,
-        );
-      }
-      current = event.fromStateId;
-    }
-    if (!event.tickId || !event.event || !event.reason || !event.timestamp) {
-      throw new Error(`Transition event ${event.id} is missing required replay fields`);
-    }
-    current = event.toStateId;
-    previousEvent = event;
-  }
-
-  return current;
 }
 
 async function createTaskAndReadNewExternalId(
@@ -240,7 +215,7 @@ function summarizeScenario(
   events: TransitionEventRow[],
   notes: string[],
 ): ScenarioArtifact {
-  const replayState = replayTerminalState(events);
+  const replayState = replayTransitionEvents(events);
   if (replayState && ["done", "failed", "blocked", "feedback"].includes(task.state) && replayState !== task.state) {
     throw new Error(
       `Scenario ${scenario} replay terminal state mismatch: replay=${replayState} task.state=${task.state}`,
