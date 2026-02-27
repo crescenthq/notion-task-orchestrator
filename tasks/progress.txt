@@ -61,3 +61,10 @@
 - Wired tick/run CLI plumbing to pass budget and lease controls: updated `src/commands/tick.ts`, `src/commands/run.ts`, and `src/commands/notion.ts`.
 - Added runtime regression tests in `src/core/factoryRuntime.test.ts` for (1) bounded tick pause/resume across multiple ticks and (2) strict lease rejection under active competing lease.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-008: End-to-end live Notion verification suite
+- Added deterministic TypeScript live-verification factory fixtures in `tasks/factories/` for happy path, feedback pause/resume, retry/failure, bounded loop, and budgeted resume/replay scenarios.
+- Added `tasks/scripts/run-factory-verification.ts` to automate live Notion verification: installs fixture factories, creates scenario tasks, executes runtime via CLI, validates expected outcomes, and writes timestamped verification artifacts.
+- Added deterministic replay consistency validation against `transition_events` in the runner, including feedback-resume discontinuity handling and strict required-field checks.
+- Updated `tasks/factory-agent-verification.md` with fixture inventory, automated runner usage, feedback-mode controls, artifact location, and refreshed scenario expectation/observation template.
+- Ran live verification with configured Notion credentials; all scenarios passed and produced artifact `tasks/artifacts/factory-live-verification-20260227-015834.json`.
