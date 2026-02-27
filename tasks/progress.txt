@@ -37,3 +37,11 @@
 - Updated feedback requeue handling in `src/commands/notion.ts` to clear `waitingSince` on resume enqueue, update Notion state back to `Queue`, and append a Notion log callout for feedback-received resume events.
 - Added runtime regression coverage in `src/core/factoryRuntime.test.ts` for explicit feedback resume override (`resume: "<stateId>"`) to verify resume starts from override target.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-006: Loop orchestration (v1 bounded)
+- Implemented runtime `loop` state execution in `src/core/factoryRuntime.ts` with deterministic `continue`, `done`, and `exhausted` event emission routed through the loop state's `on` map.
+- Added persisted loop counter context (`__nf_loop_iterations`) keyed by loop state ID so iteration progress survives pauses/restarts and is available to guards.
+- Added loop-aware transition journaling: `transition_events.loop_iteration` now records the loop iteration index for loop transitions.
+- Extended `src/core/factorySchema.ts` loop validation to require `on.continue`, `on.done`, and `on.exhausted`, and enforce `on.continue` targets the loop `body`.
+- Added coverage in `src/core/factoryRuntime.test.ts` for (1) loop exit via `done` guard and (2) loop exit via `exhausted` max-iteration cap; added schema validation coverage in `src/core/factorySchema.test.ts`.
+- Verified with `npm run check` and `npm test`.

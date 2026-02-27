@@ -63,6 +63,34 @@ describe("factorySchema", () => {
     ).toThrow(/missing guard/);
   });
 
+  it("requires loop continue/done/exhausted transition routes", () => {
+    expect(() =>
+      factorySchema.parse({
+        id: "loop-events-factory",
+        start: "loop",
+        guards: {
+          qualityReached: () => false,
+        },
+        states: {
+          loop: {
+            type: "loop",
+            body: "work",
+            maxIterations: 2,
+            until: "qualityReached",
+            on: { continue: "work", done: "done" },
+          },
+          work: {
+            type: "action",
+            agent: async () => ({ status: "done" }),
+            on: { done: "loop", failed: "failed" },
+          },
+          done: { type: "done" },
+          failed: { type: "failed" },
+        },
+      }),
+    ).toThrow(/on\.exhausted/);
+  });
+
   it("accepts action retries using retries.max with optional backoff", () => {
     const parsed = factorySchema.parse({
       id: "retry-factory",

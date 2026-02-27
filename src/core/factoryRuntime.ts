@@ -31,6 +31,7 @@ type RetryBackoff = {
 
 const MAX_TRANSITIONS_PER_RUN = 200;
 const RETRY_ATTEMPTS_KEY = "__nf_retry_attempts";
+const LOOP_ITERATIONS_KEY = "__nf_loop_iterations";
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -78,6 +79,24 @@ function clearRetryAttempt(ctx: JsonObject, stateId: string): JsonObject {
   if (!(stateId in attempts)) return ctx;
   delete attempts[stateId];
   return mergeContext(ctx, { [RETRY_ATTEMPTS_KEY]: attempts });
+}
+
+function getLoopIterations(ctx: JsonObject): Record<string, number> {
+  const raw = ctx[LOOP_ITERATIONS_KEY];
+  if (!isRecord(raw)) return {};
+  const parsed: Record<string, number> = {};
+  for (const [stateId, value] of Object.entries(raw)) {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      parsed[stateId] = Math.floor(value);
+    }
+  }
+  return parsed;
+}
+
+function setLoopIteration(ctx: JsonObject, stateId: string, iteration: number): JsonObject {
+  const iterations = getLoopIterations(ctx);
+  iterations[stateId] = Math.max(0, Math.floor(iteration));
+  return mergeContext(ctx, { [LOOP_ITERATIONS_KEY]: iterations });
 }
 
 function backoffDelayMs(backoff: RetryBackoff | undefined, attempt: number): number {
@@ -280,6 +299,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     event: string,
     reason: string,
     attempt: number,
+    loopIteration: number,
   ): Promise<void> => {
     await db.insert(transitionEvents).values({
       id: crypto.randomUUID(),
@@ -291,7 +311,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       event,
       reason,
       attempt,
-      loopIteration: 0,
+      loopIteration: Math.max(0, Math.floor(loopIteration)),
       timestamp: nowIso(),
     });
   };
@@ -350,6 +370,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     let reason = "";
     let feedbackMessage: string | undefined;
     let transitionAttempt = 0;
+    let transitionLoopIteration = 0;
 
     if (state.type === "action") {
       const maxRetries = Math.max(0, state.retries?.max ?? 0);
@@ -495,8 +516,72 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
         await failRun(`Orchestrate state \`${currentStateId}\` must define agent or select`);
       }
       nextStateId = state.on[event];
+    } else if (state.type === "loop") {
+      const currentIteration = Math.max(0, getLoopIterations(ctx)[currentStateId] ?? 0);
+      transitionAttempt = 1;
+      transitionLoopIteration = currentIteration;
+
+      if (state.until) {
+        const namedGuard =
+          typeof state.until === "string"
+            ? (definition.guards?.[state.until] as ((input: unknown) => unknown) | undefined)
+            : undefined;
+        const guardPassed =
+          typeof state.until === "string"
+            ? Boolean(
+                namedGuard?.({
+                  task: {
+                    id: task.externalTaskId,
+                    title: taskTitle,
+                    prompt: taskPrompt,
+                    context: taskContext,
+                  },
+                  ctx,
+                  stateId: currentStateId,
+                  runId,
+                  tickId,
+                  iteration: currentIteration,
+                }),
+              )
+            : Boolean(
+                await (state.until as (input: unknown) => unknown)({
+                  task: {
+                    id: task.externalTaskId,
+                    title: taskTitle,
+                    prompt: taskPrompt,
+                    context: taskContext,
+                  },
+                  ctx,
+                  stateId: currentStateId,
+                  runId,
+                  tickId,
+                  iteration: currentIteration,
+                }),
+              );
+
+        if (guardPassed) {
+          event = "done";
+          reason = "loop.done";
+          nextStateId = state.on.done;
+        }
+      }
+
+      if (!event) {
+        if (currentIteration >= state.maxIterations) {
+          event = "exhausted";
+          reason = "loop.exhausted";
+          nextStateId = state.on.exhausted;
+        } else {
+          const nextIteration = currentIteration + 1;
+          ctx = setLoopIteration(ctx, currentStateId, nextIteration);
+          event = "continue";
+          reason = "loop.continue";
+          nextStateId = state.on.continue;
+          transitionLoopIteration = nextIteration;
+        }
+      }
     } else {
-      await failRun(`State type \`${state.type}\` is not supported by runtime yet`);
+      await failRun("Encountered unsupported state type in runtime dispatcher");
     }
 
     if (!event || !reason) {
@@ -511,7 +596,14 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       await failRun(`State \`${currentStateId}\` transition target \`${resolvedNextStateId}\` does not exist`);
     }
 
-    await persistTransition(currentStateId, resolvedNextStateId, event, reason, Math.max(0, transitionAttempt));
+    await persistTransition(
+      currentStateId,
+      resolvedNextStateId,
+      event,
+      reason,
+      Math.max(0, transitionAttempt),
+      Math.max(0, transitionLoopIteration),
+    );
     transitions += 1;
 
     if (definition.states[resolvedNextStateId]?.type === "feedback") {

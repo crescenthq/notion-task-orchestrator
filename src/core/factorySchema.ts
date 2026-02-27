@@ -136,6 +136,24 @@ export const factorySchema = z.object({
     }
 
     if (state.type === "loop") {
+      for (const requiredEvent of ["continue", "done", "exhausted"]) {
+        if (!state.on[requiredEvent]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Loop state \`${stateId}\` must define \`on.${requiredEvent}\` transition`,
+            path: ["states", stateId, "on", requiredEvent],
+          });
+        }
+      }
+
+      if (state.on.continue && state.on.continue !== state.body) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Loop state \`${stateId}\` must route \`on.continue\` to body state \`${state.body}\``,
+          path: ["states", stateId, "on", "continue"],
+        });
+      }
+
       if (!stateIds.has(state.body)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

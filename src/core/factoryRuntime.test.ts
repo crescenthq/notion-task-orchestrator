@@ -280,6 +280,163 @@ describe("factoryRuntime", () => {
     ]);
   });
 
+  it("executes bounded loop until done guard is satisfied", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-loop-done-factory";
+    const externalTaskId = "task-loop-done-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
+        `const loopDone = ({ ctx }) => Number(ctx.iterations ?? 0) >= 2;\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "loop_gate",\n` +
+        `  context: { iterations: 0 },\n` +
+        `  guards: { loopDone },\n` +
+        `  states: {\n` +
+        `    loop_gate: { type: "loop", body: "work", maxIterations: 5, until: "loopDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
+        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const [updatedTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(updatedTask?.state).toBe("done");
+    const doneCtx = JSON.parse(updatedTask?.stepVarsJson ?? "{}") as Record<string, unknown>;
+    expect(doneCtx.iterations).toBe(2);
+
+    const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, updatedTask!.id));
+    expect(events.map((event) => `${event.fromStateId}->${event.toStateId}:${event.event}`)).toEqual([
+      "loop_gate->work:continue",
+      "work->loop_gate:done",
+      "loop_gate->work:continue",
+      "work->loop_gate:done",
+      "loop_gate->done:done",
+    ]);
+
+    const loopEvents = events.filter((event) => event.fromStateId === "loop_gate");
+    expect(loopEvents.map((event) => event.loopIteration)).toEqual([1, 2, 2]);
+  });
+
+  it("exits bounded loop with exhausted route when max iterations reached", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-loop-exhausted-factory";
+    const externalTaskId = "task-loop-exhausted-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
+        `const neverDone = () => false;\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "loop_gate",\n` +
+        `  context: { iterations: 0 },\n` +
+        `  guards: { neverDone },\n` +
+        `  states: {\n` +
+        `    loop_gate: { type: "loop", body: "work", maxIterations: 2, until: "neverDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
+        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const [updatedTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(updatedTask?.state).toBe("failed");
+    const doneCtx = JSON.parse(updatedTask?.stepVarsJson ?? "{}") as Record<string, unknown>;
+    expect(doneCtx.iterations).toBe(2);
+
+    const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, updatedTask!.id));
+    expect(events.map((event) => `${event.fromStateId}->${event.toStateId}:${event.event}`)).toEqual([
+      "loop_gate->work:continue",
+      "work->loop_gate:done",
+      "loop_gate->work:continue",
+      "work->loop_gate:done",
+      "loop_gate->failed:exhausted",
+    ]);
+
+    const exhausted = events.find((event) => event.event === "exhausted");
+    expect(exhausted?.loopIteration).toBe(2);
+    expect(exhausted?.reason).toBe("loop.exhausted");
+  });
+
   it("retries failed action states and succeeds before exhaustion", async () => {
     const { db, paths, runtime, schema, timestamp } = await setupRuntime();
     const factoryId = "runtime-retry-success-factory";
