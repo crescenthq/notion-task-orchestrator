@@ -1,17 +1,64 @@
 import { copyFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { defineCommand } from "citty";
+import { eq } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
+import { notionToken, notionWorkspacePageId } from "../config/env";
 import { paths } from "../config/paths";
 import { loadFactoryFromPath, serializeFactoryDefinition } from "../core/factory";
-import { workflows } from "../db/schema";
-import { maybeProvisionNotionBoard } from "./workflow";
+import { boards, workflows } from "../db/schema";
+import { notionCreateBoardDataSource, notionFindPageByTitle, notionGetDataSource } from "../services/notion";
 
 function prettifyBoardId(id: string): string {
   return id
     .split(/[-_]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+async function maybeProvisionNotionBoard(boardId: string, title: string, parentPageIdArg?: string): Promise<void> {
+  const token = notionToken();
+  if (!token) {
+    console.log("[warn] skipping Notion board provisioning (NOTION_API_TOKEN missing)");
+    return;
+  }
+
+  const { db } = await openApp();
+  const [existingBoard] = await db.select().from(boards).where(eq(boards.id, boardId));
+  if (existingBoard?.adapter === "notion") {
+    try {
+      await notionGetDataSource(token, existingBoard.externalId);
+      console.log(`Notion board already linked: ${boardId} -> ${existingBoard.externalId}`);
+      return;
+    } catch {
+      console.log(`[warn] existing board link is invalid; reprovisioning ${boardId}`);
+    }
+  }
+
+  const parentPageId =
+    parentPageIdArg ?? notionWorkspacePageId() ?? (await notionFindPageByTitle(token, "NotionFlow"));
+  if (!parentPageId) {
+    console.log("[warn] skipping Notion board provisioning (set NOTION_WORKSPACE_PAGE_ID or pass --parent-page)");
+    return;
+  }
+
+  const created = await notionCreateBoardDataSource(token, parentPageId, title, []);
+  const timestamp = nowIso();
+  await db
+    .insert(boards)
+    .values({
+      id: boardId,
+      adapter: "notion",
+      externalId: created.dataSourceId,
+      configJson: JSON.stringify({ name: title, databaseId: created.databaseId, parentPageId, url: created.url }),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .onConflictDoUpdate({
+      target: boards.id,
+      set: { externalId: created.dataSourceId, updatedAt: timestamp },
+    });
+  console.log(`Notion board provisioned: ${boardId} -> ${created.url}`);
 }
 
 async function saveFactoryDefinition(inputPath: string): Promise<{ id: string; sourcePath: string }> {

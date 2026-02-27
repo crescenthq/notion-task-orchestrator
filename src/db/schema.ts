@@ -9,15 +9,6 @@ export const boards = sqliteTable("boards", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const executors = sqliteTable("executors", {
-  id: text("id").primaryKey(),
-  commandPath: text("command_path").notNull(),
-  defaultTimeoutSeconds: integer("default_timeout_seconds"),
-  defaultRetries: integer("default_retries"),
-  metadataJson: text("metadata_json").notNull().default("{}"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
 
 export const workflows = sqliteTable("workflows", {
   id: text("id").primaryKey(),
@@ -58,18 +49,6 @@ export const runs = sqliteTable("runs", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const stepResults = sqliteTable("step_results", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").notNull(),
-  stepId: text("step_id").notNull(),
-  executorId: text("executor_id").notNull(),
-  attempt: integer("attempt").notNull(),
-  status: text("status").notNull(),
-  outputText: text("output_text").notNull(),
-  outputKvJson: text("output_kv_json"),
-  startedAt: text("started_at").notNull(),
-  finishedAt: text("finished_at").notNull(),
-});
 
 export const inboxEvents = sqliteTable("inbox_events", {
   id: text("id").primaryKey(),

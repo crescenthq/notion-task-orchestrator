@@ -1,11 +1,9 @@
 import { defineCommand } from "citty";
 import { and, eq, sql } from "drizzle-orm";
-import YAML from "yaml";
 import { nowIso, openApp } from "../app/context";
 import { runTaskByExternalId } from "./run";
 import { notionToken, notionWorkspacePageId } from "../config/env";
-import { workflowSchema, workflowStepIcon } from "../core/workflow";
-import { boards, tasks, workflows } from "../db/schema";
+import { boards, tasks } from "../db/schema";
 import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
@@ -212,23 +210,7 @@ export const notionCmd = defineCommand({
 
         const title = String(args.title ?? boardId.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "));
 
-        // Derive step-level status options from the matching workflow (board ID = workflow ID by convention)
-        const { db: dbForWorkflow } = await openApp();
-        const [workflowRow] = await dbForWorkflow.select().from(workflows).where(eq(workflows.id, boardId));
-        const stepStatusOptions: Array<{ name: string; color: string }> = [];
-        const STEP_COLORS = ["purple", "pink", "brown", "default", "blue", "green", "yellow", "orange", "red", "gray"];
-        if (workflowRow) {
-          const workflow = workflowSchema.parse(YAML.parse(workflowRow.definitionYaml));
-          workflow.steps.forEach((step, i) => {
-            const icon = workflowStepIcon(step);
-            stepStatusOptions.push({
-              name: icon ? `${icon} ${step.id}` : step.id,
-              color: STEP_COLORS[i % STEP_COLORS.length] ?? "default",
-            });
-          });
-        }
-
-        const board = await notionCreateBoardDataSource(token, parentPageId, title, stepStatusOptions);
+        const board = await notionCreateBoardDataSource(token, parentPageId, title, []);
         const { db } = await openApp();
         const now = nowIso();
         await db

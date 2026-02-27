@@ -29,15 +29,6 @@ CREATE TABLE IF NOT EXISTS boards (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS executors (
-  id TEXT PRIMARY KEY,
-  command_path TEXT NOT NULL,
-  default_timeout_seconds INTEGER,
-  default_retries INTEGER,
-  metadata_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS workflows (
   id TEXT PRIMARY KEY,
@@ -82,20 +73,6 @@ CREATE TABLE IF NOT EXISTS runs (
   FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
 
-CREATE TABLE IF NOT EXISTS step_results (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  step_id TEXT NOT NULL,
-  executor_id TEXT NOT NULL,
-  attempt INTEGER NOT NULL,
-  status TEXT NOT NULL,
-  output_text TEXT NOT NULL,
-  output_kv_json TEXT,
-  started_at TEXT NOT NULL,
-  finished_at TEXT NOT NULL,
-  FOREIGN KEY(run_id) REFERENCES runs(id),
-  FOREIGN KEY(executor_id) REFERENCES executors(id)
-);
 
 CREATE TABLE IF NOT EXISTS inbox_events (
   id TEXT PRIMARY KEY,
