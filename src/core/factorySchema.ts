@@ -2,9 +2,32 @@ import { z } from "zod";
 
 const transitionMapSchema = z.record(z.string().min(1), z.string().min(1));
 
+const retryBackoffSchema = z
+  .object({
+    strategy: z.enum(["fixed", "exponential"]).optional(),
+    ms: z.number().int().min(0),
+    maxMs: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const retrySchema = z.object({
-  maxRetries: z.number().int().min(0),
-}).strict();
+  max: z.number().int().min(0).optional(),
+  maxRetries: z.number().int().min(0).optional(),
+  backoff: retryBackoffSchema.optional(),
+}).strict().superRefine((retry, ctx) => {
+  const hasMax = typeof retry.max === "number";
+  const hasLegacyMax = typeof retry.maxRetries === "number";
+  if (hasMax === hasLegacyMax) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Retry config must define exactly one of `max` or `maxRetries`",
+      path: ["max"],
+    });
+  }
+}).transform((retry) => ({
+  max: retry.max ?? retry.maxRetries ?? 0,
+  backoff: retry.backoff,
+}));
 
 const actionStateSchema = z.object({
   type: z.literal("action"),

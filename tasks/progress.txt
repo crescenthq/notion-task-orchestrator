@@ -22,3 +22,12 @@
 - Updated `src/commands/board.ts` cleanup to delete transition event rows when removing a board.
 - Added `src/core/factoryRuntime.test.ts` covering (1) sequence + conditional orchestration to terminal `done`, and (2) persisted feedback pause/resume from stored state/context.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-004: Retry and failure policy engine
+- Updated `src/core/factorySchema.ts` retry config to support canonical `retries.max` plus optional `backoff` strategy, while keeping `maxRetries` as a compatibility alias.
+- Added schema validation/tests in `src/core/factorySchema.test.ts` for valid `retries.max` + backoff and invalid retry configs missing max semantics.
+- Implemented action retry execution in `src/core/factoryRuntime.ts` with per-state persisted attempt counters (`__nf_retry_attempts`) in run context.
+- Added retry backoff handling (`fixed`/`exponential`) and Notion/local retry logging for failed attempts prior to exhaustion.
+- Routed exhausted retries via configured `on.failed` target with transition reason `action.failed.exhausted`, persisted `last_error`, and transition-event attempt metadata.
+- Added runtime tests in `src/core/factoryRuntime.test.ts` for (1) retry-then-success path and (2) retry exhaustion to failure target.
+- Verified with `npm run check` and `npm test`.

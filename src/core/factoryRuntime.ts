@@ -23,7 +23,14 @@ type AgentResult = {
   message?: string;
 };
 
+type RetryBackoff = {
+  strategy?: "fixed" | "exponential";
+  ms: number;
+  maxMs?: number;
+};
+
 const MAX_TRANSITIONS_PER_RUN = 200;
+const RETRY_ATTEMPTS_KEY = "__nf_retry_attempts";
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -46,6 +53,49 @@ function normalizeAgentResult(value: unknown, stateId: string): AgentResult {
 
 function mergeContext(base: JsonObject, patch?: JsonObject): JsonObject {
   return patch ? { ...base, ...patch } : base;
+}
+
+function getRetryAttempts(ctx: JsonObject): Record<string, number> {
+  const raw = ctx[RETRY_ATTEMPTS_KEY];
+  if (!isRecord(raw)) return {};
+  const parsed: Record<string, number> = {};
+  for (const [stateId, value] of Object.entries(raw)) {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      parsed[stateId] = Math.floor(value);
+    }
+  }
+  return parsed;
+}
+
+function setRetryAttempt(ctx: JsonObject, stateId: string, attempt: number): JsonObject {
+  const attempts = getRetryAttempts(ctx);
+  attempts[stateId] = Math.max(0, Math.floor(attempt));
+  return mergeContext(ctx, { [RETRY_ATTEMPTS_KEY]: attempts });
+}
+
+function clearRetryAttempt(ctx: JsonObject, stateId: string): JsonObject {
+  const attempts = getRetryAttempts(ctx);
+  if (!(stateId in attempts)) return ctx;
+  delete attempts[stateId];
+  return mergeContext(ctx, { [RETRY_ATTEMPTS_KEY]: attempts });
+}
+
+function backoffDelayMs(backoff: RetryBackoff | undefined, attempt: number): number {
+  if (!backoff) return 0;
+  const baseMs = Math.max(0, Math.floor(backoff.ms));
+  if (baseMs === 0) return 0;
+  const strategy = backoff.strategy ?? "fixed";
+  const computed =
+    strategy === "exponential"
+      ? baseMs * Math.max(1, 2 ** Math.max(0, attempt - 1))
+      : baseMs;
+  const capped = typeof backoff.maxMs === "number" ? Math.min(computed, Math.max(0, Math.floor(backoff.maxMs))) : computed;
+  return Math.max(0, Math.floor(capped));
+}
+
+async function waitFor(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function resolveInstalledFactoryPath(factoryId: string): Promise<string> {
@@ -219,6 +269,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     toStateId: string,
     event: string,
     reason: string,
+    attempt: number,
   ): Promise<void> => {
     await db.insert(transitionEvents).values({
       id: crypto.randomUUID(),
@@ -229,7 +280,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       toStateId,
       event,
       reason,
-      attempt: 0,
+      attempt,
       loopIteration: 0,
       timestamp: nowIso(),
     });
@@ -287,28 +338,109 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
     let nextStateId: string | undefined;
     let reason = "";
     let feedbackMessage: string | undefined;
+    let transitionAttempt = 0;
 
     if (state.type === "action") {
-      const result = normalizeAgentResult(
-        await (state.agent as (input: unknown) => unknown)({
-          task: {
-            id: task.externalTaskId,
-            title: taskTitle,
-            prompt: taskPrompt,
-            context: taskContext,
-          },
-          ctx,
-          stateId: currentStateId,
-          runId,
-          tickId,
-        }),
-        currentStateId,
-      );
-      ctx = mergeContext(ctx, result.data);
-      event = result.status;
-      reason = `action.${event}`;
-      feedbackMessage = result.message;
-      nextStateId = state.on[event];
+      const maxRetries = Math.max(0, state.retries?.max ?? 0);
+      let attempt = Math.max(0, getRetryAttempts(ctx)[currentStateId] ?? 0) + 1;
+
+      // Retry loop is internal to a single action state and exits by emitting one routed event.
+      while (true) {
+        try {
+          const result = normalizeAgentResult(
+            await (state.agent as (input: unknown) => unknown)({
+              task: {
+                id: task.externalTaskId,
+                title: taskTitle,
+                prompt: taskPrompt,
+                context: taskContext,
+              },
+              ctx,
+              stateId: currentStateId,
+              runId,
+              tickId,
+              attempt,
+            }),
+            currentStateId,
+          );
+
+          ctx = mergeContext(ctx, result.data);
+          feedbackMessage = result.message;
+
+          if (result.status !== "failed") {
+            ctx = clearRetryAttempt(ctx, currentStateId);
+            event = result.status;
+            reason = `action.${event}`;
+            nextStateId = state.on[event];
+            transitionAttempt = attempt;
+            break;
+          }
+
+          const failureMessage =
+            result.message ??
+            `State \`${currentStateId}\` returned \`failed\` on attempt ${attempt}`;
+          ctx = mergeContext(setRetryAttempt(ctx, currentStateId, attempt), { last_error: failureMessage });
+
+          const canRetry = attempt <= maxRetries;
+          if (!canRetry) {
+            event = "failed";
+            reason = "action.failed.exhausted";
+            nextStateId = state.on.failed;
+            transitionAttempt = attempt;
+            break;
+          }
+
+          await syncNotionLog(
+            `Retrying state: ${currentStateId}`,
+            `Attempt ${attempt}/${maxRetries + 1} failed: ${failureMessage}`,
+          );
+          await db
+            .update(tasks)
+            .set({
+              state: "running",
+              currentStepId: currentStateId,
+              stepVarsJson: JSON.stringify(ctx),
+              updatedAt: nowIso(),
+              lastError: failureMessage,
+            })
+            .where(getTaskSelector(task));
+
+          const delayMs = backoffDelayMs(state.retries?.backoff as RetryBackoff | undefined, attempt);
+          await waitFor(delayMs);
+          attempt += 1;
+        } catch (error) {
+          const failureMessage = error instanceof Error ? error.message : String(error);
+          ctx = mergeContext(setRetryAttempt(ctx, currentStateId, attempt), { last_error: failureMessage });
+          const canRetry = attempt <= maxRetries;
+
+          if (!canRetry) {
+            event = "failed";
+            reason = "action.failed.exhausted";
+            nextStateId = state.on.failed;
+            transitionAttempt = attempt;
+            break;
+          }
+
+          await syncNotionLog(
+            `Retrying state: ${currentStateId}`,
+            `Attempt ${attempt}/${maxRetries + 1} failed with error: ${failureMessage}`,
+          );
+          await db
+            .update(tasks)
+            .set({
+              state: "running",
+              currentStepId: currentStateId,
+              stepVarsJson: JSON.stringify(ctx),
+              updatedAt: nowIso(),
+              lastError: failureMessage,
+            })
+            .where(getTaskSelector(task));
+
+          const delayMs = backoffDelayMs(state.retries?.backoff as RetryBackoff | undefined, attempt);
+          await waitFor(delayMs);
+          attempt += 1;
+        }
+      }
     } else if (state.type === "orchestrate") {
       if (state.agent) {
         const result = normalizeAgentResult(
@@ -331,6 +463,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
         event = typeof routedEvent === "string" && routedEvent.length > 0 ? routedEvent : result.status;
         reason = "orchestrate.agent";
         feedbackMessage = result.message;
+        transitionAttempt = 1;
       } else if (state.select) {
         const selected = await (state.select as (input: unknown) => unknown)({
           task: {
@@ -346,6 +479,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
         });
         event = String(selected);
         reason = "orchestrate.select";
+        transitionAttempt = 1;
       } else {
         await failRun(`Orchestrate state \`${currentStateId}\` must define agent or select`);
       }
@@ -366,7 +500,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       await failRun(`State \`${currentStateId}\` transition target \`${resolvedNextStateId}\` does not exist`);
     }
 
-    await persistTransition(currentStateId, resolvedNextStateId, event, reason);
+    await persistTransition(currentStateId, resolvedNextStateId, event, reason, Math.max(0, transitionAttempt));
     transitions += 1;
 
     if (definition.states[resolvedNextStateId]?.type === "feedback") {

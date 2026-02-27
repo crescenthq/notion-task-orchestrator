@@ -62,4 +62,47 @@ describe("factorySchema", () => {
       }),
     ).toThrow(/missing guard/);
   });
+
+  it("accepts action retries using retries.max with optional backoff", () => {
+    const parsed = factorySchema.parse({
+      id: "retry-factory",
+      start: "start",
+      states: {
+        start: {
+          type: "action",
+          agent: async () => ({ status: "done" }),
+          retries: {
+            max: 2,
+            backoff: { strategy: "exponential", ms: 10, maxMs: 100 },
+          },
+          on: { done: "done", failed: "failed" },
+        },
+        done: { type: "done" },
+        failed: { type: "failed" },
+      },
+    });
+
+    const retries = parsed.states.start.type === "action" ? parsed.states.start.retries : undefined;
+    expect(retries?.max).toBe(2);
+    expect(retries?.backoff?.strategy).toBe("exponential");
+  });
+
+  it("rejects retries configs that omit max/maxRetries", () => {
+    expect(() =>
+      factorySchema.parse({
+        id: "bad-retry-factory",
+        start: "start",
+        states: {
+          start: {
+            type: "action",
+            agent: async () => ({ status: "done" }),
+            retries: { backoff: { ms: 10 } },
+            on: { done: "done", failed: "failed" },
+          },
+          done: { type: "done" },
+          failed: { type: "failed" },
+        },
+      }),
+    ).toThrow(/exactly one of `max` or `maxRetries`/);
+  });
 });
