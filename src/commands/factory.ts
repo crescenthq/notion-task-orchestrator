@@ -1,10 +1,9 @@
-import { copyFile, readFile, writeFile } from "node:fs/promises";
+import { copyFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { defineCommand } from "citty";
-import YAML from "yaml";
-import { openApp } from "../app/context";
+import { nowIso, openApp } from "../app/context";
 import { paths } from "../config/paths";
-import { workflowSchema } from "../core/workflow";
+import { loadFactoryFromPath, serializeFactoryDefinition } from "../core/factory";
 import { workflows } from "../db/schema";
 import { maybeProvisionNotionBoard } from "./workflow";
 
@@ -15,50 +14,49 @@ function prettifyBoardId(id: string): string {
     .join(" ");
 }
 
-async function saveFactoryFile(factoryPath: string): Promise<{ id: string }> {
-  const yaml = await readFile(factoryPath, "utf8");
-  const parsed = workflowSchema.parse(YAML.parse(yaml));
+async function saveFactoryDefinition(inputPath: string): Promise<{ id: string; sourcePath: string }> {
+  const loaded = await loadFactoryFromPath(inputPath);
   const { db } = await openApp();
-  const timestamp = new Date().toISOString();
+  const timestamp = nowIso();
 
   await db
     .insert(workflows)
     .values({
-      id: parsed.id,
+      id: loaded.definition.id,
       version: 1,
-      definitionYaml: yaml,
+      definitionYaml: serializeFactoryDefinition(loaded.definition),
       createdAt: timestamp,
       updatedAt: timestamp,
     })
     .onConflictDoUpdate({
       target: workflows.id,
       set: {
-        definitionYaml: yaml,
+        definitionYaml: serializeFactoryDefinition(loaded.definition),
         updatedAt: timestamp,
       },
     });
 
-  return { id: parsed.id };
+  return { id: loaded.definition.id, sourcePath: loaded.sourcePath };
 }
 
 async function installFactoryFromPath(inputPath: string): Promise<{ id: string; targetPath: string }> {
   await openApp();
-  const sourcePath = path.resolve(inputPath);
-  const yaml = await readFile(sourcePath, "utf8");
-  const parsed = workflowSchema.parse(YAML.parse(yaml));
-  const targetPath = path.join(paths.workflowsDir, `${parsed.id}.yaml`);
+  const loaded = await loadFactoryFromPath(inputPath);
+  const sourcePath = loaded.sourcePath;
+  const extension = path.extname(sourcePath) || ".ts";
+  const targetPath = path.join(paths.workflowsDir, `${loaded.definition.id}${extension}`);
 
   await copyFile(sourcePath, targetPath);
-  await saveFactoryFile(targetPath);
+  await saveFactoryDefinition(targetPath);
 
-  return { id: parsed.id, targetPath };
+  return { id: loaded.definition.id, targetPath };
 }
 
 export const factoryCmd = defineCommand({
   meta: { name: "factory", description: "[advanced] Manage factories" },
   subCommands: {
     install: defineCommand({
-      meta: { name: "install", description: "Install a factory definition from a local file" },
+      meta: { name: "install", description: "Install a TypeScript factory module from a local file" },
       args: {
         path: { type: "string", required: true },
         skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
@@ -78,7 +76,7 @@ export const factoryCmd = defineCommand({
       },
     }),
     create: defineCommand({
-      meta: { name: "create", description: "Create a new factory scaffold" },
+      meta: { name: "create", description: "Create a new TypeScript factory scaffold" },
       args: {
         id: { type: "string", required: true },
         skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
@@ -87,22 +85,10 @@ export const factoryCmd = defineCommand({
       async run({ args }) {
         await openApp();
         const id = String(args.id);
-        const targetPath = path.join(paths.workflowsDir, `${id}.yaml`);
-        const template = `id: ${id}
-name: ${id}
-steps:
-  - id: step1
-    agent: shell
-    prompt: |
-      echo "STATUS: done"
-      echo "RESULT: Replace with your real step"
-    timeout: 120
-    retries: 0
-    on_success: done
-    on_fail: blocked
-`;
+        const targetPath = path.join(paths.workflowsDir, `${id}.ts`);
+        const template = `const doWork = async ({ ctx }) => ({\n  status: \"done\",\n  data: { ...ctx, result: \"ok\" },\n});\n\nexport default {\n  id: \"${id}\",\n  start: \"start\",\n  context: {},\n  states: {\n    start: {\n      type: \"action\",\n      agent: doWork,\n      on: { done: \"done\", failed: \"failed\" },\n    },\n    done: { type: \"done\" },\n    failed: { type: \"failed\" },\n  },\n};\n`;
         await writeFile(targetPath, template, "utf8");
-        await saveFactoryFile(targetPath);
+        await saveFactoryDefinition(targetPath);
 
         console.log(`Factory scaffold created: ${id}`);
         console.log(`Edit: ${targetPath}`);

@@ -4,3 +4,12 @@
 - Updated user-facing command/help text to use `factory` terminology in `setup`, `run`, `tick`, and Notion integration command args (`--factory`).
 - Rewrote README command examples around `factory` operations.
 - Verified with `npm run check` and `npx tsx src/cli.ts factory --help`.
+
+2026-02-27 — TSK-002: Factory definition loader (TypeScript modules)
+- Added `src/core/factorySchema.ts` with TypeScript factory schema validation for state-machine definitions (`action`, `orchestrate`, `loop`, `feedback`, terminal states) and unified `on` transition-map checks.
+- Added `src/core/factory.ts` loader to import factory modules from file paths, validate `export default` factory objects at load time, and emit actionable diagnostics.
+- Enforced runtime function locality checks in loader: imported identifiers cannot be used for runtime hooks (`agent`, `select`, `until`), rejecting cross-file runtime function references.
+- Updated `src/commands/factory.ts` to install TS factory modules, scaffold `.ts` factories, and persist a serialized factory snapshot in the local DB.
+- Added tests in `src/core/factorySchema.test.ts` and `src/core/factory.test.ts` for transition validation, loop-guard validation, loader behavior, and imported-function rejection.
+- Updated `src/cli.test.ts` bootstrap assertion to use `factory list` command surface.
+- Verified with `npm run check` and `npm test`.
