@@ -1,19 +1,19 @@
 import { defineCommand } from "citty";
 import { and, eq, sql } from "drizzle-orm";
-import YAML from "yaml";
 import { nowIso, openApp } from "../app/context";
 import { runTaskByExternalId } from "./run";
 import { notionToken, notionWorkspacePageId } from "../config/env";
-import { workflowSchema, workflowStepIcon } from "../core/workflow";
-import { boards, tasks, workflows } from "../db/schema";
+import { boards, tasks } from "../db/schema";
 import {
   mapTaskStateToNotionStatus,
+  notionAppendTaskPageLog,
   notionCreateBoardDataSource,
   notionCreateTaskPage,
   notionEnsureBoardSchema,
   notionFindPageByTitle,
   notionGetDataSource,
   notionGetNewComments,
+  notionUpdateTaskPageState,
   notionQueryDataSource,
   pageState,
   pageTitle,
@@ -70,8 +70,13 @@ async function upsertTask(
 
 export async function syncNotionBoards(options: {
   boardId?: string;
+  factoryId?: string;
   workflowId?: string;
   runQueued?: boolean;
+  maxTransitionsPerTick?: number;
+  leaseMs?: number;
+  leaseMode?: "strict" | "best-effort";
+  workerId?: string;
 }): Promise<void> {
   const token = notionToken();
   if (!token) throw new Error("NOTION_API_TOKEN is required");
@@ -85,7 +90,7 @@ export async function syncNotionBoards(options: {
   if (notionBoards.length === 0) {
     if (options.boardId) throw new Error(`No Notion board found for: ${options.boardId}`);
     throw new Error(
-      "No Notion boards registered. Use workflow install/create or integrations notion provision-board first",
+      "No Notion boards registered. Use factory install/create or integrations notion provision-board first",
     );
   }
 
@@ -102,7 +107,7 @@ export async function syncNotionBoards(options: {
       for (const page of pages) {
         const notionState = pageState(page) ?? "unknown";
         const localState = localTaskStateFromNotion(notionState);
-        const workflowId = options.workflowId ?? board.id;
+        const workflowId = options.factoryId ?? options.workflowId ?? board.id;
         await upsertTask(board.id, page.id, workflowId, localState);
 
         imported += 1;
@@ -137,8 +142,16 @@ export async function syncNotionBoards(options: {
         await db.update(tasks).set({
           state: "queued",
           stepVarsJson: JSON.stringify(storedVars),
+          waitingSince: null,
           updatedAt: nowIso(),
         }).where(and(eq(tasks.boardId, ft.boardId), eq(tasks.externalTaskId, ft.externalTaskId)));
+        await notionUpdateTaskPageState(token, ft.externalTaskId, "queued");
+        await notionAppendTaskPageLog(
+          token,
+          ft.externalTaskId,
+          "Feedback received",
+          "Human reply detected. Task re-queued for resume.",
+        );
         console.log(`[feedback] task ${ft.externalTaskId} has new comment reply → re-queued`);
         if (options.runQueued) queuedTaskIds.add(ft.externalTaskId);
       } catch (error) {
@@ -156,7 +169,12 @@ export async function syncNotionBoards(options: {
   for (const taskId of queuedTaskIds) {
     console.log(`Running queued task: ${taskId}`);
     try {
-      await runTaskByExternalId(taskId);
+      await runTaskByExternalId(taskId, {
+        maxTransitionsPerTick: options.maxTransitionsPerTick,
+        leaseMs: options.leaseMs,
+        leaseMode: options.leaseMode,
+        workerId: options.workerId,
+      });
     } catch (error) {
       runFailures += 1;
       const message = error instanceof Error ? error.message : String(error);
@@ -192,23 +210,7 @@ export const notionCmd = defineCommand({
 
         const title = String(args.title ?? boardId.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "));
 
-        // Derive step-level status options from the matching workflow (board ID = workflow ID by convention)
-        const { db: dbForWorkflow } = await openApp();
-        const [workflowRow] = await dbForWorkflow.select().from(workflows).where(eq(workflows.id, boardId));
-        const stepStatusOptions: Array<{ name: string; color: string }> = [];
-        const STEP_COLORS = ["purple", "pink", "brown", "default", "blue", "green", "yellow", "orange", "red", "gray"];
-        if (workflowRow) {
-          const workflow = workflowSchema.parse(YAML.parse(workflowRow.definitionYaml));
-          workflow.steps.forEach((step, i) => {
-            const icon = workflowStepIcon(step);
-            stepStatusOptions.push({
-              name: icon ? `${icon} ${step.id}` : step.id,
-              color: STEP_COLORS[i % STEP_COLORS.length] ?? "default",
-            });
-          });
-        }
-
-        const board = await notionCreateBoardDataSource(token, parentPageId, title, stepStatusOptions);
+        const board = await notionCreateBoardDataSource(token, parentPageId, title, []);
         const { db } = await openApp();
         const now = nowIso();
         await db
@@ -249,7 +251,7 @@ export const notionCmd = defineCommand({
       args: {
         board: { type: "string", required: true },
         title: { type: "string", required: true },
-        workflow: { type: "string", required: false },
+        factory: { type: "string", required: false },
         status: { type: "string", required: false },
       },
       async run({ args }) {
@@ -262,7 +264,7 @@ export const notionCmd = defineCommand({
 
         await notionGetDataSource(token, board.externalId);
         const state = String(args.status ?? "queue");
-        const workflowId = args.workflow ? String(args.workflow) : "mixed-default";
+        const workflowId = args.factory ? String(args.factory) : "mixed-default";
         const page = await notionCreateTaskPage(token, board.externalId, {
           title: String(args.title),
           state: localStateToDisplayStatus(state),
@@ -278,13 +280,13 @@ export const notionCmd = defineCommand({
       meta: { name: "sync", description: "Pull tasks from Notion boards" },
       args: {
         board: { type: "string", required: false },
-        workflow: { type: "string", required: false },
+        factory: { type: "string", required: false },
         run: { type: "boolean", required: false },
       },
       async run({ args }) {
         await syncNotionBoards({
           boardId: args.board ? String(args.board) : undefined,
-          workflowId: args.workflow ? String(args.workflow) : undefined,
+          factoryId: args.factory ? String(args.factory) : undefined,
           runQueued: Boolean(args.run),
         });
       },

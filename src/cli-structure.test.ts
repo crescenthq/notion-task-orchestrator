@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import { boardCmd } from "./commands/board";
 import { configCmd } from "./commands/config";
 import { doctorCmd } from "./commands/doctor";
-import { executorCmd } from "./commands/executor";
+import { factoryCmd } from "./commands/factory";
 import { integrationsCmd } from "./commands/integrations";
 import { runCmd } from "./commands/run";
 import { setupCmd } from "./commands/setup";
 import { statusCmd } from "./commands/status";
 import { tickCmd } from "./commands/tick";
-import { workflowCmd } from "./commands/workflow";
 
 function descriptionOf(command: unknown): string {
   const meta = (command as { meta?: unknown }).meta;
@@ -28,8 +27,7 @@ describe("CLI command categorization", () => {
 
     expect(descriptionOf(configCmd)).toContain("[advanced]");
     expect(descriptionOf(boardCmd)).toContain("[advanced]");
-    expect(descriptionOf(executorCmd)).toContain("[advanced]");
-    expect(descriptionOf(workflowCmd)).toContain("[advanced]");
+    expect(descriptionOf(factoryCmd)).toContain("[advanced]");
 
     expect(descriptionOf(integrationsCmd)).toContain("[integration]");
   });

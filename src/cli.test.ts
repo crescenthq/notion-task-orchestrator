@@ -32,9 +32,9 @@ describe("CLI bootstrap flow", () => {
     expect(setup.status).toBe(0);
     expect(setup.stdout).toContain("NotionFlow workspace is ready");
 
-    const listWorkflows = runCli(["workflow", "list"], home);
-    expect(listWorkflows.status).toBe(0);
-    expect(listWorkflows.stdout).toContain("No workflows configured");
+    const listFactories = runCli(["factory", "list"], home);
+    expect(listFactories.status).toBe(0);
+    expect(listFactories.stdout).toContain("No factories configured");
   });
 
   it("rejects the removed init command", () => {

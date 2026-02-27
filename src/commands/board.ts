@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { eq, inArray } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
-import { boards, boardCursors, inboxEvents, runs, stepResults, tasks } from "../db/schema";
+import { boards, boardCursors, inboxEvents, runs, tasks, transitionEvents } from "../db/schema";
 
 export const boardCmd = defineCommand({
   meta: { name: "board", description: "[advanced] Manage board registrations" },
@@ -69,7 +69,7 @@ export const boardCmd = defineCommand({
           const boardRuns = await db.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds));
           const runIds = boardRuns.map((r) => r.id);
           if (runIds.length > 0) {
-            await db.delete(stepResults).where(inArray(stepResults.runId, runIds));
+            await db.delete(transitionEvents).where(inArray(transitionEvents.runId, runIds));
           }
           await db.delete(runs).where(inArray(runs.taskId, taskIds));
         }

@@ -9,15 +9,6 @@ export const boards = sqliteTable("boards", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const executors = sqliteTable("executors", {
-  id: text("id").primaryKey(),
-  commandPath: text("command_path").notNull(),
-  defaultTimeoutSeconds: integer("default_timeout_seconds"),
-  defaultRetries: integer("default_retries"),
-  metadataJson: text("metadata_json").notNull().default("{}"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
 
 export const workflows = sqliteTable("workflows", {
   id: text("id").primaryKey(),
@@ -47,24 +38,17 @@ export const runs = sqliteTable("runs", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull(),
   status: text("status").notNull(),
+  currentStateId: text("current_state_id"),
+  contextJson: text("context_json"),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: text("lease_expires_at"),
+  leaseHeartbeatAt: text("lease_heartbeat_at"),
   startedAt: text("started_at").notNull(),
   endedAt: text("ended_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
-export const stepResults = sqliteTable("step_results", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").notNull(),
-  stepId: text("step_id").notNull(),
-  executorId: text("executor_id").notNull(),
-  attempt: integer("attempt").notNull(),
-  status: text("status").notNull(),
-  outputText: text("output_text").notNull(),
-  outputKvJson: text("output_kv_json"),
-  startedAt: text("started_at").notNull(),
-  finishedAt: text("finished_at").notNull(),
-});
 
 export const inboxEvents = sqliteTable("inbox_events", {
   id: text("id").primaryKey(),
@@ -81,4 +65,18 @@ export const boardCursors = sqliteTable("board_cursors", {
   commentsCursor: text("comments_cursor"),
   tasksCursor: text("tasks_cursor"),
   updatedAt: text("updated_at").notNull(),
+});
+
+export const transitionEvents = sqliteTable("transition_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  tickId: text("tick_id").notNull(),
+  taskId: text("task_id").notNull(),
+  fromStateId: text("from_state_id").notNull(),
+  toStateId: text("to_state_id").notNull(),
+  event: text("event").notNull(),
+  reason: text("reason").notNull(),
+  attempt: integer("attempt").notNull().default(0),
+  loopIteration: integer("loop_iteration").notNull().default(0),
+  timestamp: text("timestamp").notNull(),
 });

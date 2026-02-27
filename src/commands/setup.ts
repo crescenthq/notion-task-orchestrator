@@ -10,7 +10,7 @@ export const setupCmd = defineCommand({
     console.log("");
     console.log("Next steps:");
     console.log("  notionflow doctor                         Check configuration");
-    console.log("  notionflow executor create --id <name>   Create an executor");
-    console.log("  notionflow workflow create --id <name>   Create a workflow");
+    console.log("  notionflow factory create --id <name>    Create a factory");
+    console.log("  notionflow factory list                  List available factories");
   },
 });
