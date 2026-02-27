@@ -52,3 +52,12 @@
 - Added regression coverage in `src/core/factorySchema.test.ts` and `src/core/factoryRuntime.test.ts` for missing action failure route and invalid action agent outputs (`status` and `data` shape violations).
 - Updated `README.md` factory documentation to use TypeScript module install examples and documented the inline action agent return contract.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-010: Tick budget + worker lease safety
+- Added runtime execution options in `src/core/factoryRuntime.ts` (`maxTransitionsPerTick`, `leaseMs`, `leaseMode`, `workerId`) with sane defaults and strict option normalization.
+- Replaced terminal failure on per-tick budget with resumable pause behavior: runtime now persists task/run snapshot and exits cleanly when transition budget is reached so subsequent ticks can continue from persisted state.
+- Implemented run-level lease acquisition + heartbeat/renewal in runtime with strict compare-and-set semantics on `runs` lease fields; strict mode rejects execution when another worker holds an unexpired lease, while best-effort mode skips.
+- Added and persisted run lease fields (`lease_owner`, `lease_expires_at`, `lease_heartbeat_at`) in `src/db/schema.ts` and `src/db/bootstrap.ts`, including bootstrap-time column backfill for existing databases.
+- Wired tick/run CLI plumbing to pass budget and lease controls: updated `src/commands/tick.ts`, `src/commands/run.ts`, and `src/commands/notion.ts`.
+- Added runtime regression tests in `src/core/factoryRuntime.test.ts` for (1) bounded tick pause/resume across multiple ticks and (2) strict lease rejection under active competing lease.
+- Verified with `npm run check` and `npm test`.

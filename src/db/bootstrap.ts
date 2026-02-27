@@ -5,7 +5,20 @@ export async function ensureDbDirectory(dbPath: string): Promise<void> {
   await mkdir(path.dirname(dbPath), { recursive: true });
 }
 
-export async function bootstrapSchema(client: { executeMultiple: (sql: string) => Promise<void> }): Promise<void> {
+type BootstrapClient = {
+  executeMultiple: (sql: string) => Promise<void>;
+  execute: (sql: string) => Promise<{ rows?: Array<Record<string, unknown>> }>;
+};
+
+async function ensureColumn(client: BootstrapClient, table: string, column: string, ddl: string): Promise<void> {
+  const result = await client.execute(`PRAGMA table_info(${table});`);
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  const hasColumn = rows.some((row) => String(row.name ?? "") === column);
+  if (hasColumn) return;
+  await client.execute(ddl);
+}
+
+export async function bootstrapSchema(client: BootstrapClient): Promise<void> {
   await client.executeMultiple(`
 CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
@@ -59,6 +72,9 @@ CREATE TABLE IF NOT EXISTS runs (
   status TEXT NOT NULL,
   current_state_id TEXT,
   context_json TEXT,
+  lease_owner TEXT,
+  lease_expires_at TEXT,
+  lease_heartbeat_at TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   created_at TEXT NOT NULL,
@@ -118,5 +134,9 @@ CREATE TABLE IF NOT EXISTS transition_events (
   FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
 `);
+
+  await ensureColumn(client, "runs", "lease_owner", "ALTER TABLE runs ADD COLUMN lease_owner TEXT;");
+  await ensureColumn(client, "runs", "lease_expires_at", "ALTER TABLE runs ADD COLUMN lease_expires_at TEXT;");
+  await ensureColumn(client, "runs", "lease_heartbeat_at", "ALTER TABLE runs ADD COLUMN lease_heartbeat_at TEXT;");
 
 }

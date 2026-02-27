@@ -578,6 +578,185 @@ describe("factoryRuntime", () => {
     expect(events[0]?.attempt).toBe(2);
   });
 
+  it("pauses at maxTransitionsPerTick and resumes on later ticks", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-tick-budget-factory";
+    const externalTaskId = "task-tick-budget-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
+        `const loopDone = ({ ctx }) => Number(ctx.iterations ?? 0) >= 2;\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "loop_gate",\n` +
+        `  context: { iterations: 0 },\n` +
+        `  guards: { loopDone },\n` +
+        `  states: {\n` +
+        `    loop_gate: { type: "loop", body: "work", maxIterations: 5, until: "loopDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
+        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId, {
+      maxTransitionsPerTick: 2,
+      leaseMode: "strict",
+      workerId: "worker-budget",
+    });
+
+    const [afterFirstTick] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(afterFirstTick?.state).toBe("running");
+    expect(afterFirstTick?.currentStepId).toBe("loop_gate");
+
+    const firstTickEvents = await db
+      .select()
+      .from(schema.transitionEvents)
+      .where(eq(schema.transitionEvents.taskId, afterFirstTick!.id));
+    expect(firstTickEvents).toHaveLength(2);
+
+    const [activeRun] = await db.select().from(schema.runs).where(eq(schema.runs.taskId, afterFirstTick!.id));
+    expect(activeRun?.status).toBe("running");
+    expect(activeRun?.leaseOwner).toBeNull();
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId, {
+      maxTransitionsPerTick: 2,
+      leaseMode: "strict",
+      workerId: "worker-budget",
+    });
+    await runtime.runFactoryTaskByExternalId(externalTaskId, {
+      maxTransitionsPerTick: 2,
+      leaseMode: "strict",
+      workerId: "worker-budget",
+    });
+
+    const [finalTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(finalTask?.state).toBe("done");
+    const finalEvents = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, finalTask!.id));
+    expect(finalEvents).toHaveLength(5);
+  });
+
+  it("rejects strict mode execution when another worker holds a valid lease", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-strict-lease-factory";
+    const externalTaskId = "task-strict-lease-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const work = async () => ({ status: "done" });\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "work",\n` +
+        `  states: {\n` +
+        `    work: { type: "action", agent: work, on: { done: "done", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const taskId = crypto.randomUUID();
+    await db.insert(schema.tasks).values({
+      id: taskId,
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.runs).values({
+      id: crypto.randomUUID(),
+      taskId,
+      status: "running",
+      currentStateId: "work",
+      contextJson: "{}",
+      leaseOwner: "worker-other",
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      leaseHeartbeatAt: timestamp,
+      startedAt: timestamp,
+      endedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await expect(
+      runtime.runFactoryTaskByExternalId(externalTaskId, {
+        leaseMode: "strict",
+        workerId: "worker-self",
+      }),
+    ).rejects.toThrow("currently leased by another worker");
+
+    const [unchangedTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(unchangedTask?.state).toBe("queued");
+
+    const events = await db.select().from(schema.transitionEvents).where(eq(schema.transitionEvents.taskId, taskId));
+    expect(events).toHaveLength(0);
+  });
+
   it("fails when action agent returns an invalid status", async () => {
     const { db, paths, runtime, schema, timestamp } = await setupRuntime();
     const factoryId = "runtime-invalid-action-status-factory";

@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
 import { notionToken } from "../config/env";
 import { paths } from "../config/paths";
@@ -37,7 +37,25 @@ type RetryBackoff = {
   maxMs?: number;
 };
 
+type LeaseMode = "strict" | "best-effort";
+
+export type RuntimeRunOptions = {
+  maxTransitionsPerTick?: number;
+  leaseMs?: number;
+  leaseMode?: LeaseMode;
+  workerId?: string;
+};
+
+type NormalizedRuntimeRunOptions = {
+  maxTransitionsPerTick: number;
+  leaseMs: number;
+  leaseMode: LeaseMode;
+  workerId: string;
+};
+
 const MAX_TRANSITIONS_PER_RUN = 200;
+const DEFAULT_MAX_TRANSITIONS_PER_TICK = 25;
+const DEFAULT_LEASE_MS = 30_000;
 const RETRY_ATTEMPTS_KEY = "__nf_retry_attempts";
 const LOOP_ITERATIONS_KEY = "__nf_loop_iterations";
 
@@ -153,6 +171,29 @@ async function waitFor(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeRuntimeRunOptions(
+  options: RuntimeRunOptions | undefined,
+): NormalizedRuntimeRunOptions {
+  const maxTransitionsPerTick = Math.max(
+    1,
+    Math.min(
+      MAX_TRANSITIONS_PER_RUN,
+      Math.floor(options?.maxTransitionsPerTick ?? DEFAULT_MAX_TRANSITIONS_PER_TICK),
+    ),
+  );
+  const leaseMs = Math.max(1_000, Math.floor(options?.leaseMs ?? DEFAULT_LEASE_MS));
+  const leaseMode: LeaseMode = options?.leaseMode === "best-effort" ? "best-effort" : "strict";
+  const workerId =
+    options?.workerId && options.workerId.trim().length > 0
+      ? options.workerId
+      : `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  return { maxTransitionsPerTick, leaseMs, leaseMode, workerId };
+}
+
+function leaseExpiryIso(leaseMs: number): string {
+  return new Date(Date.now() + leaseMs).toISOString();
+}
+
 async function resolveInstalledFactoryPath(factoryId: string): Promise<string> {
   const candidates = [".ts", ".mts", ".js", ".mjs", ".cts", ".cjs"].map((ext) =>
     path.join(paths.workflowsDir, `${factoryId}${ext}`),
@@ -184,7 +225,11 @@ function resolveFeedbackResumeTarget(
   return previousStateId;
 }
 
-export async function runFactoryTaskByExternalId(taskExternalId: string): Promise<void> {
+export async function runFactoryTaskByExternalId(
+  taskExternalId: string,
+  options: RuntimeRunOptions = {},
+): Promise<void> {
+  const runtimeOptions = normalizeRuntimeRunOptions(options);
   const { db } = await openApp();
   const [task] = await db.select().from(tasks).where(eq(tasks.externalTaskId, taskExternalId));
   if (!task) throw new Error(`Task not found: ${taskExternalId}`);
@@ -267,16 +312,70 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       id: runId,
       taskId: task.id,
       status: "running",
+      currentStateId,
+      contextJson: JSON.stringify(ctx),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      leaseHeartbeatAt: null,
       startedAt: now,
       endedAt: null,
       createdAt: now,
       updatedAt: now,
     });
   } else {
-    await db.update(runs).set({ status: "running", updatedAt: now }).where(eq(runs.id, runId));
+    await db
+      .update(runs)
+      .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: now })
+      .where(eq(runs.id, runId));
   }
 
   const tickId = crypto.randomUUID();
+  const leaseOwner = runtimeOptions.workerId;
+
+  const acquireRunLease = async (): Promise<boolean> => {
+    const leaseAcquiredAt = nowIso();
+    const result = await db
+      .update(runs)
+      .set({
+        leaseOwner,
+        leaseExpiresAt: leaseExpiryIso(runtimeOptions.leaseMs),
+        leaseHeartbeatAt: leaseAcquiredAt,
+        updatedAt: leaseAcquiredAt,
+      })
+      .where(
+        and(
+          eq(runs.id, runId),
+          or(isNull(runs.leaseExpiresAt), lte(runs.leaseExpiresAt, leaseAcquiredAt), eq(runs.leaseOwner, leaseOwner)),
+        ),
+      );
+    return Number((result as { rowsAffected?: number }).rowsAffected ?? 0) > 0;
+  };
+
+  const renewRunLease = async (): Promise<void> => {
+    const heartbeatAt = nowIso();
+    const result = await db
+      .update(runs)
+      .set({
+        leaseExpiresAt: leaseExpiryIso(runtimeOptions.leaseMs),
+        leaseHeartbeatAt: heartbeatAt,
+        updatedAt: heartbeatAt,
+      })
+      .where(and(eq(runs.id, runId), eq(runs.leaseOwner, leaseOwner)));
+    const heartbeatUpdated = Number((result as { rowsAffected?: number }).rowsAffected ?? 0) > 0;
+    if (!heartbeatUpdated) {
+      throw new Error(`Run lease lost for task ${task.externalTaskId}`);
+    }
+  };
+
+  const acquiredLease = await acquireRunLease();
+  if (!acquiredLease) {
+    const message = `Run ${runId} is currently leased by another worker`;
+    if (runtimeOptions.leaseMode === "best-effort") {
+      console.log(`[lease] ${message}; skipping task ${task.externalTaskId}`);
+      return;
+    }
+    throw new Error(message);
+  }
 
   const finalizeRun = async (status: "done" | "blocked" | "failed"): Promise<void> => {
     const timestamp = nowIso();
@@ -296,6 +395,11 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       .update(runs)
       .set({
         status,
+        currentStateId: null,
+        contextJson: JSON.stringify(ctx),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        leaseHeartbeatAt: null,
         endedAt: timestamp,
         updatedAt: timestamp,
       })
@@ -322,11 +426,52 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       .where(getTaskSelector(task));
     await db
       .update(runs)
-      .set({ status: "failed", endedAt: timestamp, updatedAt: timestamp })
+      .set({
+        status: "failed",
+        currentStateId,
+        contextJson: JSON.stringify(ctx),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        leaseHeartbeatAt: null,
+        endedAt: timestamp,
+        updatedAt: timestamp,
+      })
       .where(eq(runs.id, runId));
     await syncNotionState("failed");
     await syncNotionLog("Task failed", message);
     throw new Error(message);
+  };
+
+  const pauseForNextTick = async (): Promise<void> => {
+    const timestamp = nowIso();
+    await db
+      .update(tasks)
+      .set({
+        state: "running",
+        currentStepId: currentStateId,
+        stepVarsJson: JSON.stringify(ctx),
+        waitingSince: null,
+        updatedAt: timestamp,
+        lastError: null,
+      })
+      .where(getTaskSelector(task));
+    await db
+      .update(runs)
+      .set({
+        status: "running",
+        currentStateId,
+        contextJson: JSON.stringify(ctx),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        leaseHeartbeatAt: null,
+        updatedAt: timestamp,
+      })
+      .where(eq(runs.id, runId));
+    await syncNotionState("running", currentStateId);
+    await syncNotionLog(
+      "Tick budget reached",
+      `Paused after ${runtimeOptions.maxTransitionsPerTick} transition(s). Resume state: ${currentStateId}`,
+    );
   };
 
   const persistTransition = async (
@@ -354,13 +499,25 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
 
   await db
     .update(tasks)
-    .set({ state: "running", updatedAt: nowIso(), lastError: null, waitingSince: null })
+    .set({
+      state: "running",
+      currentStepId: currentStateId,
+      stepVarsJson: JSON.stringify(ctx),
+      updatedAt: nowIso(),
+      lastError: null,
+      waitingSince: null,
+    })
     .where(getTaskSelector(task));
+  await db
+    .update(runs)
+    .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: nowIso() })
+    .where(eq(runs.id, runId));
   await syncNotionState("running");
   await syncNotionLog(resumed ? `Resuming from state ${currentStateId}` : "Run started", `Factory: ${definition.id}`);
 
   let transitions = 0;
   while (transitions < MAX_TRANSITIONS_PER_RUN) {
+    await renewRunLease();
     const state = definition.states[currentStateId];
     if (!state) await failRun(`State not found in factory graph: ${currentStateId}`);
 
@@ -383,7 +540,18 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
           lastError: null,
         })
         .where(getTaskSelector(task));
-      await db.update(runs).set({ status: "feedback", updatedAt: nowIso() }).where(eq(runs.id, runId));
+      await db
+        .update(runs)
+        .set({
+          status: "feedback",
+          currentStateId: resumeTargetStateId,
+          contextJson: JSON.stringify(ctx),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          leaseHeartbeatAt: null,
+          updatedAt: nowIso(),
+        })
+        .where(eq(runs.id, runId));
       await syncNotionState("feedback");
       await syncNotionLog(`Feedback needed: ${currentStateId}`, "Awaiting human input.");
       return;
@@ -399,6 +567,10 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
         lastError: null,
       })
       .where(getTaskSelector(task));
+    await db
+      .update(runs)
+      .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: nowIso() })
+      .where(eq(runs.id, runId));
     await syncNotionState("running", currentStateId);
 
     let event = "";
@@ -472,6 +644,10 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
               lastError: failureMessage,
             })
             .where(getTaskSelector(task));
+          await db
+            .update(runs)
+            .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: nowIso() })
+            .where(eq(runs.id, runId));
 
           const delayMs = backoffDelayMs(state.retries?.backoff as RetryBackoff | undefined, attempt);
           await waitFor(delayMs);
@@ -503,6 +679,10 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
               lastError: failureMessage,
             })
             .where(getTaskSelector(task));
+          await db
+            .update(runs)
+            .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: nowIso() })
+            .where(eq(runs.id, runId));
 
           const delayMs = backoffDelayMs(state.retries?.backoff as RetryBackoff | undefined, attempt);
           await waitFor(delayMs);
@@ -640,11 +820,18 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       Math.max(0, transitionAttempt),
       Math.max(0, transitionLoopIteration),
     );
+    const previousStateId = currentStateId;
     transitions += 1;
+    currentStateId = resolvedNextStateId;
+
+    await db
+      .update(runs)
+      .set({ status: "running", currentStateId, contextJson: JSON.stringify(ctx), updatedAt: nowIso() })
+      .where(eq(runs.id, runId));
 
     if (definition.states[resolvedNextStateId]?.type === "feedback") {
       const feedbackState = definition.states[resolvedNextStateId];
-      const resumeTargetStateId = resolveFeedbackResumeTarget(feedbackState, currentStateId);
+      const resumeTargetStateId = resolveFeedbackResumeTarget(feedbackState, previousStateId);
       if (feedbackMessage && token && board?.adapter === "notion") {
         try {
           await notionPostComment(token, task.externalTaskId, feedbackMessage);
@@ -665,17 +852,31 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
           lastError: null,
         })
         .where(getTaskSelector(task));
-      await db.update(runs).set({ status: "feedback", updatedAt: nowIso() }).where(eq(runs.id, runId));
+      await db
+        .update(runs)
+        .set({
+          status: "feedback",
+          currentStateId: resumeTargetStateId,
+          contextJson: JSON.stringify(ctx),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          leaseHeartbeatAt: null,
+          updatedAt: nowIso(),
+        })
+        .where(eq(runs.id, runId));
       await syncNotionState("feedback");
       await syncNotionLog(
-        `Feedback needed: ${currentStateId}`,
+        `Feedback needed: ${previousStateId}`,
         feedbackMessage ?? "Reply to the Notion task comments to continue.",
       );
       return;
     }
 
-    currentStateId = resolvedNextStateId;
+    if (transitions >= runtimeOptions.maxTransitionsPerTick) {
+      await pauseForNextTick();
+      return;
+    }
   }
 
-  await failRun(`Transition budget exceeded (${MAX_TRANSITIONS_PER_RUN})`);
+  await failRun(`Transition cap exceeded (${MAX_TRANSITIONS_PER_RUN})`);
 }

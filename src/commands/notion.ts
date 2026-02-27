@@ -75,6 +75,10 @@ export async function syncNotionBoards(options: {
   factoryId?: string;
   workflowId?: string;
   runQueued?: boolean;
+  maxTransitionsPerTick?: number;
+  leaseMs?: number;
+  leaseMode?: "strict" | "best-effort";
+  workerId?: string;
 }): Promise<void> {
   const token = notionToken();
   if (!token) throw new Error("NOTION_API_TOKEN is required");
@@ -167,7 +171,12 @@ export async function syncNotionBoards(options: {
   for (const taskId of queuedTaskIds) {
     console.log(`Running queued task: ${taskId}`);
     try {
-      await runTaskByExternalId(taskId);
+      await runTaskByExternalId(taskId, {
+        maxTransitionsPerTick: options.maxTransitionsPerTick,
+        leaseMs: options.leaseMs,
+        leaseMode: options.leaseMode,
+        workerId: options.workerId,
+      });
     } catch (error) {
       runFailures += 1;
       const message = error instanceof Error ? error.message : String(error);
