@@ -8,6 +8,7 @@ import { loadFactoryFromPath } from "./factory";
 import { boards, runs, tasks, transitionEvents, workflows } from "../db/schema";
 import { parseTransitionEvent, TransitionEventReasonCode } from "./transitionEvents";
 import {
+  notionAppendMarkdownToPage,
   notionAppendTaskPageLog,
   notionGetPage,
   notionGetPageBodyText,
@@ -26,10 +27,13 @@ type RoutedAgentResult = {
 
 type ActionAgentStatus = "done" | "feedback" | "failed";
 
+type PageContent = { markdown: string; body?: string } | string;
+
 type ActionAgentResult = {
   status: ActionAgentStatus;
   data?: JsonObject;
   message?: string;
+  page?: PageContent;
 };
 
 type RetryBackoff = {
@@ -100,10 +104,30 @@ function normalizeActionAgentResult(value: unknown, stateId: string): ActionAgen
       `State \`${stateId}\` action agent result \`status\` must be one of done, feedback, failed`,
     );
   }
+
+  // value is guaranteed to be a JsonObject by normalizeRoutedAgentResult
+  const raw = value as JsonObject;
+  let page: PageContent | undefined;
+  if (raw.page !== undefined) {
+    if (typeof raw.page === "string") {
+      page = raw.page;
+    } else if (isRecord(raw.page)) {
+      if (typeof raw.page.markdown !== "string") {
+        throw new Error(`State \`${stateId}\` agent result \`page.markdown\` must be a string`);
+      }
+      const markdown = raw.page.markdown;
+      const body = typeof raw.page.body === "string" ? raw.page.body : undefined;
+      page = body !== undefined ? { markdown, body } : { markdown };
+    } else {
+      throw new Error(`State \`${stateId}\` agent result \`page\` must be a string or object`);
+    }
+  }
+
   return {
     status: result.status,
     data: result.data,
     message: result.message,
+    page,
   };
 }
 
@@ -247,7 +271,12 @@ export async function runFactoryTaskByExternalId(
       console.log("[warn] skipping Notion task state update (NOTION_API_TOKEN missing)");
       return;
     }
-    await notionUpdateTaskPageState(token, task.externalTaskId, state, stateLabel);
+    try {
+      await notionUpdateTaskPageState(token, task.externalTaskId, state, stateLabel);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[warn] failed to sync Notion task state: ${message}`);
+    }
   };
 
   const syncNotionLog = async (title: string, detail?: string): Promise<void> => {
@@ -581,6 +610,7 @@ export async function runFactoryTaskByExternalId(
     let feedbackMessage: string | undefined;
     let transitionAttempt = 0;
     let transitionLoopIteration = 0;
+    let pageContent: PageContent | undefined;
 
     if (state.type === "action") {
       const maxRetries = Math.max(0, state.retries?.max ?? 0);
@@ -615,6 +645,7 @@ export async function runFactoryTaskByExternalId(
             reason = `action.${event}` as TransitionEventReasonCode;
             nextStateId = state.on[event];
             transitionAttempt = attempt;
+            pageContent = result.page;
             break;
           }
 
@@ -707,6 +738,18 @@ export async function runFactoryTaskByExternalId(
           const delayMs = backoffDelayMs(state.retries?.backoff as RetryBackoff | undefined, attempt);
           await waitFor(delayMs);
           attempt += 1;
+        }
+      }
+
+      if (pageContent && board?.adapter === "notion" && token) {
+        const markdown = typeof pageContent === "string" ? pageContent : pageContent.markdown;
+        if (markdown) {
+          try {
+            await notionAppendMarkdownToPage(token, task.externalTaskId, markdown);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`[warn] failed to append page content to Notion: ${message}`);
+          }
         }
       }
     } else if (state.type === "orchestrate") {

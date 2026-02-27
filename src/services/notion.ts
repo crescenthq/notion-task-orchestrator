@@ -434,6 +434,22 @@ export async function notionListComments(token: string, pageId: string): Promise
   return body.results ?? [];
 }
 
+export async function notionAppendMarkdownToPage(token: string, pageId: string, markdown: string): Promise<void> {
+  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}/markdown`, {
+    method: "PATCH",
+    headers: notionHeaders(token),
+    body: JSON.stringify({
+      type: "insert_content",
+      insert_content: { content: markdown },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Notion markdown append failed (${res.status}): ${text}`);
+  }
+}
+
 export async function notionPostComment(token: string, pageId: string, text: string): Promise<void> {
   const res = await fetch("https://api.notion.com/v1/comments", {
     method: "POST",
