@@ -68,3 +68,12 @@
 - Added deterministic replay consistency validation against `transition_events` in the runner, including feedback-resume discontinuity handling and strict required-field checks.
 - Updated `tasks/factory-agent-verification.md` with fixture inventory, automated runner usage, feedback-mode controls, artifact location, and refreshed scenario expectation/observation template.
 - Ran live verification with configured Notion credentials; all scenarios passed and produced artifact `tasks/artifacts/factory-live-verification-20260227-015834.json`.
+
+2026-02-27 — TSK-009: Documentation and operator playbook
+- Rewrote `README.md` around single-file TypeScript factories with factory-first runtime concepts and explicit task-state model (`queued`, `running`, `feedback`, `done`, `blocked`, `failed`).
+- Added two end-to-end onboarding tracks in README: NPX-only flow and installed CLI flow (`npm install -g notionflow`), each covering setup, factory install/create, task creation, execution, and status inspection.
+- Added factory authoring guidance for runtime hook locality, action agent output contract, and unified `on` transition routing.
+- Added operational docs for feedback/resume, retry/backoff, loop orchestration, tick budget, and lease mode usage.
+- Added troubleshooting section for Notion auth/config, queued tasks not running, feedback resume behavior, lease contention, tick budget pauses, stale sync state, and imported runtime hook rejection.
+- Added `tasks/factory-dsl-v0-spec.md` documenting v0 DSL contract (module shape, state schemas, transition model, runtime inputs, tick safety, and transition event journal fields).
+- Verified with `npm run check` and `npm test`.
