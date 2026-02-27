@@ -154,7 +154,7 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     .set({ state: "running", updatedAt: nowIso(), lastError: null })
     .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
   await syncNotionState("running");
-  await syncNotionLog(resumeFromStepId ? `Resuming from step ${resumeFromStepId}` : "Run started", `Workflow: ${task.workflowId}`);
+  await syncNotionLog(resumeFromStepId ? `Resuming from step ${resumeFromStepId}` : "Run started", `Factory: ${task.workflowId}`);
 
   for (const step of workflow.steps) {
     // Skip steps before the resume point when resuming from waiting state
@@ -278,13 +278,13 @@ export async function runTaskByExternalId(taskExternalId: string): Promise<void>
     .set({ state: "done", currentStepId: null, updatedAt: nowIso(), lastError: null })
     .where(and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId)));
   await syncNotionState("done");
-  await syncNotionLog("Task complete", "All workflow steps finished successfully.");
+  await syncNotionLog("Task complete", "All factory steps finished successfully.");
 
   console.log("Task run complete: done");
 }
 
 export const runCmd = defineCommand({
-  meta: { name: "run", description: "[common] Run a workflow for one task using per-step executors" },
+  meta: { name: "run", description: "[common] Run a factory for one task" },
   args: {
     task: { type: "string", required: true },
   },

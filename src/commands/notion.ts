@@ -70,6 +70,7 @@ async function upsertTask(
 
 export async function syncNotionBoards(options: {
   boardId?: string;
+  factoryId?: string;
   workflowId?: string;
   runQueued?: boolean;
 }): Promise<void> {
@@ -85,7 +86,7 @@ export async function syncNotionBoards(options: {
   if (notionBoards.length === 0) {
     if (options.boardId) throw new Error(`No Notion board found for: ${options.boardId}`);
     throw new Error(
-      "No Notion boards registered. Use workflow install/create or integrations notion provision-board first",
+      "No Notion boards registered. Use factory install/create or integrations notion provision-board first",
     );
   }
 
@@ -102,7 +103,7 @@ export async function syncNotionBoards(options: {
       for (const page of pages) {
         const notionState = pageState(page) ?? "unknown";
         const localState = localTaskStateFromNotion(notionState);
-        const workflowId = options.workflowId ?? board.id;
+        const workflowId = options.factoryId ?? options.workflowId ?? board.id;
         await upsertTask(board.id, page.id, workflowId, localState);
 
         imported += 1;
@@ -249,7 +250,7 @@ export const notionCmd = defineCommand({
       args: {
         board: { type: "string", required: true },
         title: { type: "string", required: true },
-        workflow: { type: "string", required: false },
+        factory: { type: "string", required: false },
         status: { type: "string", required: false },
       },
       async run({ args }) {
@@ -262,7 +263,7 @@ export const notionCmd = defineCommand({
 
         await notionGetDataSource(token, board.externalId);
         const state = String(args.status ?? "queue");
-        const workflowId = args.workflow ? String(args.workflow) : "mixed-default";
+        const workflowId = args.factory ? String(args.factory) : "mixed-default";
         const page = await notionCreateTaskPage(token, board.externalId, {
           title: String(args.title),
           state: localStateToDisplayStatus(state),
@@ -278,13 +279,13 @@ export const notionCmd = defineCommand({
       meta: { name: "sync", description: "Pull tasks from Notion boards" },
       args: {
         board: { type: "string", required: false },
-        workflow: { type: "string", required: false },
+        factory: { type: "string", required: false },
         run: { type: "boolean", required: false },
       },
       async run({ args }) {
         await syncNotionBoards({
           boardId: args.board ? String(args.board) : undefined,
-          workflowId: args.workflow ? String(args.workflow) : undefined,
+          factoryId: args.factory ? String(args.factory) : undefined,
           runQueued: Boolean(args.run),
         });
       },

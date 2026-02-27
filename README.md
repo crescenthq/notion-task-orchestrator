@@ -1,6 +1,6 @@
 # NotionFlow
 
-Minimal agent-agnostic orchestration CLI using Notion.
+Factory-first orchestration CLI using Notion.
 
 ## Quick Start
 
@@ -18,8 +18,7 @@ Optional env var:
 
 All state lives in:
 
-- `~/.config/notionflow/agents/`
-- `~/.config/notionflow/workflows/`
+- `~/.config/notionflow/` (local workspace data)
 
 ## Commands
 
@@ -42,20 +41,16 @@ npx notionflow board add --id main --external-id <notion_data_source_id>
 npx notionflow board list
 npx notionflow board remove --id main
 
-# advanced: executors
-npx notionflow executor create --id my-agent
-npx notionflow executor list
-npx notionflow executor describe --id my-agent
-
-# advanced: workflows
-npx notionflow workflow create --id my-workflow
-npx notionflow workflow install --path ./workflows/mixed-default.yaml --parent-page <notion_page_id>
-npx notionflow workflow list
+# advanced: factories
+npx notionflow factory create --id my-factory
+npx notionflow factory install --path ./factories/my-factory.yaml --parent-page <notion_page_id>
+npx notionflow factory list
 
 # integration (Notion)
-npx notionflow integrations notion create-task --board my-workflow --title "Implement auth" --workflow my-workflow --status queue --ready
+npx notionflow integrations notion create-task --board my-factory --title "Implement auth" --factory my-factory --status queue --ready
 npx notionflow integrations notion sync
 npx notionflow integrations notion sync --board creative-writing
+npx notionflow integrations notion sync --factory my-factory
 npx notionflow integrations notion sync --run
 ```
 
@@ -63,10 +58,10 @@ npx notionflow integrations notion sync --run
 
 NotionFlow ships these primary skills:
 
-- `.claude/skills/setup` — onboarding, workspace init, first workflow
-- `.claude/skills/add-claude` — add Claude Code as an executor
-- `.claude/skills/add-codex` — add Codex as an executor
-- `.claude/skills/add-openclaw` — add OpenClaw as an executor
+- `.claude/skills/setup` — onboarding, workspace init, first factory
+- `.claude/skills/add-claude` — add Claude Code support
+- `.claude/skills/add-codex` — add Codex support
+- `.claude/skills/add-openclaw` — add OpenClaw support
 
 ## Notion Board Expectations
 
@@ -83,27 +78,5 @@ Run behavior updates Notion page state automatically:
 - local `blocked` -> Notion `blocked`
 - local `failed` -> Notion `failed`
 
-When you use `workflow install` or `workflow create`, NotionFlow will provision a Notion board with the same ID by default.
+When you use `factory install` or `factory create`, NotionFlow will provision a Notion board with the same ID by default.
 Use `--no-notion-board` to skip provisioning.
-
-## Agent Executor Contract
-
-Every executor is an executable that supports:
-
-- `AGENT_ACTION=describe`
-- `AGENT_ACTION=execute`
-
-`execute` receives JSON payload on stdin:
-
-```json
-{
-  "prompt": "...",
-  "session_id": "task-...",
-  "workdir": "/path",
-  "timeout": 600,
-  "step_id": "plan",
-  "task_id": "<external task id>"
-}
-```
-
-Create executors with `executor create --id <name>` or use add-on skills for pre-configured agents.
