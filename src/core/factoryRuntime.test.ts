@@ -577,4 +577,126 @@ describe("factoryRuntime", () => {
     expect(events[0]?.reason).toBe("action.failed.exhausted");
     expect(events[0]?.attempt).toBe(2);
   });
+
+  it("fails when action agent returns an invalid status", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-invalid-action-status-factory";
+    const externalTaskId = "task-invalid-action-status-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const badStatus = async () => ({ status: "route" });\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "work",\n` +
+        `  states: {\n` +
+        `    work: { type: "action", agent: badStatus, on: { done: "done", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const [updatedTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(updatedTask?.state).toBe("failed");
+    expect(updatedTask?.lastError).toContain("must be one of done, feedback, failed");
+  });
+
+  it("fails when action agent returns non-object data payload", async () => {
+    const { db, paths, runtime, schema, timestamp } = await setupRuntime();
+    const factoryId = "runtime-invalid-action-data-factory";
+    const externalTaskId = "task-invalid-action-data-1";
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`);
+
+    await writeFile(
+      factoryPath,
+      `const badData = async () => ({ status: "done", data: "not-an-object" });\n` +
+        `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  start: "work",\n` +
+        `  states: {\n` +
+        `    work: { type: "action", agent: badData, on: { done: "done", failed: "failed" } },\n` +
+        `    done: { type: "done" },\n` +
+        `    failed: { type: "failed" }\n` +
+        `  }\n` +
+        `};\n`,
+      "utf8",
+    );
+
+    await db.insert(schema.boards).values({
+      id: factoryId,
+      adapter: "local",
+      externalId: "local-board",
+      configJson: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.workflows).values({
+      id: factoryId,
+      version: 1,
+      definitionYaml: "{}",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await db.insert(schema.tasks).values({
+      id: crypto.randomUUID(),
+      boardId: factoryId,
+      externalTaskId,
+      workflowId: factoryId,
+      state: "queued",
+      currentStepId: null,
+      stepVarsJson: null,
+      waitingSince: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId);
+
+    const [updatedTask] = await db.select().from(schema.tasks).where(eq(schema.tasks.externalTaskId, externalTaskId));
+    expect(updatedTask?.state).toBe("failed");
+    expect(updatedTask?.lastError).toContain("field `data` must be an object");
+  });
 });

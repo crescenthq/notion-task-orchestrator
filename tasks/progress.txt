@@ -45,3 +45,10 @@
 - Extended `src/core/factorySchema.ts` loop validation to require `on.continue`, `on.done`, and `on.exhausted`, and enforce `on.continue` targets the loop `body`.
 - Added coverage in `src/core/factoryRuntime.test.ts` for (1) loop exit via `done` guard and (2) loop exit via `exhausted` max-iteration cap; added schema validation coverage in `src/core/factorySchema.test.ts`.
 - Verified with `npm run check` and `npm test`.
+
+2026-02-27 — TSK-007: Inline agent contract
+- Tightened action-state contract validation in `src/core/factorySchema.ts` to require explicit `on.done` and `on.failed` transition routes for all `action` states.
+- Hardened runtime output validation in `src/core/factoryRuntime.ts` for action agents: enforced `status` enum (`done|feedback|failed`) and strict optional field types (`data` must be object, `message` must be string when provided) before transition routing.
+- Added regression coverage in `src/core/factorySchema.test.ts` and `src/core/factoryRuntime.test.ts` for missing action failure route and invalid action agent outputs (`status` and `data` shape violations).
+- Updated `README.md` factory documentation to use TypeScript module install examples and documented the inline action agent return contract.
+- Verified with `npm run check` and `npm test`.

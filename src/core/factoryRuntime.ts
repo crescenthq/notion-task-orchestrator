@@ -17,8 +17,16 @@ import {
 
 type JsonObject = Record<string, unknown>;
 
-type AgentResult = {
+type RoutedAgentResult = {
   status: string;
+  data?: JsonObject;
+  message?: string;
+};
+
+type ActionAgentStatus = "done" | "feedback" | "failed";
+
+type ActionAgentResult = {
+  status: ActionAgentStatus;
   data?: JsonObject;
   message?: string;
 };
@@ -37,7 +45,7 @@ function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeAgentResult(value: unknown, stateId: string): AgentResult {
+function normalizeRoutedAgentResult(value: unknown, stateId: string): RoutedAgentResult {
   if (!isRecord(value)) {
     throw new Error(`State \`${stateId}\` agent returned a non-object result`);
   }
@@ -47,9 +55,37 @@ function normalizeAgentResult(value: unknown, stateId: string): AgentResult {
     throw new Error(`State \`${stateId}\` agent result missing string \`status\``);
   }
 
-  const data = isRecord(value.data) ? value.data : undefined;
-  const message = typeof value.message === "string" ? value.message : undefined;
+  let data: JsonObject | undefined;
+  if (value.data !== undefined) {
+    if (!isRecord(value.data)) {
+      throw new Error(`State \`${stateId}\` agent result field \`data\` must be an object when provided`);
+    }
+    data = value.data;
+  }
+
+  let message: string | undefined;
+  if (value.message !== undefined) {
+    if (typeof value.message !== "string") {
+      throw new Error(`State \`${stateId}\` agent result field \`message\` must be a string when provided`);
+    }
+    message = value.message;
+  }
+
   return { status, data, message };
+}
+
+function normalizeActionAgentResult(value: unknown, stateId: string): ActionAgentResult {
+  const result = normalizeRoutedAgentResult(value, stateId);
+  if (result.status !== "done" && result.status !== "feedback" && result.status !== "failed") {
+    throw new Error(
+      `State \`${stateId}\` action agent result \`status\` must be one of done, feedback, failed`,
+    );
+  }
+  return {
+    status: result.status,
+    data: result.data,
+    message: result.message,
+  };
 }
 
 function mergeContext(base: JsonObject, patch?: JsonObject): JsonObject {
@@ -379,7 +415,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       // Retry loop is internal to a single action state and exits by emitting one routed event.
       while (true) {
         try {
-          const result = normalizeAgentResult(
+          const result = normalizeActionAgentResult(
             await (state.agent as (input: unknown) => unknown)({
               task: {
                 id: task.externalTaskId,
@@ -475,7 +511,7 @@ export async function runFactoryTaskByExternalId(taskExternalId: string): Promis
       }
     } else if (state.type === "orchestrate") {
       if (state.agent) {
-        const result = normalizeAgentResult(
+        const result = normalizeRoutedAgentResult(
           await (state.agent as (input: unknown) => unknown)({
             task: {
               id: task.externalTaskId,

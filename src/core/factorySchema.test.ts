@@ -30,12 +30,31 @@ describe("factorySchema", () => {
           start: {
             type: "action",
             agent: async () => ({ status: "done" }),
-            on: { done: "missing" },
+            on: { done: "missing", failed: "failed" },
           },
           done: { type: "done" },
+          failed: { type: "failed" },
         },
       }),
     ).toThrow(/missing target/);
+  });
+
+  it("requires action done/failed transition routes", () => {
+    expect(() =>
+      factorySchema.parse({
+        id: "action-events-factory",
+        start: "start",
+        states: {
+          start: {
+            type: "action",
+            agent: async () => ({ status: "done" }),
+            on: { done: "done" },
+          },
+          done: { type: "done" },
+          failed: { type: "failed" },
+        },
+      }),
+    ).toThrow(/on\.failed/);
   });
 
   it("rejects loop until guards that do not exist", () => {

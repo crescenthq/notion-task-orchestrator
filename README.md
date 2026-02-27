@@ -43,7 +43,7 @@ npx notionflow board remove --id main
 
 # advanced: factories
 npx notionflow factory create --id my-factory
-npx notionflow factory install --path ./factories/my-factory.yaml --parent-page <notion_page_id>
+npx notionflow factory install --path ./factories/my-factory.ts --parent-page <notion_page_id>
 npx notionflow factory list
 
 # integration (Notion)
@@ -80,3 +80,13 @@ Run behavior updates Notion page state automatically:
 
 When you use `factory install` or `factory create`, NotionFlow will provision a Notion board with the same ID by default.
 Use `--no-notion-board` to skip provisioning.
+
+## Factory Agent Contract
+
+`action` states require an `agent` function defined inline or as a named function in the same factory file.
+
+Action agent return shape:
+
+- `status`: `"done" | "feedback" | "failed"` (required)
+- `data`: object merged into runtime context (optional)
+- `message`: string detail or feedback prompt (optional)

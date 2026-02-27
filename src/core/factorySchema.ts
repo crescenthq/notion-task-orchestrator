@@ -135,6 +135,18 @@ export const factorySchema = z.object({
       }
     }
 
+    if (state.type === "action") {
+      for (const requiredEvent of ["done", "failed"]) {
+        if (!state.on[requiredEvent]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Action state \`${stateId}\` must define \`on.${requiredEvent}\` transition`,
+            path: ["states", stateId, "on", requiredEvent],
+          });
+        }
+      }
+    }
+
     if (state.type === "loop") {
       for (const requiredEvent of ["continue", "done", "exhausted"]) {
         if (!state.on[requiredEvent]) {
