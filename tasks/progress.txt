@@ -123,3 +123,8 @@ US-009 acceptance gate finalized (live verification suite aligned to local-proje
 - Updated command execution paths to run from the temp project root while still invoking the repository CLI entrypoint.
 - Verified: `npm run check` passes
 - Verified: `npm run test:e2e -- e2e/factory-verification.test.ts` passes (live Notion API)
+
+US-002 acceptance gate finalized (local init scaffold validation):
+- Re-ran strict typecheck gate and targeted E2E coverage for the init scaffold flow to close the tracking gap in `tasks/prd.json`.
+- Verified: `npm run check` passes
+- Verified: `npm run test:e2e -- e2e/local-project-init.test.ts` passes
