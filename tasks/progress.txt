@@ -97,3 +97,13 @@ US-011 completed (stable typed library API exports):
 - Verified: `npm run test -- src/project/projectConfig.test.ts` passes
 - Verified: `npm run test -- src/core/factorySchema.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` and an existing type error in `src/commands/tick.test.ts` not touched in this task
+
+US-012 completed (docs/examples refresh for local-only architecture):
+- Rewrote top-level docs to remove global `~/.config/notionflow` install/edit guidance and reflect the local-project architecture and command baseline: `README.md`, `docs/cli-reference.md`, `docs/factory-authoring.md`, `docs/architecture.md`
+- Added explicit quickstart command sequence (`init` -> `factory create` -> `doctor` -> `tick`) and config discovery/`--config` behavior in docs.
+- Converted `example-factories/` into a full project-style example with explicit config and `factories/` layout: `example-factories/notionflow.config.ts`, `example-factories/README.md`, `example-factories/factories/*`
+- Added shared runtime helper import example (`agent`/`select`/`until`) via `shared-helper-demo`: `example-factories/factories/shared-helper-demo.ts`, `example-factories/factories/shared/runtime-helpers.ts`
+- Added docs-derived live E2E smoke scenario covering local quickstart flow + Notion integration in a temp project and global-write guard: `e2e/local-project-docs-quickstart-live.test.ts`
+- Verified: `npm run test:e2e -- e2e/local-project-docs-quickstart-live.test.ts` passes
+- Verified: `npm run test -- src/project/projectConfig.test.ts` passes
+- Note: `npm run check` not re-run in this task; existing repository-wide typecheck issues remain from prior unrelated files.

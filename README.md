@@ -1,218 +1,147 @@
 # NotionFlow
 
-Factory-first orchestration CLI for Notion.
+Project-local orchestration CLI and typed library for running TypeScript factories against Notion tasks.
 
-## What It Does
+## Local-First Model
 
-NotionFlow runs TypeScript factory state machines against Notion tasks.
+NotionFlow now runs in a project directory, not a global config directory.
 
-- Author one factory file with inline `agent` functions.
-- Install it with `notionflow factory install`.
-- Create Notion tasks and run with `tick` (queue-driven) or `run` (single task).
+Each project contains:
 
-Runtime task states:
+- `notionflow.config.ts`
+- `factories/`
+- `.notionflow/` (runtime DB + logs)
 
-- `queued`
-- `running`
-- `feedback`
-- `done`
-- `blocked`
-- `failed`
+No factory install/copy step is required. `run` and `tick` load factories directly from paths declared in `notionflow.config.ts`.
 
 ## Prerequisites
 
 - Node.js 20+
-- A Notion integration token in `NOTION_API_TOKEN`
-- A Notion parent page ID in `NOTION_WORKSPACE_PAGE_ID` (or pass `--parent-page` when creating boards)
+- `NOTION_API_TOKEN`
+- `NOTION_WORKSPACE_PAGE_ID` (or pass `--parent-page` when provisioning a board)
 
-## Quick Start (NPX)
-
-1. Initialize local workspace.
+## Quickstart (Project Local)
 
 ```bash
-npx notionflow setup
+# 1) Create a local NotionFlow project
+npx notionflow init
+
+# 2) Scaffold a factory file
+npx notionflow factory create --id demo --skip-notion-board
+
+# 3) Declare your factory paths explicitly
+cat > notionflow.config.ts <<'TS'
+import { defineConfig } from "notionflow";
+
+export default defineConfig({
+  factories: ["./factories/demo.ts"],
+});
+TS
+
+# 4) Validate project resolution and auth
 npx notionflow doctor
+
+# 5) Provision a Notion board and create a queued task
+npx notionflow integrations notion provision-board --board demo
+npx notionflow integrations notion create-task --board demo --factory demo --title "Local quickstart" --status queue
+
+# 6) Run one orchestration tick
+npx notionflow tick --board demo --factory demo
 ```
 
-2. Create a factory scaffold and board.
+You can run commands from anywhere inside the project tree; NotionFlow walks up directories to find `notionflow.config.ts`.
 
-```bash
-npx notionflow factory create --id demo-factory
-```
+## Config Discovery Rules
 
-This writes a scaffold at `~/.config/notionflow/workflows/demo-factory.ts` and provisions a Notion board with ID `demo-factory`.
+- Default: walk up from current working directory to find `notionflow.config.ts`
+- Override: pass `--config <path>` on project-scoped commands (`doctor`, `factory create`, `run`, `tick`, `integrations notion sync`)
+- Project root is always the directory containing the resolved config file
 
-3. Create a task in that board.
-
-```bash
-npx notionflow integrations notion create-task --board demo-factory --factory demo-factory --title "Test run"
-```
-
-4. Run one orchestration tick (sync + execute queued task).
-
-```bash
-npx notionflow tick --factory demo-factory
-```
-
-5. Inspect local task state.
-
-```bash
-npx notionflow status --task <notion_page_id>
-```
-
-## Quick Start (Installed CLI)
-
-1. Install and verify.
-
-```bash
-npm install -g notionflow
-notionflow setup
-notionflow doctor
-```
-
-2. Author a local single-file factory and install it.
+## Config Format
 
 ```ts
-const draft = async ({ ctx }) => ({
-  status: "done",
-  data: { ...ctx, drafted: true },
-});
+import { defineConfig } from "notionflow";
 
-export default {
-  id: "writing-assistant",
-  start: "draft",
+export default defineConfig({
+  factories: [
+    "./factories/demo.ts",
+    "./factories/shared-helper-demo.ts",
+  ],
+});
+```
+
+Factory declarations are explicit and deterministic:
+
+- Relative paths resolve from project root
+- Missing paths fail fast with path diagnostics
+- Duplicate factory IDs fail startup with conflict diagnostics
+
+## Runtime Artifacts
+
+NotionFlow writes runtime state under `.notionflow/`:
+
+- `.notionflow/notionflow.db`
+- `.notionflow/runtime.log`
+- `.notionflow/errors.log`
+
+`notionflow init` creates `.notionflow/` and ensures it is in `.gitignore`.
+
+## Core Commands
+
+```bash
+notionflow init
+notionflow doctor [--config <path>]
+notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
+notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--factory <id>]
+notionflow run --task <notion_page_id> [--config <path>]
+notionflow integrations notion provision-board --board <board-id>
+notionflow integrations notion create-task --board <board-id> --title "..." [--factory <factory-id>]
+notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
+```
+
+## Library API
+
+Use package-root typed APIs to author factories and config:
+
+```ts
+import { defineConfig, defineFactory, agent } from "notionflow";
+
+const doWork = agent(async ({ ctx }) => ({
+  status: "done",
+  data: { ...ctx, completed: true },
+}));
+
+export const demoFactory = defineFactory({
+  id: "demo",
+  start: "start",
   context: {},
   states: {
-    draft: {
+    start: {
       type: "action",
-      agent: draft,
+      agent: doWork,
       on: { done: "done", failed: "failed" },
     },
     done: { type: "done" },
     failed: { type: "failed" },
   },
-};
+});
+
+export default defineConfig({
+  factories: ["./factories/demo.ts"],
+});
 ```
 
-```bash
-notionflow factory install --path ./writing-assistant.ts
-```
+## Examples
 
-3. Create and run a task.
+Project-style examples are in [`example-factories/`](./example-factories):
 
-```bash
-notionflow integrations notion create-task --board writing-assistant --factory writing-assistant --title "Write launch note"
-notionflow tick --factory writing-assistant
-```
+- explicit `notionflow.config.ts`
+- factories under `factories/`
+- shared runtime helper import example
+- setup notes and runnable commands
 
-## Core Commands
+## Docs
 
-```bash
-# common
-notionflow setup
-notionflow doctor
-notionflow tick [--board <id>] [--factory <id>] [--max-transitions-per-tick <n>] [--lease-mode strict|best-effort]
-notionflow run --task <notion_page_id> [--max-transitions-per-tick <n>] [--lease-mode strict|best-effort]
-notionflow status --task <notion_page_id>
-
-# advanced
-notionflow board list
-notionflow factory create --id <factory-id>
-notionflow factory install --path ./factory.ts [--skip-notion-board] [--parent-page <notion_page_id>]
-notionflow factory list
-
-# Notion integration
-notionflow integrations notion provision-board --board <factory-id>
-notionflow integrations notion create-task --board <board-id> --factory <factory-id> --title "..."
-notionflow integrations notion sync [--board <board-id>] [--factory <factory-id>] [--run]
-```
-
-## Factory Authoring Rules
-
-- Runtime hooks must be local to the same file: `agent`, `select`, `until`.
-- Imported functions cannot be used as runtime hooks.
-- `action` agent result must be:
-  - `status`: `"done" | "feedback" | "failed"`
-  - `data`: optional object
-  - `message`: optional string
-- Non-terminal states route with `on` maps.
-
-See `tasks/factory-dsl-v0-spec.md` for the v0 DSL contract.
-
-## Feedback, Retry, and Loop
-
-- Feedback: return `{ status: "feedback", message }` from an `action` state and route `on.feedback` to a `feedback` state.
-- Resume: feedback state defaults to resuming previous state (`resume: "previous"`).
-- Retry: set `retries: { max: <n>, backoff?: { strategy: "fixed" | "exponential", ms, maxMs? } }` on action states.
-- Loop: use `type: "loop"` with `body`, `maxIterations`, optional `until`, and `on: { continue, done, exhausted }`.
-
-## Troubleshooting
-
-### `doctor` warns `NOTION_API_TOKEN missing`
-
-Set your token and rerun:
-
-```bash
-export NOTION_API_TOKEN=secret_...
-notionflow doctor
-```
-
-### Task remains `queued` after `tick`
-
-- Ensure the task is in Notion `State = Queue`.
-- Ensure task `--factory` matches an installed factory (`notionflow factory list`).
-- Run explicit sync and execution:
-
-```bash
-notionflow integrations notion sync --factory <factory-id> --run
-```
-
-### Task enters `feedback` and does not resume
-
-- Add a new comment on the Notion task page.
-- Run sync again:
-
-```bash
-notionflow integrations notion sync --run
-```
-
-NotionFlow checks comments after `waitingSince`, stores the latest reply in `human_feedback`, and re-queues the task.
-
-### Task fails with lease/worker contention
-
-Another worker owns the active run lease. Use one worker ID per process or switch to best-effort mode if desired:
-
-```bash
-notionflow tick --lease-mode best-effort
-```
-
-### Tick stops before terminal state
-
-This usually means `maxTransitionsPerTick` was reached. Run another tick or raise the limit:
-
-```bash
-notionflow tick --max-transitions-per-tick 100
-```
-
-### Notion state looks stale
-
-Re-sync from Notion and print local record:
-
-```bash
-notionflow integrations notion sync
-notionflow status --task <notion_page_id>
-```
-
-### Factory install rejects runtime function imports
-
-Keep `agent`/`select`/`until` in the same factory file. Imported helper functions can be used for non-runtime utility logic only.
-
-## Live Verification Suite
-
-Use the live suite in [`tasks/factory-agent-verification.md`](./tasks/factory-agent-verification.md) to validate:
-
-- happy path
-- feedback pause/resume
-- retry/failure
-- bounded loop
-- crash/resume + replay
+- [CLI Reference](./docs/cli-reference.md)
+- [Factory Authoring](./docs/factory-authoring.md)
+- [Architecture](./docs/architecture.md)
