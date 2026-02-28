@@ -144,7 +144,7 @@ notionflow integrations notion <subcommand>
 Create and register a Notion board.
 
 ```bash
-notionflow integrations notion provision-board --board <board-id> [--title <name>] [--parent-page <notion_page_id>]
+notionflow integrations notion provision-board --board <board-id> [--title <name>] [--parent-page <notion_page_id>] [--config <path>]
 ```
 
 ### `integrations notion create-task`
@@ -152,7 +152,7 @@ notionflow integrations notion provision-board --board <board-id> [--title <name
 Create a Notion task and upsert local state.
 
 ```bash
-notionflow integrations notion create-task --board <board-id> --title "Task" [--factory <factory-id>] [--status <state>]
+notionflow integrations notion create-task [--board <board-id> | --factory <factory-id>] --title "Task" [--status <state>] [--config <path>]
 ```
 
 ### `integrations notion sync`

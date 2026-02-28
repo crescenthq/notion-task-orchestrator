@@ -34,6 +34,21 @@ describe('loadFactoryFromPath', () => {
     expect(isPipeFactoryDefinition(loaded.definition)).toBe(true)
   })
 
+  it('loads a module with optional factory name metadata', async () => {
+    const dir = await createTempDir()
+    const filePath = path.join(dir, 'named-factory.mjs')
+
+    await writeFile(
+      filePath,
+      `export default {\n  id: "named-factory",\n  name: "Named Factory",\n  initial: { visits: 0 },\n  run: async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
+      'utf8',
+    )
+
+    const loaded = await loadFactoryFromPath(filePath)
+    expect(loaded.definition.name).toBe('Named Factory')
+    expect(isPipeFactoryDefinition(loaded.definition)).toBe(true)
+  })
+
   it('rejects modules that do not export a definePipe factory object shape', async () => {
     const dir = await createTempDir()
     const filePath = path.join(dir, 'legacy-factory.mjs')

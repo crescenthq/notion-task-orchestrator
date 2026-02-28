@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url'
 
 export type PipeFactoryDefinition = {
   id: string
+  name?: string
   initial: unknown
   run: (input: unknown) => unknown
 }

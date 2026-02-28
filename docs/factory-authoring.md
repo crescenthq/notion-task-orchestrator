@@ -236,6 +236,10 @@ export default defineConfig({
 })
 ```
 
+If you want board provisioning to use a human-friendly name, add `name` to the
+`definePipe` export (for example `name: 'My Factory'`). NotionFlow still uses the
+factory `id` as the board key, so you can rename the board in Notion later.
+
 4. Validate context and auth.
 
 ```bash

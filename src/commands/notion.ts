@@ -1,8 +1,10 @@
 import {defineCommand} from 'citty'
 import {and, eq, sql} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
+import {resolveProjectConfig} from '../project/discoverConfig'
 import {notionToken, notionWorkspacePageId} from '../config/env'
 import {boards, tasks, workflows} from '../db/schema'
+import {loadDeclaredFactories} from '../project/projectConfig'
 import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
@@ -33,6 +35,134 @@ function localTaskStateFromNotion(state: string): string {
   if (normalized === 'queue') return 'queued'
   if (normalized === 'feedback') return 'feedback'
   return 'running' // unknown/step labels treated as running
+}
+
+function toBoardTitle(boardId: string): string {
+  return boardId
+    .split(/[-_]/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+type FactoryNotionBoardInfo = {
+  boardId: string
+  boardTitle: string
+}
+
+function resolveBoardTitle(
+  definitionName: string | undefined,
+  fallbackBoardId: string,
+): string {
+  if (typeof definitionName === 'string' && definitionName.trim().length > 0) {
+    return definitionName.trim()
+  }
+  return toBoardTitle(fallbackBoardId)
+}
+
+async function resolveConfiguredFactoryBoardInfo(
+  options: {
+    factoryId: string
+    configPath?: string
+    startDir?: string
+  },
+): Promise<FactoryNotionBoardInfo> {
+  const resolvedProject = await resolveProjectConfig({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: options.configPath,
+  })
+  const declaredFactories = await loadDeclaredFactories({
+    configPath: resolvedProject.configPath,
+    projectRoot: resolvedProject.projectRoot,
+  })
+
+  const selectedFactory = declaredFactories.find(
+    entry => entry.definition.id === options.factoryId,
+  )
+  if (!selectedFactory) {
+    const availableFactoryIds = declaredFactories
+      .map(entry => entry.definition.id)
+      .sort()
+    throw new Error(
+      [
+        `Factory \`${options.factoryId}\` is not declared in project config.`,
+        `Config path: ${resolvedProject.configPath}`,
+        `Available factories: ${availableFactoryIds.join(', ') || '<none>'}`,
+      ].join('\n'),
+    )
+  }
+
+  return {
+    boardId: selectedFactory.definition.id,
+    boardTitle: resolveBoardTitle(
+      selectedFactory.definition.name,
+      selectedFactory.definition.id,
+    ),
+  }
+}
+
+async function provisionNotionBoard({
+  boardId,
+  title,
+  parentPage,
+  token,
+  db,
+}: {
+  boardId: string
+  title: string
+  parentPage?: string | null
+  token: string
+  db: Awaited<ReturnType<typeof openApp>>['db']
+}): Promise<{
+  externalId: string
+  databaseId: string
+  url: string | null
+}> {
+  const parentPageId =
+    parentPage ??
+    notionWorkspacePageId() ??
+    (await notionFindPageByTitle(token, 'NotionFlow'))
+  if (!parentPageId) {
+    throw new Error(
+      'No parent page found. Set NOTION_WORKSPACE_PAGE_ID or pass --parent-page',
+    )
+  }
+
+  const board = await notionCreateBoardDataSource(token, parentPageId, title, [])
+  const now = nowIso()
+  await db
+    .insert(boards)
+    .values({
+      id: boardId,
+      adapter: 'notion',
+      externalId: board.dataSourceId,
+      configJson: JSON.stringify({
+        name: title,
+        databaseId: board.databaseId,
+        parentPageId,
+        url: board.url,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: boards.id,
+      set: {
+        externalId: board.dataSourceId,
+        configJson: JSON.stringify({
+          name: title,
+          databaseId: board.databaseId,
+          parentPageId,
+          url: board.url,
+        }),
+        updatedAt: now,
+      },
+    })
+
+  return {
+    externalId: board.dataSourceId,
+    databaseId: board.databaseId,
+    url: board.url ?? null,
+  }
 }
 
 async function upsertTask(
@@ -106,13 +236,50 @@ export async function syncNotionBoards(options: {
   const token = notionToken()
   if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-  const {db} = await openApp({
+  const resolvedProject = await resolveProjectConfig({
     startDir: options.startDir ?? process.cwd(),
     configPath: options.configPath,
   })
+
+  const {db} = await openApp({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: resolvedProject.configPath,
+  })
+
+  const resolvedFactoryInfo =
+    !options.boardId && options.factoryId
+      ? await resolveConfiguredFactoryBoardInfo({
+          factoryId: options.factoryId,
+          configPath: options.configPath,
+          startDir: options.startDir ?? process.cwd(),
+        })
+      : undefined
+
+  if (!options.boardId && resolvedFactoryInfo) {
+    const configuredFactoryBoardId = resolvedFactoryInfo.boardId
+    const configuredFactoryBoardTitle = resolvedFactoryInfo.boardTitle
+    const [existingFactoryBoard] = await db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, configuredFactoryBoardId))
+      .limit(1)
+
+    if (!existingFactoryBoard) {
+      await provisionNotionBoard({
+        boardId: configuredFactoryBoardId,
+        title: configuredFactoryBoardTitle,
+        token,
+        db,
+      })
+    }
+  }
+
+  const configuredFactoryBoardId = resolvedFactoryInfo?.boardId
   const targetBoards = options.boardId
     ? await db.select().from(boards).where(eq(boards.id, options.boardId))
-    : await db.select().from(boards)
+    : configuredFactoryBoardId
+      ? await db.select().from(boards).where(eq(boards.id, configuredFactoryBoardId))
+      : await db.select().from(boards)
 
   const notionBoards = targetBoards.filter(board => board.adapter === 'notion')
   if (notionBoards.length === 0) {
@@ -260,6 +427,7 @@ export const notionCmd = defineCommand({
       args: {
         board: {type: 'string', required: true},
         title: {type: 'string', required: false},
+        config: {type: 'string', required: false},
         parentPage: {type: 'string', required: false, alias: 'parent-page'},
       },
       async run({args}) {
@@ -268,62 +436,24 @@ export const notionCmd = defineCommand({
 
         const boardId = String(args.board)
         const providedParent = args.parentPage ? String(args.parentPage) : null
-        const parentPageId =
-          providedParent ??
-          notionWorkspacePageId() ??
-          (await notionFindPageByTitle(token, 'NotionFlow'))
-        if (!parentPageId) {
-          throw new Error(
-            'No parent page found. Set NOTION_WORKSPACE_PAGE_ID or pass --parent-page',
-          )
-        }
-
         const title = String(
-          args.title ??
-            boardId
-              .split(/[-_]/)
-              .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-              .join(' '),
+          args.title ?? toBoardTitle(boardId),
         )
 
-        const board = await notionCreateBoardDataSource(
-          token,
-          parentPageId,
+        const resolvedProject = await resolveProjectConfig({
+          startDir: process.cwd(),
+          configPath: args.config ? String(args.config) : undefined,
+        })
+        const {db} = await openApp({configPath: resolvedProject.configPath})
+        const board = await provisionNotionBoard({
+          boardId,
           title,
-          [],
-        )
-        const {db} = await openApp()
-        const now = nowIso()
-        await db
-          .insert(boards)
-          .values({
-            id: boardId,
-            adapter: 'notion',
-            externalId: board.dataSourceId,
-            configJson: JSON.stringify({
-              name: title,
-              databaseId: board.databaseId,
-              parentPageId,
-              url: board.url,
-            }),
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: boards.id,
-            set: {
-              externalId: board.dataSourceId,
-              configJson: JSON.stringify({
-                name: title,
-                databaseId: board.databaseId,
-                parentPageId,
-                url: board.url,
-              }),
-              updatedAt: now,
-            },
-          })
+          parentPage: providedParent,
+          token,
+          db,
+        })
 
-        console.log(`Board provisioned: ${boardId} -> ${board.dataSourceId}`)
+        console.log(`Board provisioned: ${boardId} -> ${board.externalId}`)
         if (board.url) console.log(`Notion URL: ${board.url}`)
       },
     }),
@@ -334,21 +464,60 @@ export const notionCmd = defineCommand({
           'Create a task page in a Notion board and upsert local state',
       },
       args: {
-        board: {type: 'string', required: true},
+        board: {type: 'string', required: false},
         title: {type: 'string', required: true},
         factory: {type: 'string', required: false},
         status: {type: 'string', required: false},
+        config: {type: 'string', required: false},
       },
       async run({args}) {
         const token = notionToken()
         if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-        const {db} = await openApp()
+        const explicitBoardId = args.board ? String(args.board) : undefined
+        const factoryId = args.factory ? String(args.factory) : undefined
+        const configuredFactoryInfo =
+          explicitBoardId === undefined && factoryId
+            ? await resolveConfiguredFactoryBoardInfo({
+                factoryId,
+                configPath: args.config ? String(args.config) : undefined,
+                startDir: process.cwd(),
+              })
+            : undefined
+        const boardId = explicitBoardId ?? configuredFactoryInfo?.boardId
+        const configuredFactoryBoardTitle = configuredFactoryInfo?.boardTitle
+        if (!boardId) {
+          throw new Error(
+            'Either --board or --factory is required to identify Notion board',
+          )
+        }
+        const factoryBoardTitle = configuredFactoryBoardTitle ?? toBoardTitle(boardId)
+
+        const resolvedProject = await resolveProjectConfig({
+          startDir: process.cwd(),
+          configPath: args.config ? String(args.config) : undefined,
+        })
+        const {db} = await openApp({configPath: resolvedProject.configPath})
+        const [existingBoard] = await db
+          .select()
+          .from(boards)
+          .where(eq(boards.id, boardId))
+          .limit(1)
+
+        if (!existingBoard) {
+          await provisionNotionBoard({
+            boardId,
+            title: factoryBoardTitle,
+            token,
+            db,
+          })
+        }
+
         const [board] = await db
           .select()
           .from(boards)
-          .where(eq(boards.id, String(args.board)))
-        if (!board) throw new Error(`Board not found: ${args.board}`)
+          .where(eq(boards.id, boardId))
+        if (!board) throw new Error(`Board not found: ${boardId}`)
 
         await notionGetDataSource(token, board.externalId)
         const state = String(args.status ?? 'queue')

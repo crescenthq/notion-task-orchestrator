@@ -60,6 +60,15 @@ export default defineConfig({
 })
 ```
 
+Board provisioning for `tick --factory <id>` now derives the board title from the
+factory definition:
+
+- `name` in the exported `definePipe(...)` (if present)
+- otherwise an automatic title from the factory id (`demo` -> `Demo`)
+
+The board id remains the factory id, so renaming the Notion board in-place does not
+break runtime mapping.
+
 Factory declarations are explicit and deterministic:
 
 - Relative paths resolve from project root
@@ -83,7 +92,7 @@ notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-boa
 notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--factory <id>]
 notionflow run --task <notion_page_id> [--config <path>]
 notionflow integrations notion provision-board --board <board-id>
-notionflow integrations notion create-task --board <board-id> --title "..." [--factory <factory-id>]
+notionflow integrations notion create-task [--board <board-id> | --factory <factory-id>] [--title "title"] [--status <state>] [--config <path>]
 notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
 ```
 

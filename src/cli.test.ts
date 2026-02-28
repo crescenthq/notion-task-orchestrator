@@ -83,9 +83,11 @@ describe('CLI bootstrap flow', () => {
     expect(legacy.status).not.toBe(0)
     expect(legacyOutput).toContain('unknown command')
 
-    const namespaced = runCli(['integrations', 'notion', 'sync'], home)
+    const namespaced = runCli(['integrations', 'notion', 'sync'], home, {
+      NOTION_API_TOKEN: 'test-token',
+    })
     const namespacedOutput = `${namespaced.stdout}\n${namespaced.stderr}`
     expect(namespaced.status).not.toBe(0)
-    expect(namespacedOutput).toContain('NOTION_API_TOKEN is required')
+    expect(namespacedOutput).toContain('No Notion boards registered')
   })
 })
