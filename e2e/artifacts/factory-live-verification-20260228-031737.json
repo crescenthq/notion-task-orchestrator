@@ -1,0 +1,114 @@
+{
+  "generatedAt": "2026-02-28T03:20:41.092Z",
+  "durationSeconds": 183,
+  "passedScenarios": 5,
+  "artifacts": [
+    {
+      "scenario": "A_happy",
+      "factoryId": "verify-happy",
+      "taskExternalId": "3152860d-4b18-8133-b78d-cd6c54ec5996",
+      "taskId": "1633a085-44c2-4742-8a27-efd806545512",
+      "runId": "97b349bc-43eb-4a7c-8706-035b4171d636",
+      "finalState": "done",
+      "transitionCount": 1,
+      "tickTimeline": [
+        {
+          "tickId": "d4cf7c2f-0968-4fdc-89e9-3c7cebd4b7cf",
+          "transitions": 1
+        }
+      ],
+      "replayTerminalState": "done",
+      "startedAt": "2026-02-28T03:17:39.344Z",
+      "finishedAt": "2026-02-28T03:18:04.882Z",
+      "notes": []
+    },
+    {
+      "scenario": "B_feedback",
+      "factoryId": "verify-feedback",
+      "taskExternalId": "3152860d-4b18-81bb-aebb-d4e033157eed",
+      "taskId": "f5e17f1e-f7f3-4598-86b1-722a01fd3140",
+      "runId": "f83ac5f4-eba1-47db-9b29-cc946fe700d7",
+      "finalState": "done",
+      "transitionCount": 2,
+      "tickTimeline": [
+        {
+          "tickId": "92b1f1e9-8867-4b87-b82f-3524e71789c0",
+          "transitions": 1
+        },
+        {
+          "tickId": "8d83a418-22cd-4cab-9927-d26c38706167",
+          "transitions": 1
+        }
+      ],
+      "replayTerminalState": "done",
+      "startedAt": "2026-02-28T03:18:04.885Z",
+      "finishedAt": "2026-02-28T03:18:49.126Z",
+      "notes": ["feedback mode: local"]
+    },
+    {
+      "scenario": "C_retry_failure",
+      "factoryId": "verify-retry-failure",
+      "taskExternalId": "3152860d-4b18-81fd-b0e8-fecef103f724",
+      "taskId": "a6bce794-2246-47b6-98ee-cd1d3b2abe96",
+      "runId": "4196d531-95b3-4600-bce9-03ba29e567ee",
+      "finalState": "failed",
+      "transitionCount": 3,
+      "tickTimeline": [
+        {
+          "tickId": "7a6ef99b-af98-429e-b510-b36968bb6c26",
+          "transitions": 3
+        }
+      ],
+      "replayTerminalState": "failed",
+      "startedAt": "2026-02-28T03:18:49.127Z",
+      "finishedAt": "2026-02-28T03:19:11.450Z",
+      "notes": []
+    },
+    {
+      "scenario": "D_bounded_loop",
+      "factoryId": "verify-loop",
+      "taskExternalId": "3152860d-4b18-81b8-9dd1-db4d9643ca56",
+      "taskId": "d95a4f2d-4736-474f-86d3-5e7c76699b8c",
+      "runId": "26085809-89bf-4fe0-b26c-f01d032e1200",
+      "finalState": "done",
+      "transitionCount": 5,
+      "tickTimeline": [
+        {
+          "tickId": "4aac6b30-ccea-4531-81de-59d83600fb64",
+          "transitions": 5
+        }
+      ],
+      "replayTerminalState": "done",
+      "startedAt": "2026-02-28T03:19:11.451Z",
+      "finishedAt": "2026-02-28T03:19:35.855Z",
+      "notes": []
+    },
+    {
+      "scenario": "E_resume_replay",
+      "factoryId": "verify-resume-budget",
+      "taskExternalId": "3152860d-4b18-81d2-af54-c06e5718c634",
+      "taskId": "aedd4df5-ebfe-49c9-9007-4fc73ef95c7f",
+      "runId": "ebb8dee1-09d9-4bde-966d-afe26fd7c5c4",
+      "finalState": "done",
+      "transitionCount": 3,
+      "tickTimeline": [
+        {
+          "tickId": "0a380c79-ea59-4c56-a3ea-443edd93352d",
+          "transitions": 1
+        },
+        {
+          "tickId": "ee51d69b-d38e-4ec6-aea0-f89e0d119994",
+          "transitions": 1
+        },
+        {
+          "tickId": "dfe637ca-874b-4b9c-aebc-72296bd292cd",
+          "transitions": 1
+        }
+      ],
+      "replayTerminalState": "done",
+      "startedAt": "2026-02-28T03:19:35.856Z",
+      "finishedAt": "2026-02-28T03:20:41.091Z",
+      "notes": ["maxTransitionsPerTick=1", "replay path exact-match"]
+    }
+  ]
+}

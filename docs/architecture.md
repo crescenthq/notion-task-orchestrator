@@ -27,7 +27,8 @@ Applicable commands also support `--config <path>` for explicit resolution.
 
 ## Factory Loading Model
 
-Factories are loaded only from explicit path declarations in `notionflow.config.ts`.
+Factories are loaded only from explicit path declarations in
+`notionflow.config.ts`.
 
 - no implicit glob scan
 - relative declarations resolve from project root
@@ -54,8 +55,10 @@ With `--loop`, tick:
 
 - repeats until signal-based shutdown
 - waits 2000ms between successful cycles
-- applies exponential backoff for retryable Notion API errors (`429`, transient `5xx`)
-- handles `SIGINT`/`SIGTERM` gracefully by finishing in-flight cycle and stopping scheduling
+- applies exponential backoff for retryable Notion API errors (`429`, transient
+  `5xx`)
+- handles `SIGINT`/`SIGTERM` gracefully by finishing in-flight cycle and
+  stopping scheduling
 
 ## Task State Model
 

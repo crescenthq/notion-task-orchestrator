@@ -14,7 +14,8 @@ Top-level commands:
 
 ## Project Context Resolution
 
-Project-scoped commands resolve `notionflow.config.ts` by walking up parent directories from the current working directory.
+Project-scoped commands resolve `notionflow.config.ts` by walking up parent
+directories from the current working directory.
 
 Supported `--config <path>` override:
 
@@ -24,7 +25,8 @@ Supported `--config <path>` override:
 - `tick`
 - `integrations notion sync`
 
-When `--config` is provided, NotionFlow resolves project root from that config file's directory.
+When `--config` is provided, NotionFlow resolves project root from that config
+file's directory.
 
 ## Common Commands
 

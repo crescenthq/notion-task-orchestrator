@@ -43,9 +43,7 @@
       "replayTerminalState": "done",
       "startedAt": "2026-02-27T03:00:41.810Z",
       "finishedAt": "2026-02-27T03:01:20.605Z",
-      "notes": [
-        "feedback mode: local"
-      ]
+      "notes": ["feedback mode: local"]
     },
     {
       "scenario": "C_retry_failure",
@@ -110,10 +108,7 @@
       "replayTerminalState": "done",
       "startedAt": "2026-02-27T03:02:56.662Z",
       "finishedAt": "2026-02-27T03:03:37.864Z",
-      "notes": [
-        "maxTransitionsPerTick=1",
-        "replay path exact-match"
-      ]
+      "notes": ["maxTransitionsPerTick=1", "replay path exact-match"]
     }
   ]
 }

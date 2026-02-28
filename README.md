@@ -1,6 +1,7 @@
 # NotionFlow
 
-Project-local orchestration CLI and typed library for running TypeScript factories against Notion tasks.
+Project-local orchestration CLI and typed library for running TypeScript
+factories against Notion tasks.
 
 ## Local-First Model
 
@@ -12,7 +13,8 @@ Each project contains:
 - `factories/`
 - `.notionflow/` (runtime DB + logs)
 
-`run` and `tick` load factories directly from paths declared in `notionflow.config.ts`.
+`run` and `tick` load factories directly from paths declared in
+`notionflow.config.ts`.
 
 ## Prerequisites
 
@@ -38,25 +40,24 @@ npx notionflow doctor
 npx notionflow tick --factory demo
 ```
 
-You can run commands from anywhere inside the project tree; NotionFlow walks up directories to find `notionflow.config.ts`.
+You can run commands from anywhere inside the project tree; NotionFlow walks up
+directories to find `notionflow.config.ts`.
 
 ## Config Discovery Rules
 
 - Default: walk up from current working directory to find `notionflow.config.ts`
-- Override: pass `--config <path>` on project-scoped commands (`doctor`, `factory create`, `run`, `tick`, `integrations notion sync`)
+- Override: pass `--config <path>` on project-scoped commands (`doctor`,
+  `factory create`, `run`, `tick`, `integrations notion sync`)
 - Project root is always the directory containing the resolved config file
 
 ## Config Format
 
 ```ts
-import { defineConfig } from "notionflow";
+import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: [
-    "./factories/demo.ts",
-    "./factories/shared-helper-demo.ts",
-  ],
-});
+  factories: ['./factories/demo.ts', './factories/shared-helper-demo.ts'],
+})
 ```
 
 Factory declarations are explicit and deterministic:
@@ -93,31 +94,31 @@ notionflow integrations notion sync [--config <path>] [--board <board-id>] [--fa
 Use package-root typed APIs to author factories and config:
 
 ```ts
-import { defineConfig, defineFactory, agent } from "notionflow";
+import {defineConfig, defineFactory, agent} from 'notionflow'
 
-const doWork = agent(async ({ ctx }) => ({
-  status: "done",
-  data: { ...ctx, completed: true },
-}));
+const doWork = agent(async ({ctx}) => ({
+  status: 'done',
+  data: {...ctx, completed: true},
+}))
 
 export const demoFactory = defineFactory({
-  id: "demo",
-  start: "start",
+  id: 'demo',
+  start: 'start',
   context: {},
   states: {
     start: {
-      type: "action",
+      type: 'action',
       agent: doWork,
-      on: { done: "done", failed: "failed" },
+      on: {done: 'done', failed: 'failed'},
     },
-    done: { type: "done" },
-    failed: { type: "failed" },
+    done: {type: 'done'},
+    failed: {type: 'failed'},
   },
-});
+})
 
 export default defineConfig({
-  factories: ["./factories/demo.ts"],
-});
+  factories: ['./factories/demo.ts'],
+})
 ```
 
 ## Examples

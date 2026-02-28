@@ -5,22 +5,22 @@
 A factory is a default export state machine.
 
 ```ts
-import { defineFactory } from "notionflow";
+import {defineFactory} from 'notionflow'
 
 export default defineFactory({
-  id: "my-factory",
-  start: "start",
+  id: 'my-factory',
+  start: 'start',
   context: {},
   states: {
     start: {
-      type: "action",
-      agent: async ({ ctx }) => ({ status: "done", data: ctx }),
-      on: { done: "done", failed: "failed" },
+      type: 'action',
+      agent: async ({ctx}) => ({status: 'done', data: ctx}),
+      on: {done: 'done', failed: 'failed'},
     },
-    done: { type: "done" },
-    failed: { type: "failed" },
+    done: {type: 'done'},
+    failed: {type: 'failed'},
   },
-});
+})
 ```
 
 ## Local Project Workflow
@@ -40,11 +40,11 @@ npx notionflow factory create --id my-factory --skip-notion-board
 3. Declare factory file in `notionflow.config.ts`.
 
 ```ts
-import { defineConfig } from "notionflow";
+import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ["./factories/my-factory.ts"],
-});
+  factories: ['./factories/my-factory.ts'],
+})
 ```
 
 4. Validate project context and auth.
@@ -66,50 +66,50 @@ Runtime hooks may be imported from shared modules. This is supported:
 Example shared runtime helper module:
 
 ```ts
-import { agent, select, until } from "notionflow";
+import {agent, select, until} from 'notionflow'
 
-export const enrich = agent(async ({ ctx }) => ({
-  status: "done",
-  data: { ...ctx, enriched: true },
-}));
+export const enrich = agent(async ({ctx}) => ({
+  status: 'done',
+  data: {...ctx, enriched: true},
+}))
 
-export const route = select(({ ctx }) => (ctx.enriched ? "finish" : "retry"));
+export const route = select(({ctx}) => (ctx.enriched ? 'finish' : 'retry'))
 
-export const shouldStop = until(({ iteration }) => iteration >= 1);
+export const shouldStop = until(({iteration}) => iteration >= 1)
 ```
 
 Factory using imported helpers:
 
 ```ts
-import { defineFactory } from "notionflow";
-import { enrich, route, shouldStop } from "./shared/runtime-helpers";
+import {defineFactory} from 'notionflow'
+import {enrich, route, shouldStop} from './shared/runtime-helpers'
 
 export default defineFactory({
-  id: "shared-helper-demo",
-  start: "run_loop",
-  context: { enriched: false },
+  id: 'shared-helper-demo',
+  start: 'run_loop',
+  context: {enriched: false},
   states: {
     run_loop: {
-      type: "loop",
-      body: "enrich",
+      type: 'loop',
+      body: 'enrich',
       maxIterations: 3,
       until: shouldStop,
-      on: { continue: "enrich", done: "done", exhausted: "failed" },
+      on: {continue: 'enrich', done: 'done', exhausted: 'failed'},
     },
     enrich: {
-      type: "action",
+      type: 'action',
       agent: enrich,
-      on: { done: "route", failed: "failed" },
+      on: {done: 'route', failed: 'failed'},
     },
     route: {
-      type: "orchestrate",
+      type: 'orchestrate',
       select: route,
-      on: { finish: "done", retry: "run_loop" },
+      on: {finish: 'done', retry: 'run_loop'},
     },
-    done: { type: "done" },
-    failed: { type: "failed" },
+    done: {type: 'done'},
+    failed: {type: 'failed'},
   },
-});
+})
 ```
 
 ## Validation Rules

@@ -1,9 +1,9 @@
 {
   "name": "notionflow-example-factories",
   "version": "0.0.1",
+  "private": true,
   "description": "Example NotionFlow factories demonstrating project-local architecture",
   "type": "module",
-  "private": true,
   "scripts": {
     "doctor": "tsx ../src/cli.ts doctor --config ./notionflow.config.ts",
     "tick": "tsx ../src/cli.ts tick --config ./notionflow.config.ts",
