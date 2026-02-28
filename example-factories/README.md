@@ -1,16 +1,17 @@
 # Example Factories
 
 A standalone example NotionFlow project demonstrating project-local
-architecture. Contains four factories and a shared helper module to show
+architecture. Contains five factories and a shared helper module to show
 real-world patterns.
 
 ## Included factories
 
 - `intent` — captures and refines user intent
-- `magic-8` — routes a task through a Magic 8-Ball decision state
-- `would-you-rather` — orchestrates a binary choice flow
-- `shared-helper-demo` — demonstrates imported `agent`, `select`, and `until`
-  helpers from `notionflow`
+- `expressive-primitives` — deterministic pipe flow using `step`, `ask`,
+  `decide`, `loop`, `write`, and `end`
+- `magic-8` — multi-round ask/decide loop with generated answers
+- `would-you-rather` — binary choice workflow with bounded input loop
+- `shared-helper-demo` — shared helper composition for loop and branch logic
 
 ## Setup from a clean checkout
 
@@ -39,7 +40,7 @@ shell:
 export NOTION_API_TOKEN=secret_...
 ```
 
-`NOTION_API_TOKEN` is the only variable required for `doctor` and `tick`. The
+`NOTION_API_TOKEN` is required for `doctor`, `provision-board`, `create-task`, and `tick`. The
 token must have access to the Notion workspace you will write tasks to.
 
 ### 3. Verify setup
@@ -51,7 +52,21 @@ npm run doctor
 Expected output: all checks pass, factory files resolved from
 `notionflow.config.ts`.
 
-### 4. Run a factory tick
+### 4. Seed a task
+
+Provision declared factory boards first:
+
+```bash
+npm run notion:sync-factories
+```
+
+Then seed a queued task for the shared-helper-demo workflow.
+
+```bash
+npm run notion:create-task -- --factory shared-helper-demo --title "Run shared helper demo" --status queue
+```
+
+### 5. Run a factory tick
 
 ```bash
 npm run tick:demo
@@ -66,11 +81,20 @@ To tick any factory by name:
 npm run tick -- --factory intent
 ```
 
+The expressive primitive demo can be run directly:
+
+```bash
+npm run tick -- --factory expressive-primitives
+```
+
 ## Available scripts
 
 | Script      | Command                                                                               | Description                                          |
 | ----------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `doctor`    | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts`                            | Validate config and factory resolution               |
+| `notion:provision-board` | `tsx ../src/cli.ts integrations notion provision-board --config ./notionflow.config.ts` | Provision a Notion board for local examples          |
+| `notion:sync-factories` | `tsx ../src/cli.ts integrations notion sync-factories --config ./notionflow.config.ts` | Provision all factory boards from config before tick     |
+| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a new Notion task and mirror local task state   |
 | `tick`      | `tsx ../src/cli.ts tick --config ./notionflow.config.ts`                              | Tick the next queued task across all factories       |
 | `tick:demo` | `tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts` | Tick next task for `shared-helper-demo` specifically |
 | `check`     | `tsc --noEmit`                                                                        | Type-check all factory files                         |
@@ -83,11 +107,12 @@ example-factories/
   package.json                # Standalone package with runnable scripts
   factories/
     intent.ts
+    expressive-primitives.ts
     magic-8.ts
     would-you-rather.ts
     shared-helper-demo.ts
     shared/
-      runtime-helpers.ts      # Shared agent/select/until helpers
+      runtime-helpers.ts      # Shared definePipe helper steps/selectors
 ```
 
 ## Passing --config from any directory

@@ -96,14 +96,25 @@ async function execCliRaw(
   cwd: string,
 ): Promise<{stdout: string; stderr: string; code: number | null}> {
   const cliPath = path.resolve(process.cwd(), 'src/cli.ts')
+  const tsxLoaderPath = path.resolve(
+    process.cwd(),
+    'node_modules',
+    'tsx',
+    'dist',
+    'loader.mjs',
+  )
 
   return new Promise<{stdout: string; stderr: string; code: number | null}>(
     (resolve, reject) => {
-      const child = spawn('npx', ['tsx', cliPath, ...args], {
-        cwd,
-        stdio: 'pipe',
-        env: process.env,
-      })
+      const child = spawn(
+        process.execPath,
+        ['--import', tsxLoaderPath, cliPath, ...args],
+        {
+          cwd,
+          stdio: 'pipe',
+          env: process.env,
+        },
+      )
 
       let stdout = ''
       let stderr = ''

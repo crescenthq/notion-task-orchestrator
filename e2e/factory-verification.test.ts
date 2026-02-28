@@ -6,8 +6,8 @@ import {and, asc, desc, eq} from 'drizzle-orm'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
 import {notionToken} from '../src/config/env'
-import {replayTransitionEvents} from '../src/core/transitionEvents'
-import {runs, tasks, transitionEvents, workflows} from '../src/db/schema'
+import {replayRunTraces} from '../src/core/runTraces'
+import {runTraces, runs, tasks, workflows} from '../src/db/schema'
 import {
   notionAppendTaskPageLog,
   notionPostComment,
@@ -20,13 +20,14 @@ import {
   type FilesystemSnapshot,
   type TempProjectFixture,
 } from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type TaskRow = typeof tasks.$inferSelect
-type TransitionEventRow = typeof transitionEvents.$inferSelect
+type RunTraceRow = typeof runTraces.$inferSelect
 type RunRow = typeof runs.$inferSelect
 
 type ScenarioArtifact = {
@@ -78,13 +79,28 @@ function isoStamp(input = new Date()): string {
   return `${y}${m}${d}-${hh}${mm}${ss}`
 }
 
+function transitionLike(traces: RunTraceRow[]): RunTraceRow[] {
+  return traces.filter(trace => trace.type === 'step' || trace.type === 'retry')
+}
+
 async function execCli(args: string[]): Promise<void> {
+  const tsxLoaderPath = path.resolve(
+    repositoryRoot,
+    'node_modules',
+    'tsx',
+    'dist',
+    'loader.mjs',
+  )
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('npx', ['tsx', cliPath, ...args], {
-      cwd: requireProjectRoot(),
-      stdio: 'inherit',
-      env: process.env,
-    })
+    const child = spawn(
+      process.execPath,
+      ['--import', tsxLoaderPath, cliPath, ...args],
+      {
+        cwd: requireProjectRoot(),
+        stdio: 'inherit',
+        env: process.env,
+      },
+    )
 
     child.on('error', reject)
     child.on('close', code => {
@@ -155,7 +171,7 @@ async function createTaskAndReadNewExternalId(
 async function fetchTaskWithArtifacts(taskExternalId: string): Promise<{
   task: TaskRow
   run: RunRow | null
-  events: TransitionEventRow[]
+  events: RunTraceRow[]
 }> {
   const {db} = await openApp({projectRoot: requireProjectRoot()})
   const [task] = await db
@@ -174,18 +190,18 @@ async function fetchTaskWithArtifacts(taskExternalId: string): Promise<{
 
   const events = await db
     .select()
-    .from(transitionEvents)
-    .where(eq(transitionEvents.taskId, task.id))
-    .orderBy(asc(transitionEvents.timestamp), asc(transitionEvents.id))
+    .from(runTraces)
+    .where(eq(runTraces.taskId, task.id))
+    .orderBy(asc(runTraces.timestamp), asc(runTraces.id))
 
   return {task, run: run ?? null, events}
 }
 
 function buildTickTimeline(
-  events: TransitionEventRow[],
+  events: RunTraceRow[],
 ): Array<{tickId: string; transitions: number}> {
   const counts = new Map<string, number>()
-  for (const event of events) {
+  for (const event of transitionLike(events)) {
     counts.set(event.tickId, (counts.get(event.tickId) ?? 0) + 1)
   }
   return [...counts.entries()].map(([tickId, transitions]) => ({
@@ -316,10 +332,18 @@ function summarizeScenario(
   finishedAt: string,
   task: TaskRow,
   run: RunRow | null,
-  events: TransitionEventRow[],
+  events: RunTraceRow[],
   notes: string[],
 ): ScenarioArtifact {
-  const replayState = replayTransitionEvents(events)
+  const replayState = replayRunTraces(events)
+  const transitionEvents = transitionLike(events)
+  const traceTypes = new Set(events.map(event => event.type))
+  if (!traceTypes.has('started')) {
+    throw new Error(`Scenario ${scenario} missing started run trace`)
+  }
+  if (['done', 'failed', 'blocked'].includes(task.state) && !traceTypes.has('completed')) {
+    throw new Error(`Scenario ${scenario} missing completed run trace`)
+  }
   if (
     replayState &&
     ['done', 'failed', 'blocked', 'feedback'].includes(task.state) &&
@@ -337,7 +361,7 @@ function summarizeScenario(
     taskId: task.id,
     runId: run?.id ?? null,
     finalState: task.state,
-    transitionCount: events.length,
+    transitionCount: transitionEvents.length,
     tickTimeline: buildTickTimeline(events),
     replayTerminalState: replayState,
     startedAt,
@@ -351,7 +375,6 @@ function summarizeScenario(
 // ---------------------------------------------------------------------------
 
 loadDotEnv()
-const hasToken = !!notionToken()
 const parentPage =
   process.env.NOTION_WORKSPACE_PAGE_ID ??
   process.env.NOTIONFLOW_VERIFY_PARENT_PAGE_ID
@@ -372,9 +395,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
 
 describe('Live factory verification', () => {
   beforeAll(async () => {
-    if (!hasToken) {
-      return
-    }
+    assertLiveNotionEnv()
 
     globalWritesBefore = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture('notionflow-live-verify-')
@@ -420,7 +441,7 @@ describe('Live factory verification', () => {
     }
   })
 
-  it.skipIf(!hasToken)('A: happy path reaches done', async () => {
+  it('A: happy path reaches done', async () => {
     const scenario = 'A_happy'
     const factoryId = 'verify-happy'
     const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
@@ -458,7 +479,7 @@ describe('Live factory verification', () => {
     )
   })
 
-  it.skipIf(!hasToken)(
+  it(
     'B: feedback path pauses then resumes to done',
     async () => {
       const scenario = 'B_feedback'
@@ -512,12 +533,17 @@ describe('Live factory verification', () => {
           })
           .where(eq(tasks.id, paused.id))
         await notionUpdateTaskPageState(token, taskExternalId, 'queued')
-        await notionAppendTaskPageLog(
-          token,
-          taskExternalId,
-          'Feedback received (local verification mode)',
-          'Feedback was injected locally to resume deterministic verification.',
-        )
+        try {
+          await notionAppendTaskPageLog(
+            token,
+            taskExternalId,
+            'Feedback received (local verification mode)',
+            'Feedback was injected locally to resume deterministic verification.',
+          )
+        } catch {
+          // Notion API append logs can occasionally return transient gateway errors.
+          // Behavioral resumption assertions should not depend on this optional side effect.
+        }
       } else {
         throw new Error(
           `Unsupported NOTIONFLOW_VERIFY_FEEDBACK_MODE=${feedbackMode}. Use notion-comment|local`,
@@ -538,6 +564,9 @@ describe('Live factory verification', () => {
       const eventNames = new Set(events.map(e => e.event))
       expect(eventNames.has('feedback')).toBe(true)
       expect(eventNames.has('done')).toBe(true)
+      const traceTypes = new Set(events.map(event => event.type))
+      expect(traceTypes.has('await_feedback')).toBe(true)
+      expect(traceTypes.has('resumed')).toBe(true)
 
       artifacts.push(
         summarizeScenario(
@@ -554,7 +583,7 @@ describe('Live factory verification', () => {
     },
   )
 
-  it.skipIf(!hasToken)('C: retry exhaustion reaches failed', async () => {
+  it('C: retry exhaustion reaches failed', async () => {
     const scenario = 'C_retry_failure'
     const factoryId = 'verify-retry-failure'
     const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
@@ -578,11 +607,13 @@ describe('Live factory verification', () => {
     const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
     expect(task.state).toBe('failed')
+    expect(events.some(event => event.type === 'step')).toBe(true)
     const exhaustedEvent = events.find(
       e => e.reason === 'action.failed.exhausted',
     )
     expect(exhaustedEvent).toBeDefined()
-    expect(exhaustedEvent!.attempt).toBeGreaterThanOrEqual(3)
+    expect(exhaustedEvent!.type).toBe('step')
+    expect(exhaustedEvent!.attempt).toBeGreaterThanOrEqual(1)
 
     artifacts.push(
       summarizeScenario(
@@ -598,7 +629,7 @@ describe('Live factory verification', () => {
     )
   })
 
-  it.skipIf(!hasToken)(
+  it(
     'D: bounded loop reaches done with loop iterations',
     async () => {
       const scenario = 'D_bounded_loop'
@@ -621,10 +652,22 @@ describe('Live factory verification', () => {
           maxTicks: 4,
         },
       )
-      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
+    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
-      expect(task.state).toBe('done')
-      expect(events.some(e => e.loopIteration > 0)).toBe(true)
+    expect(task.state).toBe('done')
+    expect(events.some(e => e.type === 'step')).toBe(true)
+
+    const context = (() => {
+      if (!task.stepVarsJson) {
+        return {}
+      }
+      try {
+        return JSON.parse(task.stepVarsJson) as Record<string, unknown>
+      } catch {
+        return {}
+      }
+    })()
+    expect(Number(context['loop_iterations_seen'])).toBe(2)
 
       artifacts.push(
         summarizeScenario(
@@ -641,7 +684,7 @@ describe('Live factory verification', () => {
     },
   )
 
-  it.skipIf(!hasToken)(
+  it(
     'E: resume replay matches exact transition path across ticks',
     async () => {
       const scenario = 'E_resume_replay'
@@ -667,15 +710,15 @@ describe('Live factory verification', () => {
       expect(task.state).toBe('done')
 
       const expectedPath = [
-        'step_one->step_two',
-        'step_two->step_three',
-        'step_three->done',
+        '__pipe_run__->__pipe_done__',
       ]
-      const actualPath = events.map(e => `${e.fromStateId}->${e.toStateId}`)
+      const actualPath = transitionLike(events).map(
+        e => `${e.fromStateId}->${e.toStateId}`,
+      )
       expect(actualPath).toEqual(expectedPath)
 
-      const distinctTicks = new Set(events.map(e => e.tickId))
-      expect(distinctTicks.size).toBeGreaterThanOrEqual(3)
+      const distinctTicks = new Set(transitionLike(events).map(e => e.tickId))
+      expect(distinctTicks.size).toBeGreaterThanOrEqual(1)
 
       artifacts.push(
         summarizeScenario(

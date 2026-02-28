@@ -3,17 +3,14 @@ import path from 'node:path'
 import {and, eq, isNull, lte, or} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
 import {notionToken} from '../config/env'
-import {loadFactoryFromPath} from './factory'
-import {boards, runs, tasks, transitionEvents} from '../db/schema'
+import {loadFactoryFromPath, type PipeFactoryDefinition} from './factory'
+import {boards, runTraces, runs, tasks} from '../db/schema'
 import {
   resolveProjectConfig,
   type ResolvedProjectConfig,
 } from '../project/discoverConfig'
 import {loadDeclaredFactories} from '../project/projectConfig'
-import {
-  parseTransitionEvent,
-  TransitionEventReasonCode,
-} from './transitionEvents'
+import {parseRunTrace, RunTraceReasonCode} from './runTraces'
 import {
   notionAppendMarkdownToPage,
   notionAppendTaskPageLog,
@@ -23,31 +20,11 @@ import {
   notionUpdateTaskPageState,
   pageTitle,
 } from '../services/notion'
+import {formatStatusLabel} from '../services/statusIcons'
 
 type JsonObject = Record<string, unknown>
 
-type RoutedAgentResult = {
-  status: string
-  data?: JsonObject
-  message?: string
-}
-
-type ActionAgentStatus = 'done' | 'feedback' | 'failed'
-
 type PageContent = {markdown: string; body?: string} | string
-
-type ActionAgentResult = {
-  status: ActionAgentStatus
-  data?: JsonObject
-  message?: string
-  page?: PageContent
-}
-
-type RetryBackoff = {
-  strategy?: 'fixed' | 'exponential'
-  ms: number
-  maxMs?: number
-}
 
 type LeaseMode = 'strict' | 'best-effort'
 
@@ -70,173 +47,84 @@ type NormalizedRuntimeRunOptions = {
 const MAX_TRANSITIONS_PER_RUN = 200
 const DEFAULT_MAX_TRANSITIONS_PER_TICK = 25
 const DEFAULT_LEASE_MS = 30_000
-const RETRY_ATTEMPTS_KEY = '__nf_retry_attempts'
-const LOOP_ITERATIONS_KEY = '__nf_loop_iterations'
+const PIPE_RUNNING_STATE_ID = '__pipe_run__'
+const PIPE_FEEDBACK_STATE_ID = '__pipe_feedback__'
+const PIPE_DONE_STATE_ID = '__pipe_done__'
+const PIPE_BLOCKED_STATE_ID = '__pipe_blocked__'
+const PIPE_FAILED_STATE_ID = '__pipe_failed__'
+const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function normalizeRoutedAgentResult(
-  value: unknown,
-  stateId: string,
-): RoutedAgentResult {
-  if (!isRecord(value)) {
-    throw new Error(`State \`${stateId}\` agent returned a non-object result`)
-  }
-
-  const status = value.status
-  if (typeof status !== 'string' || status.length === 0) {
-    throw new Error(
-      `State \`${stateId}\` agent result missing string \`status\``,
-    )
-  }
-
-  let data: JsonObject | undefined
-  if (value.data !== undefined) {
-    if (!isRecord(value.data)) {
-      throw new Error(
-        `State \`${stateId}\` agent result field \`data\` must be an object when provided`,
-      )
-    }
-    data = value.data
-  }
-
-  let message: string | undefined
-  if (value.message !== undefined) {
-    if (typeof value.message !== 'string') {
-      throw new Error(
-        `State \`${stateId}\` agent result field \`message\` must be a string when provided`,
-      )
-    }
-    message = value.message
-  }
-
-  return {status, data, message}
+type PipeAwaitFeedbackSignal = {
+  type: 'await_feedback'
+  prompt: string
+  ctx: unknown
 }
 
-function normalizeActionAgentResult(
+type PipeEndSignal = {
+  type: 'end'
+  status: 'done' | 'blocked' | 'failed'
+  ctx: unknown
+  message?: string
+}
+
+type PipeStepLifecycleEvent = {
+  name: string
+  kind: string
+  ctx: unknown
+}
+
+function isPipeAwaitFeedbackSignal(
   value: unknown,
-  stateId: string,
-): ActionAgentResult {
-  const result = normalizeRoutedAgentResult(value, stateId)
-  if (
-    result.status !== 'done' &&
-    result.status !== 'feedback' &&
-    result.status !== 'failed'
-  ) {
-    throw new Error(
-      `State \`${stateId}\` action agent result \`status\` must be one of done, feedback, failed`,
-    )
-  }
+): value is PipeAwaitFeedbackSignal {
+  return (
+    isRecord(value) &&
+    value.type === 'await_feedback' &&
+    typeof value.prompt === 'string' &&
+    value.prompt.trim().length > 0 &&
+    'ctx' in value
+  )
+}
 
-  // value is guaranteed to be a JsonObject by normalizeRoutedAgentResult
-  const raw = value as JsonObject
-  let page: PageContent | undefined
-  if (raw.page !== undefined) {
-    if (typeof raw.page === 'string') {
-      page = raw.page
-    } else if (isRecord(raw.page)) {
-      if (typeof raw.page.markdown !== 'string') {
-        throw new Error(
-          `State \`${stateId}\` agent result \`page.markdown\` must be a string`,
-        )
-      }
-      const markdown = raw.page.markdown
-      const body = typeof raw.page.body === 'string' ? raw.page.body : undefined
-      page = body !== undefined ? {markdown, body} : {markdown}
-    } else {
-      throw new Error(
-        `State \`${stateId}\` agent result \`page\` must be a string or object`,
-      )
-    }
-  }
+function isPipeEndSignal(value: unknown): value is PipeEndSignal {
+  return (
+    isRecord(value) &&
+    value.type === 'end' &&
+    (value.status === 'done' ||
+      value.status === 'blocked' ||
+      value.status === 'failed') &&
+    'ctx' in value &&
+    (value.message === undefined || typeof value.message === 'string')
+  )
+}
 
-  return {
-    status: result.status,
-    data: result.data,
-    message: result.message,
-    page,
-  }
+function isMalformedPipeControlSignal(value: unknown): value is JsonObject {
+  if (!isRecord(value)) return false
+  if (value.type !== 'await_feedback' && value.type !== 'end') return false
+  if (isPipeAwaitFeedbackSignal(value) || isPipeEndSignal(value)) return false
+
+  return (
+    'ctx' in value ||
+    'prompt' in value ||
+    'status' in value ||
+    'message' in value
+  )
+}
+
+function normalizeStepLabel(stepName: string): string {
+  const trimmed = stepName.trim()
+  if (trimmed.length === 0) return ''
+
+  const formatted = formatStatusLabel(trimmed)
+  const label = formatted.length > 0 ? formatted : trimmed
+  return label.slice(0, 100)
 }
 
 function mergeContext(base: JsonObject, patch?: JsonObject): JsonObject {
   return patch ? {...base, ...patch} : base
-}
-
-function getRetryAttempts(ctx: JsonObject): Record<string, number> {
-  const raw = ctx[RETRY_ATTEMPTS_KEY]
-  if (!isRecord(raw)) return {}
-  const parsed: Record<string, number> = {}
-  for (const [stateId, value] of Object.entries(raw)) {
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      parsed[stateId] = Math.floor(value)
-    }
-  }
-  return parsed
-}
-
-function setRetryAttempt(
-  ctx: JsonObject,
-  stateId: string,
-  attempt: number,
-): JsonObject {
-  const attempts = getRetryAttempts(ctx)
-  attempts[stateId] = Math.max(0, Math.floor(attempt))
-  return mergeContext(ctx, {[RETRY_ATTEMPTS_KEY]: attempts})
-}
-
-function clearRetryAttempt(ctx: JsonObject, stateId: string): JsonObject {
-  const attempts = getRetryAttempts(ctx)
-  if (!(stateId in attempts)) return ctx
-  delete attempts[stateId]
-  return mergeContext(ctx, {[RETRY_ATTEMPTS_KEY]: attempts})
-}
-
-function getLoopIterations(ctx: JsonObject): Record<string, number> {
-  const raw = ctx[LOOP_ITERATIONS_KEY]
-  if (!isRecord(raw)) return {}
-  const parsed: Record<string, number> = {}
-  for (const [stateId, value] of Object.entries(raw)) {
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      parsed[stateId] = Math.floor(value)
-    }
-  }
-  return parsed
-}
-
-function setLoopIteration(
-  ctx: JsonObject,
-  stateId: string,
-  iteration: number,
-): JsonObject {
-  const iterations = getLoopIterations(ctx)
-  iterations[stateId] = Math.max(0, Math.floor(iteration))
-  return mergeContext(ctx, {[LOOP_ITERATIONS_KEY]: iterations})
-}
-
-function backoffDelayMs(
-  backoff: RetryBackoff | undefined,
-  attempt: number,
-): number {
-  if (!backoff) return 0
-  const baseMs = Math.max(0, Math.floor(backoff.ms))
-  if (baseMs === 0) return 0
-  const strategy = backoff.strategy ?? 'fixed'
-  const computed =
-    strategy === 'exponential'
-      ? baseMs * Math.max(1, 2 ** Math.max(0, attempt - 1))
-      : baseMs
-  const capped =
-    typeof backoff.maxMs === 'number'
-      ? Math.min(computed, Math.max(0, Math.floor(backoff.maxMs)))
-      : computed
-  return Math.max(0, Math.floor(capped))
-}
-
-async function waitFor(ms: number): Promise<void> {
-  if (ms <= 0) return
-  await new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function normalizeRuntimeRunOptions(
@@ -329,16 +217,6 @@ function getTaskSelector(task: {boardId: string; externalTaskId: string}) {
   )
 }
 
-function resolveFeedbackResumeTarget(
-  feedbackState: {resume?: 'previous' | string},
-  previousStateId: string,
-): string {
-  if (feedbackState.resume && feedbackState.resume !== 'previous') {
-    return feedbackState.resume
-  }
-  return previousStateId
-}
-
 export async function runFactoryTaskByExternalId(
   taskExternalId: string,
   options: RuntimeRunOptions = {},
@@ -405,6 +283,7 @@ export async function runFactoryTaskByExternalId(
     workflowsDir: paths.workflowsDir,
   })
   const {definition} = await loadFactoryFromPath(factoryPath)
+  const pipeDefinition: PipeFactoryDefinition = definition
 
   let taskTitle = task.externalTaskId
   let taskContext = ''
@@ -427,8 +306,18 @@ export async function runFactoryTaskByExternalId(
     .find(line => line.length > 0)
   const taskPrompt = promptLine ?? taskTitle
 
+  let defaultContext: JsonObject
+  let initialStateId: string
+  if (!isRecord(pipeDefinition.initial)) {
+    throw new Error(
+      `Factory \`${definition.id}\` must define an object context for runtime persistence`,
+    )
+  }
+  defaultContext = pipeDefinition.initial
+  initialStateId = PIPE_RUNNING_STATE_ID
+
   let ctx: JsonObject = {
-    ...(isRecord(definition.context) ? definition.context : {}),
+    ...defaultContext,
     task_id: task.externalTaskId,
     task_title: taskTitle,
     task_prompt: taskPrompt,
@@ -446,7 +335,7 @@ export async function runFactoryTaskByExternalId(
     }
   }
 
-  let currentStateId = task.currentStepId ?? definition.start
+  let currentStateId = task.currentStepId ? task.currentStepId : initialStateId
   const resumed = task.currentStepId !== null || task.stepVarsJson !== null
 
   const [activeRun] = await db
@@ -541,6 +430,85 @@ export async function runFactoryTaskByExternalId(
     throw new Error(message)
   }
 
+  let pipeStepTransitions = 0
+  let activeStepLabel: string | undefined
+  let leaseRenewalError: Error | null = null
+  let leaseHeartbeatTimer: NodeJS.Timeout | null = null
+  let leaseHeartbeatInFlight: Promise<void> | null = null
+
+  const asError = (error: unknown): Error =>
+    error instanceof Error ? error : new Error(String(error))
+
+  const renewRunLeaseSafely = async (): Promise<void> => {
+    if (leaseRenewalError) return
+
+    if (leaseHeartbeatInFlight) {
+      await leaseHeartbeatInFlight
+      return
+    }
+
+    leaseHeartbeatInFlight = renewRunLease()
+      .catch(error => {
+        leaseRenewalError = asError(error)
+      })
+      .finally(() => {
+        leaseHeartbeatInFlight = null
+      })
+
+    await leaseHeartbeatInFlight
+  }
+
+  const ensureActiveLease = async (): Promise<void> => {
+    if (leaseRenewalError) throw leaseRenewalError
+    await renewRunLeaseSafely()
+    if (leaseRenewalError) throw leaseRenewalError
+  }
+
+  const startLeaseHeartbeat = (): void => {
+    const intervalMs = Math.max(1_000, Math.floor(runtimeOptions.leaseMs / 3))
+    leaseHeartbeatTimer = setInterval(() => {
+      void renewRunLeaseSafely()
+    }, intervalMs)
+    leaseHeartbeatTimer.unref?.()
+  }
+
+  const stopLeaseHeartbeat = async (): Promise<void> => {
+    if (leaseHeartbeatTimer) {
+      clearInterval(leaseHeartbeatTimer)
+      leaseHeartbeatTimer = null
+    }
+    if (leaseHeartbeatInFlight) {
+      await leaseHeartbeatInFlight
+    }
+    if (leaseRenewalError) {
+      throw leaseRenewalError
+    }
+  }
+
+  const onPipeStepStart = async (event: PipeStepLifecycleEvent): Promise<void> => {
+    if (leaseRenewalError) {
+      throw leaseRenewalError
+    }
+
+    pipeStepTransitions += 1
+    if (pipeStepTransitions > runtimeOptions.maxTransitionsPerTick) {
+      throw new Error(
+        [
+          `Pipe transition budget exceeded (${runtimeOptions.maxTransitionsPerTick}) for task ${task.externalTaskId}.`,
+          'Increase --max-transitions-per-tick or split work across ticks.',
+        ].join(' '),
+      )
+    }
+
+    const rawStepName =
+      event.name.trim().length > 0 ? event.name : event.kind.trim()
+    const stepLabel = normalizeStepLabel(rawStepName)
+    if (!stepLabel || stepLabel === activeStepLabel) return
+
+    activeStepLabel = stepLabel
+    await syncNotionState('running', stepLabel)
+  }
+
   const finalizeRun = async (
     status: 'done' | 'blocked' | 'failed',
   ): Promise<void> => {
@@ -572,6 +540,15 @@ export async function runFactoryTaskByExternalId(
         updatedAt: timestamp,
       })
       .where(eq(runs.id, runId))
+    await persistRunTrace({
+      type: 'completed',
+      stateId: currentStateId,
+      status,
+      message:
+        status === 'done'
+          ? 'Factory reached terminal done state.'
+          : String(ctx.last_error ?? 'no detail'),
+    })
     await syncNotionState(status)
     await syncNotionLog(
       status === 'done' ? 'Task complete' : `Task ${status}`,
@@ -607,65 +584,84 @@ export async function runFactoryTaskByExternalId(
         updatedAt: timestamp,
       })
       .where(eq(runs.id, runId))
+    await persistRunTrace({
+      type: 'error',
+      stateId: currentStateId,
+      status: 'failed',
+      message,
+    })
+    await persistRunTrace({
+      type: 'completed',
+      stateId: currentStateId,
+      status: 'failed',
+      message,
+    })
     await syncNotionState('failed')
     await syncNotionLog('Task failed', message)
     throw new Error(message)
   }
 
-  const pauseForNextTick = async (): Promise<void> => {
-    const timestamp = nowIso()
-    await db
-      .update(tasks)
-      .set({
-        state: 'running',
-        currentStepId: currentStateId,
-        stepVarsJson: JSON.stringify(ctx),
-        waitingSince: null,
-        updatedAt: timestamp,
-        lastError: null,
-      })
-      .where(getTaskSelector(task))
-    await db
-      .update(runs)
-      .set({
-        status: 'running',
-        currentStateId,
-        contextJson: JSON.stringify(ctx),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        leaseHeartbeatAt: null,
-        updatedAt: timestamp,
-      })
-      .where(eq(runs.id, runId))
-    await syncNotionState('running', currentStateId)
-    await syncNotionLog(
-      'Tick budget reached',
-      `Paused after ${runtimeOptions.maxTransitionsPerTick} transition(s). Resume state: ${currentStateId}`,
-    )
-  }
-
-  const persistTransition = async (
-    fromStateId: string,
-    toStateId: string,
-    event: string,
-    reason: TransitionEventReasonCode,
-    attempt: number,
-    loopIteration: number,
-  ): Promise<void> => {
-    const record = parseTransitionEvent({
+  const persistRunTrace = async (trace: {
+    type:
+      | 'started'
+      | 'resumed'
+      | 'step'
+      | 'retry'
+      | 'await_feedback'
+      | 'write'
+      | 'completed'
+      | 'error'
+    stateId?: string | null
+    fromStateId?: string | null
+    toStateId?: string | null
+    event?: string | null
+    reason?: RunTraceReasonCode | null
+    attempt?: number
+    loopIteration?: number
+    status?: 'running' | 'feedback' | 'done' | 'blocked' | 'failed' | null
+    message?: string | null
+    payload?: unknown
+  }): Promise<void> => {
+    const record = parseRunTrace({
       id: crypto.randomUUID(),
       runId,
       tickId,
       taskId: task.id,
+      type: trace.type,
+      stateId: trace.stateId ?? null,
+      fromStateId: trace.fromStateId ?? null,
+      toStateId: trace.toStateId ?? null,
+      event: trace.event ?? null,
+      reason: trace.reason ?? null,
+      attempt: Math.max(0, Math.floor(trace.attempt ?? 0)),
+      loopIteration: Math.max(0, Math.floor(trace.loopIteration ?? 0)),
+      status: trace.status ?? null,
+      message: trace.message ?? null,
+      payloadJson:
+        trace.payload === undefined ? null : JSON.stringify(trace.payload),
+      timestamp: nowIso(),
+    })
+    await db.insert(runTraces).values(record)
+  }
+
+  const persistStepTrace = async (
+    fromStateId: string,
+    toStateId: string,
+    event: string,
+    reason: RunTraceReasonCode,
+    attempt: number,
+    loopIteration: number,
+  ): Promise<void> => {
+    await persistRunTrace({
+      type: 'step',
       fromStateId,
       toStateId,
       event,
       reason,
-      attempt: Math.max(0, Math.floor(attempt)),
-      loopIteration: Math.max(0, Math.floor(loopIteration)),
-      timestamp: nowIso(),
+      attempt,
+      loopIteration,
+      stateId: toStateId,
     })
-    await db.insert(transitionEvents).values(record)
   }
 
   await db
@@ -693,437 +689,103 @@ export async function runFactoryTaskByExternalId(
     resumed ? `Resuming from state ${currentStateId}` : 'Run started',
     `Factory: ${definition.id}`,
   )
+  await persistRunTrace({
+    type: 'started',
+    stateId: currentStateId,
+    status: 'running',
+    message: `Factory: ${definition.id}`,
+  })
+  if (resumed) {
+    await persistRunTrace({
+      type: 'resumed',
+      stateId: currentStateId,
+      message: 'Resumed with persisted state/context',
+    })
+  }
 
-  let transitions = 0
-  while (transitions < MAX_TRANSITIONS_PER_RUN) {
-    await renewRunLease()
-    const state = definition.states[currentStateId]
-    if (!state)
-      await failRun(`State not found in factory graph: ${currentStateId}`)
+  const writePage = async (output: PageContent): Promise<void> => {
+    const markdown = typeof output === 'string' ? output : output.markdown
+    if (!markdown || markdown.trim().length === 0) return
+    await persistRunTrace({
+      type: 'write',
+      stateId: currentStateId,
+      message: 'Pipe emitted page output',
+      payload: {
+        markdownLength: markdown.length,
+        format: typeof output === 'string' ? 'string' : 'markdown',
+      },
+    })
+    if (!board || board.adapter !== 'notion' || !token) return
+    try {
+      await notionAppendMarkdownToPage(token, task.externalTaskId, markdown)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`[warn] failed to append page content to Notion: ${message}`)
+    }
+  }
 
-    if (
-      state.type === 'done' ||
-      state.type === 'failed' ||
-      state.type === 'blocked'
-    ) {
-      await finalizeRun(state.type)
-      console.log(`Task run complete: ${state.type}`)
-      return
+  const parsePipeContext = (value: unknown, label: string): JsonObject => {
+    if (!isRecord(value)) {
+      throw new Error(
+        `Pipe factory \`${definition.id}\` emitted non-object context for ${label}`,
+      )
+    }
+    return value
+  }
+
+  try {
+    const feedback =
+      typeof ctx.human_feedback === 'string' && ctx.human_feedback.trim()
+        ? ctx.human_feedback.trim()
+        : undefined
+
+    await ensureActiveLease()
+    startLeaseHeartbeat()
+
+    let result: unknown
+    try {
+      result = await pipeDefinition.run({
+        ctx,
+        feedback,
+        task: {
+          id: task.externalTaskId,
+          title: taskTitle,
+          prompt: taskPrompt,
+          context: taskContext,
+        },
+        writePage,
+        onStepStart: onPipeStepStart,
+        runId,
+        tickId,
+      })
+    } finally {
+      await stopLeaseHeartbeat()
     }
 
-    if (state.type === 'feedback') {
-      const resumeTargetStateId = resolveFeedbackResumeTarget(
-        state,
-        currentStateId,
-      )
-      await db
-        .update(tasks)
-        .set({
-          state: 'feedback',
-          currentStepId: resumeTargetStateId,
-          stepVarsJson: JSON.stringify(ctx),
-          waitingSince: nowIso(),
-          updatedAt: nowIso(),
-          lastError: null,
-        })
-        .where(getTaskSelector(task))
-      await db
-        .update(runs)
-        .set({
-          status: 'feedback',
-          currentStateId: resumeTargetStateId,
-          contextJson: JSON.stringify(ctx),
-          leaseOwner: null,
-          leaseExpiresAt: null,
-          leaseHeartbeatAt: null,
-          updatedAt: nowIso(),
-        })
-        .where(eq(runs.id, runId))
-      await syncNotionState('feedback')
-      await syncNotionLog(
-        `Feedback needed: ${currentStateId}`,
-        'Awaiting human input.',
-      )
-      return
-    }
+    await ensureActiveLease()
 
-    await db
-      .update(tasks)
-      .set({
-        state: 'running',
-        currentStepId: currentStateId,
-        stepVarsJson: JSON.stringify(ctx),
-        updatedAt: nowIso(),
-        lastError: null,
+    if (isPipeAwaitFeedbackSignal(result)) {
+      ctx = mergeContext(parsePipeContext(result.ctx, 'await_feedback'), {
+        [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
       })
-      .where(getTaskSelector(task))
-    await db
-      .update(runs)
-      .set({
-        status: 'running',
+      await persistStepTrace(
         currentStateId,
-        contextJson: JSON.stringify(ctx),
-        updatedAt: nowIso(),
-      })
-      .where(eq(runs.id, runId))
-    await syncNotionState('running', currentStateId)
-
-    let event = ''
-    let nextStateId: string | undefined
-    let reason: TransitionEventReasonCode | null = null
-    let feedbackMessage: string | undefined
-    let transitionAttempt = 0
-    let transitionLoopIteration = 0
-    let pageContent: PageContent | undefined
-
-    if (state.type === 'action') {
-      const maxRetries = Math.max(0, state.retries?.max ?? 0)
-      let attempt = Math.max(0, getRetryAttempts(ctx)[currentStateId] ?? 0) + 1
-
-      // Retry loop is internal to a single action state and exits by emitting one routed event.
-      while (true) {
-        try {
-          const result = normalizeActionAgentResult(
-            await (state.agent as (input: unknown) => unknown)({
-              task: {
-                id: task.externalTaskId,
-                title: taskTitle,
-                prompt: taskPrompt,
-                context: taskContext,
-              },
-              ctx,
-              stateId: currentStateId,
-              runId,
-              tickId,
-              attempt,
-            }),
-            currentStateId,
-          )
-
-          ctx = mergeContext(ctx, result.data)
-          feedbackMessage = result.message
-
-          if (result.status !== 'failed') {
-            ctx = clearRetryAttempt(ctx, currentStateId)
-            event = result.status
-            reason = `action.${event}` as TransitionEventReasonCode
-            nextStateId = state.on[event]
-            transitionAttempt = attempt
-            pageContent = result.page
-            break
-          }
-
-          const failureMessage =
-            result.message ??
-            `State \`${currentStateId}\` returned \`failed\` on attempt ${attempt}`
-          ctx = mergeContext(setRetryAttempt(ctx, currentStateId, attempt), {
-            last_error: failureMessage,
-          })
-
-          const canRetry = attempt <= maxRetries
-          if (!canRetry) {
-            event = 'failed'
-            reason = 'action.failed.exhausted'
-            nextStateId = state.on.failed
-            transitionAttempt = attempt
-            break
-          }
-
-          await persistTransition(
-            currentStateId,
-            currentStateId,
-            'failed',
-            'action.attempt.failed',
-            attempt,
-            0,
-          )
-
-          await syncNotionLog(
-            `Retrying state: ${currentStateId}`,
-            `Attempt ${attempt}/${maxRetries + 1} failed: ${failureMessage}`,
-          )
-          await db
-            .update(tasks)
-            .set({
-              state: 'running',
-              currentStepId: currentStateId,
-              stepVarsJson: JSON.stringify(ctx),
-              updatedAt: nowIso(),
-              lastError: failureMessage,
-            })
-            .where(getTaskSelector(task))
-          await db
-            .update(runs)
-            .set({
-              status: 'running',
-              currentStateId,
-              contextJson: JSON.stringify(ctx),
-              updatedAt: nowIso(),
-            })
-            .where(eq(runs.id, runId))
-
-          const delayMs = backoffDelayMs(
-            state.retries?.backoff as RetryBackoff | undefined,
-            attempt,
-          )
-          await waitFor(delayMs)
-          attempt += 1
-        } catch (error) {
-          const failureMessage =
-            error instanceof Error ? error.message : String(error)
-          ctx = mergeContext(setRetryAttempt(ctx, currentStateId, attempt), {
-            last_error: failureMessage,
-          })
-          const canRetry = attempt <= maxRetries
-
-          if (!canRetry) {
-            event = 'failed'
-            reason = 'action.failed.exhausted'
-            nextStateId = state.on.failed
-            transitionAttempt = attempt
-            break
-          }
-
-          await persistTransition(
-            currentStateId,
-            currentStateId,
-            'failed',
-            'action.attempt.error',
-            attempt,
-            0,
-          )
-
-          await syncNotionLog(
-            `Retrying state: ${currentStateId}`,
-            `Attempt ${attempt}/${maxRetries + 1} failed with error: ${failureMessage}`,
-          )
-          await db
-            .update(tasks)
-            .set({
-              state: 'running',
-              currentStepId: currentStateId,
-              stepVarsJson: JSON.stringify(ctx),
-              updatedAt: nowIso(),
-              lastError: failureMessage,
-            })
-            .where(getTaskSelector(task))
-          await db
-            .update(runs)
-            .set({
-              status: 'running',
-              currentStateId,
-              contextJson: JSON.stringify(ctx),
-              updatedAt: nowIso(),
-            })
-            .where(eq(runs.id, runId))
-
-          const delayMs = backoffDelayMs(
-            state.retries?.backoff as RetryBackoff | undefined,
-            attempt,
-          )
-          await waitFor(delayMs)
-          attempt += 1
-        }
-      }
-
-      if (pageContent && board?.adapter === 'notion' && token) {
-        const markdown =
-          typeof pageContent === 'string' ? pageContent : pageContent.markdown
-        if (markdown) {
-          try {
-            await notionAppendMarkdownToPage(
-              token,
-              task.externalTaskId,
-              markdown,
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            console.log(
-              `[warn] failed to append page content to Notion: ${message}`,
-            )
-          }
-        }
-      }
-    } else if (state.type === 'orchestrate') {
-      if (state.agent) {
-        const result = normalizeRoutedAgentResult(
-          await (state.agent as (input: unknown) => unknown)({
-            task: {
-              id: task.externalTaskId,
-              title: taskTitle,
-              prompt: taskPrompt,
-              context: taskContext,
-            },
-            ctx,
-            stateId: currentStateId,
-            runId,
-            tickId,
-          }),
-          currentStateId,
-        )
-        ctx = mergeContext(ctx, result.data)
-        const routedEvent = result.data?.event
-        event =
-          typeof routedEvent === 'string' && routedEvent.length > 0
-            ? routedEvent
-            : result.status
-        reason = 'orchestrate.agent'
-        feedbackMessage = result.message
-        transitionAttempt = 1
-      } else if (state.select) {
-        const selected = await (state.select as (input: unknown) => unknown)({
-          task: {
-            id: task.externalTaskId,
-            title: taskTitle,
-            prompt: taskPrompt,
-            context: taskContext,
-          },
-          ctx,
-          stateId: currentStateId,
-          runId,
-          tickId,
-        })
-        event = String(selected)
-        reason = 'orchestrate.select'
-        transitionAttempt = 1
-      } else {
-        await failRun(
-          `Orchestrate state \`${currentStateId}\` must define agent or select`,
-        )
-      }
-      nextStateId = state.on[event]
-    } else if (state.type === 'loop') {
-      const currentIteration = Math.max(
+        PIPE_FEEDBACK_STATE_ID,
+        'feedback',
+        'action.feedback',
+        1,
         0,
-        getLoopIterations(ctx)[currentStateId] ?? 0,
       )
-      transitionAttempt = 1
-      transitionLoopIteration = currentIteration
-
-      if (state.until) {
-        const namedGuard =
-          typeof state.until === 'string'
-            ? (definition.guards?.[state.until] as
-                | ((input: unknown) => unknown)
-                | undefined)
-            : undefined
-        const guardPassed =
-          typeof state.until === 'string'
-            ? Boolean(
-                namedGuard?.({
-                  task: {
-                    id: task.externalTaskId,
-                    title: taskTitle,
-                    prompt: taskPrompt,
-                    context: taskContext,
-                  },
-                  ctx,
-                  stateId: currentStateId,
-                  runId,
-                  tickId,
-                  iteration: currentIteration,
-                }),
-              )
-            : Boolean(
-                await (state.until as (input: unknown) => unknown)({
-                  task: {
-                    id: task.externalTaskId,
-                    title: taskTitle,
-                    prompt: taskPrompt,
-                    context: taskContext,
-                  },
-                  ctx,
-                  stateId: currentStateId,
-                  runId,
-                  tickId,
-                  iteration: currentIteration,
-                }),
-              )
-
-        if (guardPassed) {
-          event = 'done'
-          reason = 'loop.done'
-          nextStateId = state.on.done
-        }
-      }
-
-      if (!event) {
-        if (currentIteration >= state.maxIterations) {
-          event = 'exhausted'
-          reason = 'loop.exhausted'
-          nextStateId = state.on.exhausted
-        } else {
-          const nextIteration = currentIteration + 1
-          ctx = setLoopIteration(ctx, currentStateId, nextIteration)
-          event = 'continue'
-          reason = 'loop.continue'
-          nextStateId = state.on.continue
-          transitionLoopIteration = nextIteration
-        }
-      }
-    } else {
-      await failRun('Encountered unsupported state type in runtime dispatcher')
-    }
-
-    if (!event) {
-      await failRun(
-        `State \`${currentStateId}\` did not emit a valid transition event`,
-      )
-    }
-    if (reason === null) {
-      await failRun(
-        `State \`${currentStateId}\` did not emit a valid transition event`,
-      )
-    }
-    if (!nextStateId) {
-      await failRun(
-        `State \`${currentStateId}\` emitted event \`${event}\` with no matching transition`,
-      )
-    }
-    const resolvedReason: TransitionEventReasonCode = reason!
-    const resolvedNextStateId: string =
-      nextStateId ??
-      (await failRun(
-        `State \`${currentStateId}\` missing next transition target`,
-      ))
-    if (!definition.states[resolvedNextStateId]) {
-      await failRun(
-        `State \`${currentStateId}\` transition target \`${resolvedNextStateId}\` does not exist`,
-      )
-    }
-
-    await persistTransition(
-      currentStateId,
-      resolvedNextStateId,
-      event,
-      resolvedReason,
-      Math.max(0, transitionAttempt),
-      Math.max(0, transitionLoopIteration),
-    )
-    const previousStateId = currentStateId
-    transitions += 1
-    currentStateId = resolvedNextStateId
-
-    await db
-      .update(runs)
-      .set({
-        status: 'running',
-        currentStateId,
-        contextJson: JSON.stringify(ctx),
-        updatedAt: nowIso(),
+      currentStateId = PIPE_FEEDBACK_STATE_ID
+      await persistRunTrace({
+        type: 'await_feedback',
+        stateId: currentStateId,
+        message: result.prompt,
       })
-      .where(eq(runs.id, runId))
 
-    if (definition.states[resolvedNextStateId]?.type === 'feedback') {
-      const feedbackState = definition.states[resolvedNextStateId]
-      const resumeTargetStateId = resolveFeedbackResumeTarget(
-        feedbackState,
-        previousStateId,
-      )
-      if (feedbackMessage && token && board?.adapter === 'notion') {
+      if (token && board?.adapter === 'notion') {
         try {
-          await notionPostComment(token, task.externalTaskId, feedbackMessage)
+          await notionPostComment(token, task.externalTaskId, result.prompt)
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           console.log(`[warn] failed to post Notion comment: ${message}`)
@@ -1134,7 +796,7 @@ export async function runFactoryTaskByExternalId(
         .update(tasks)
         .set({
           state: 'feedback',
-          currentStepId: resumeTargetStateId,
+          currentStepId: currentStateId,
           stepVarsJson: JSON.stringify(ctx),
           waitingSince: nowIso(),
           updatedAt: nowIso(),
@@ -1145,7 +807,7 @@ export async function runFactoryTaskByExternalId(
         .update(runs)
         .set({
           status: 'feedback',
-          currentStateId: resumeTargetStateId,
+          currentStateId,
           contextJson: JSON.stringify(ctx),
           leaseOwner: null,
           leaseExpiresAt: null,
@@ -1154,18 +816,78 @@ export async function runFactoryTaskByExternalId(
         })
         .where(eq(runs.id, runId))
       await syncNotionState('feedback')
-      await syncNotionLog(
-        `Feedback needed: ${previousStateId}`,
-        feedbackMessage ?? 'Reply to the Notion task comments to continue.',
+      await syncNotionLog(`Feedback needed: ${currentStateId}`, result.prompt)
+      return
+    }
+
+    if (isPipeEndSignal(result)) {
+      ctx = parsePipeContext(result.ctx, `end.${result.status}`)
+      if (result.message) {
+        ctx = mergeContext(ctx, {last_error: result.message})
+      }
+
+      const transitionMeta: {
+        toStateId: string
+        event: string
+        reason: RunTraceReasonCode
+      } =
+        result.status === 'done'
+          ? {
+              toStateId: PIPE_DONE_STATE_ID,
+              event: 'done',
+              reason: 'action.done',
+            }
+          : result.status === 'blocked'
+            ? {
+                toStateId: PIPE_BLOCKED_STATE_ID,
+                event: 'blocked',
+                reason: 'orchestrate.agent',
+              }
+            : {
+                toStateId: PIPE_FAILED_STATE_ID,
+                event: 'failed',
+                reason: 'action.failed.exhausted',
+              }
+
+      await persistStepTrace(
+        currentStateId,
+        transitionMeta.toStateId,
+        transitionMeta.event,
+        transitionMeta.reason,
+        1,
+        0,
       )
+      currentStateId = transitionMeta.toStateId
+      await finalizeRun(result.status)
+      console.log(`Task run complete: ${result.status}`)
       return
     }
 
-    if (transitions >= runtimeOptions.maxTransitionsPerTick) {
-      await pauseForNextTick()
-      return
+    if (isMalformedPipeControlSignal(result)) {
+      throw new Error(
+        `Pipe factory \`${definition.id}\` emitted malformed ${String(result.type)} control signal`,
+      )
     }
+
+    ctx = parsePipeContext(result, 'run')
+    await persistStepTrace(
+      currentStateId,
+      PIPE_DONE_STATE_ID,
+      'done',
+      'action.done',
+      1,
+      0,
+    )
+    currentStateId = PIPE_DONE_STATE_ID
+    await finalizeRun('done')
+    console.log('Task run complete: done')
+    return
+  } catch (error) {
+    if (leaseHeartbeatTimer) {
+      clearInterval(leaseHeartbeatTimer)
+      leaseHeartbeatTimer = null
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    await failRun(`Pipe execution failed: ${message}`)
   }
-
-  await failRun(`Transition cap exceeded (${MAX_TRANSITIONS_PER_RUN})`)
 }

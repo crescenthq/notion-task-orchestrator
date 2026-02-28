@@ -1,32 +1,19 @@
-import {readFileSync, writeFileSync, existsSync} from 'node:fs'
-import path from 'node:path'
-import {paths} from './paths'
-
-const CONFIG_FILE = path.join(paths.root, 'config.json')
-
-function readConfig(): Record<string, string> {
-  if (!existsSync(CONFIG_FILE)) return {}
-  try {
-    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'))
-  } catch {
-    return {}
-  }
-}
-
-export function writeConfig(values: Record<string, string>): void {
-  const existing = readConfig()
-  const merged = {...existing, ...values}
-  writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2) + '\n')
+type EnvConfig = {
+  NOTION_API_TOKEN?: string
+  NOTION_WORKSPACE_PAGE_ID?: string
 }
 
 export function notionToken(): string | null {
-  return process.env.NOTION_API_TOKEN ?? readConfig().NOTION_API_TOKEN ?? null
+  return process.env.NOTION_API_TOKEN ?? null
 }
 
 export function notionWorkspacePageId(): string | null {
-  return (
-    process.env.NOTION_WORKSPACE_PAGE_ID ??
-    readConfig().NOTION_WORKSPACE_PAGE_ID ??
-    null
-  )
+  return process.env.NOTION_WORKSPACE_PAGE_ID ?? null
+}
+
+export function getConfigFromEnv(): EnvConfig {
+  return {
+    NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
+    NOTION_WORKSPACE_PAGE_ID: process.env.NOTION_WORKSPACE_PAGE_ID,
+  }
 }

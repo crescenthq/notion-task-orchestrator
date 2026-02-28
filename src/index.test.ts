@@ -12,12 +12,33 @@ const repoRoot = path.resolve(
 describe('public library API', () => {
   it('exports an explicit stable runtime surface', () => {
     expect(Object.keys(api).sort()).toEqual([
-      'agent',
+      'agentSandbox',
+      'agentSandboxEffect',
+      'ask',
+      'askForRepo',
+      'askForRepoEffect',
+      'createOrchestrationLayer',
+      'createOrchestrationTestLayer',
+      'createOrchestrationUtilities',
+      'createOrchestrationUtilitiesFromLayer',
+      'decide',
+      'defaultOrchestrationAdapters',
+      'defaultOrchestrationLayer',
       'defineConfig',
-      'defineFactory',
-      'select',
-      'until',
+      'definePipe',
+      'end',
+      'flow',
+      'invokeAgent',
+      'invokeAgentEffect',
+      'loop',
+      'runOrchestrationEffect',
+      'step',
+      'write',
     ])
+    expect(api).not.toHaveProperty('publish')
+    expect(api).not.toHaveProperty('retry')
+    expect(api).not.toHaveProperty('route')
+    expect(api).not.toHaveProperty('compileExpressiveFactory')
   })
 
   it('typechecks package-root imports for config, factory, and helpers', () => {
@@ -27,6 +48,30 @@ describe('public library API', () => {
         path.join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'),
         '--project',
         path.join(repoRoot, 'e2e', 'fixtures', 'library-api', 'tsconfig.json'),
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      },
+    )
+
+    const output = `${result.stdout}\n${result.stderr}`.trim()
+    expect(result.status, output).toBe(0)
+  })
+
+  it('typechecks canonical primitive contract signatures', () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'),
+        '--project',
+        path.join(
+          repoRoot,
+          'e2e',
+          'fixtures',
+          'canonical-contracts',
+          'tsconfig.json',
+        ),
       ],
       {
         cwd: repoRoot,
