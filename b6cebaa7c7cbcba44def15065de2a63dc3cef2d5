@@ -1,0 +1,59 @@
+src/commands/notion.ts
+  6eb9dcacf3400c95 103-141,263-290,292-326,394,665-684
+docs/factory-authoring.md
+  6eb9dcacf3400c95 138-139
+example-factories/README.md
+  6eb9dcacf3400c95 57-64,96
+docs/cli-reference.md
+  97ebf7a6ac1c8592 27-28,168-175,190
+README.md
+  6eb9dcacf3400c95 95,189-190
+example-factories/package.json
+  6eb9dcacf3400c95 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "b6cebaa7c7cbcba44def15065de2a63dc3cef2d5",
+  "prompts": {
+    "6eb9dcacf3400c95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca5c4-4c53-7b52-9c2c-f4427ea49190",
+        "model": "unknown"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 144,
+      "total_deletions": 3,
+      "accepted_lines": 144,
+      "overriden_lines": 0
+    },
+    "97ebf7a6ac1c8592": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca547-d631-7ff1-b042-bebea9dd5dd9",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 0,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    }
+  }
+}
