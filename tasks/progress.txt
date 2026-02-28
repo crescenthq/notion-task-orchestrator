@@ -48,3 +48,10 @@ US-006 completed (explicit factory declarations and deterministic loader primiti
 - Added unit tests for explicit path resolution and non-scanning behavior with unlisted invalid factory files present: `src/project/projectConfig.test.ts`
 - Verified: `npm run test -- src/project/projectConfig.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-007 completed (fail-fast invalid declarations and duplicate IDs):
+- Added explicit missing-file guard for declared factory paths with clear declared/resolved path diagnostics before module load: `src/project/projectConfig.ts`
+- Added duplicate factory-id detection in declared-factory loader with conflicting ID plus first/duplicate declaration and resolved path context: `src/project/projectConfig.ts`
+- Added unit coverage for missing declared path errors and duplicate factory-id failures across declared files: `src/project/projectConfig.test.ts`
+- Verified: `npm run test -- src/project/projectConfig.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task

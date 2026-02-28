@@ -1,5 +1,6 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { access, constants } from "node:fs/promises";
 import { z } from "zod";
 import { loadFactoryFromPath } from "../core/factory";
 import type { FactoryDefinition } from "../core/factorySchema";
@@ -75,20 +76,56 @@ export async function loadDeclaredFactories(options: {
   configPath: string;
   projectRoot: string;
 }): Promise<LoadedDeclaredFactory[]> {
-  const config = await loadProjectConfig(options.configPath);
+  const resolvedConfigPath = path.resolve(options.configPath);
+  const config = await loadProjectConfig(resolvedConfigPath);
   const resolvedFactoryPaths = resolveFactoryPaths(config, options.projectRoot);
 
   const loadedFactories: LoadedDeclaredFactory[] = [];
+  const seenFactoryIds = new Map<string, LoadedDeclaredFactory>();
   for (const [index, resolvedPath] of resolvedFactoryPaths.entries()) {
     const declaredPath = config.factories[index] ?? resolvedPath;
+
+    try {
+      await access(resolvedPath, constants.F_OK);
+    } catch {
+      throw new ProjectConfigLoadError(
+        [
+          `Declared factory file does not exist: ${declaredPath}`,
+          `Resolved path: ${resolvedPath}`,
+        ].join("\n"),
+        resolvedConfigPath,
+      );
+    }
+
     try {
       const loaded = await loadFactoryFromPath(resolvedPath);
-      loadedFactories.push({
+      const loadedEntry: LoadedDeclaredFactory = {
         declaredPath,
         resolvedPath,
         definition: loaded.definition,
-      });
+      };
+
+      const existing = seenFactoryIds.get(loaded.definition.id);
+      if (existing) {
+        throw new ProjectConfigLoadError(
+          [
+            `Duplicate factory id detected: ${loaded.definition.id}`,
+            `First declaration: ${existing.declaredPath}`,
+            `First resolved path: ${existing.resolvedPath}`,
+            `Duplicate declaration: ${declaredPath}`,
+            `Duplicate resolved path: ${resolvedPath}`,
+          ].join("\n"),
+          resolvedConfigPath,
+        );
+      }
+
+      seenFactoryIds.set(loaded.definition.id, loadedEntry);
+      loadedFactories.push(loadedEntry);
     } catch (error) {
+      if (error instanceof ProjectConfigLoadError) {
+        throw error;
+      }
+
       const reason = error instanceof Error ? error.message : String(error);
       throw new ProjectConfigLoadError(
         [
@@ -96,7 +133,7 @@ export async function loadDeclaredFactories(options: {
           `Resolved path: ${resolvedPath}`,
           reason,
         ].join("\n"),
-        path.resolve(options.configPath),
+        resolvedConfigPath,
       );
     }
   }

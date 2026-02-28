@@ -58,6 +58,50 @@ describe("projectConfig", () => {
     expect(loaded).toHaveLength(1);
     expect(loaded[0]?.definition.id).toBe("listed-factory");
   });
+
+  it("fails with declared path context when a configured factory file is missing", async () => {
+    const projectRoot = await createFixture("notionflow-project-config-missing-");
+    const configPath = path.join(projectRoot, "notionflow.config.ts");
+    await writeFile(configPath, `export default { factories: ["./factories/missing.mjs"] };\n`, "utf8");
+
+    await expect(loadDeclaredFactories({ configPath, projectRoot })).rejects.toThrowError(
+      /Declared factory file does not exist: \.\/factories\/missing\.mjs/,
+    );
+
+    await expect(loadDeclaredFactories({ configPath, projectRoot })).rejects.toThrowError(
+      /Resolved path:/,
+    );
+  });
+
+  it("fails fast when duplicate factory ids are declared across files", async () => {
+    const projectRoot = await createFixture("notionflow-project-config-duplicate-");
+    const factoriesDir = path.join(projectRoot, "factories");
+    await mkdir(factoriesDir, { recursive: true });
+
+    const firstFactoryPath = path.join(factoriesDir, "first.mjs");
+    const secondFactoryPath = path.join(factoriesDir, "second.mjs");
+    await writeMinimalFactory(firstFactoryPath, "duplicate-factory");
+    await writeMinimalFactory(secondFactoryPath, "duplicate-factory");
+
+    const configPath = path.join(projectRoot, "notionflow.config.ts");
+    await writeFile(
+      configPath,
+      `export default { factories: ["./factories/first.mjs", "./factories/second.mjs"] };\n`,
+      "utf8",
+    );
+
+    await expect(loadDeclaredFactories({ configPath, projectRoot })).rejects.toThrowError(
+      /Duplicate factory id detected: duplicate-factory/,
+    );
+
+    await expect(loadDeclaredFactories({ configPath, projectRoot })).rejects.toThrowError(
+      /First resolved path:/,
+    );
+
+    await expect(loadDeclaredFactories({ configPath, projectRoot })).rejects.toThrowError(
+      /Duplicate resolved path:/,
+    );
+  });
 });
 
 async function createFixture(prefix: string): Promise<string> {
