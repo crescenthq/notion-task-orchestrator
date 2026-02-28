@@ -4,3 +4,12 @@ US-001 completed (E2E infrastructure only):
 - Added E2E usage test: `e2e/local-project-helpers.test.ts`
 - Verified: `npm run test:e2e -- e2e/local-project-helpers.test.ts` passes
 - Note: `npm run check` currently fails due pre-existing implicit-any issues in existing `e2e/factories/*.ts` files not touched in this task
+
+US-002 completed (E2E init scaffold validation):
+- Added `init` CLI command: `src/commands/init.ts`
+- Wired `init` subcommand into CLI: `src/cli.ts`
+- Added E2E test: `e2e/local-project-init.test.ts`
+- Test validates `notionflow.config.ts`, `factories/`, and `.notionflow/` are created
+- Test validates `.gitignore` contains exactly one `.notionflow/` entry after running `init` twice
+- Test validates no writes under `~/.config/notionflow` during init flow
+- Verified: `npm run test:e2e -- e2e/local-project-init.test.ts` passes

@@ -4,6 +4,7 @@ import { boardCmd } from "./commands/board";
 import { configCmd } from "./commands/config";
 import { doctorCmd } from "./commands/doctor";
 import { factoryCmd } from "./commands/factory";
+import { initCmd } from "./commands/init";
 import { integrationsCmd } from "./commands/integrations";
 import { runCmd } from "./commands/run";
 import { setupCmd } from "./commands/setup";
@@ -17,6 +18,7 @@ const main = defineCommand({
     version: "0.1.0",
   },
   subCommands: {
+    init: initCmd,
     setup: setupCmd,
     doctor: doctorCmd,
     tick: tickCmd,
