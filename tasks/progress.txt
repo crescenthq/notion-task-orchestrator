@@ -31,3 +31,12 @@ US-004 completed (E2E factory create in local project):
 - Test validates `factory create --id smoke --skip-notion-board` creates `factories/smoke.ts` in temp project
 - Test validates no writes under `~/.config/notionflow` during init + factory create scenario
 - Verified: `npm run test:e2e -- e2e/local-project-factory-create.test.ts` passes
+
+US-005 completed (project context resolver + `--config` override):
+- Added shared resolver with explicit config-path validation/normalization and actionable error context: `src/project/discoverConfig.ts`
+- Updated `doctor` to use shared resolver and support `--config <path>` with clear start/attempted path diagnostics: `src/commands/doctor.ts`
+- Updated `factory create` to use shared resolver and support `--config <path>` from outside project roots: `src/commands/factory.ts`
+- Extended E2E doctor coverage for walk-up, explicit `--config` override, and missing-config non-zero failures with contextual error output: `e2e/local-project-doctor.test.ts`
+- Extended E2E factory-create coverage for `--config` execution from outside the project root: `e2e/local-project-factory-create.test.ts`
+- Verified: `npm run test:e2e -- e2e/local-project-doctor.test.ts e2e/local-project-factory-create.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task

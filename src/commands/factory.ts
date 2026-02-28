@@ -7,7 +7,7 @@ import { notionToken, notionWorkspacePageId } from "../config/env";
 import { paths } from "../config/paths";
 import { loadFactoryFromPath, serializeFactoryDefinition } from "../core/factory";
 import { boards, workflows } from "../db/schema";
-import { discoverProjectConfig } from "../project/discoverConfig";
+import { ProjectConfigResolutionError, resolveProjectConfig } from "../project/discoverConfig";
 import { notionCreateBoardDataSource, notionFindPageByTitle, notionGetDataSource } from "../services/notion";
 
 function prettifyBoardId(id: string): string {
@@ -127,14 +127,28 @@ export const factoryCmd = defineCommand({
       meta: { name: "create", description: "Create a new TypeScript factory scaffold" },
       args: {
         id: { type: "string", required: true },
+        config: { type: "string", required: false },
         skipNotionBoard: { type: "boolean", required: false, alias: "skip-notion-board" },
         parentPage: { type: "string", required: false, alias: "parent-page" },
       },
       async run({ args }) {
-        const resolvedProject = await discoverProjectConfig(process.cwd());
-        if (!resolvedProject) {
-          console.error("[error] Could not find notionflow.config.ts from current directory.");
-          console.error("Run `notionflow init` in your project root first.");
+        let resolvedProject;
+        try {
+          resolvedProject = await resolveProjectConfig({
+            startDir: process.cwd(),
+            configPath: args.config ? String(args.config) : undefined,
+          });
+        } catch (error) {
+          if (!(error instanceof ProjectConfigResolutionError)) {
+            throw error;
+          }
+
+          console.error(`[error] ${error.message}`);
+          console.error(`Start directory: ${error.startDir}`);
+          if (error.attemptedPath) {
+            console.error(`Attempted config path: ${error.attemptedPath}`);
+          }
+          console.error("Run `notionflow init` in your project root first, or pass --config <path>.");
           process.exitCode = 1;
           return;
         }

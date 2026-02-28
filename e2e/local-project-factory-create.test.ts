@@ -10,25 +10,49 @@ import {
 } from "./helpers/projectFixture";
 
 describe("local project factory create", () => {
-  let fixture: TempProjectFixture | null = null;
+  const fixtures: TempProjectFixture[] = [];
 
   afterEach(async () => {
-    if (!fixture) {
-      return;
-    }
+    while (fixtures.length > 0) {
+      const fixture = fixtures.pop();
+      if (!fixture) {
+        continue;
+      }
 
-    await fixture.cleanup();
-    fixture = null;
+      await fixture.cleanup();
+    }
   });
 
   it("creates factories/<id>.ts in local project context without global writes", async () => {
     const before = await snapshotGlobalNotionflowWrites();
-    fixture = await createTempProjectFixture();
+    const fixture = await createTempProjectFixture();
+    fixtures.push(fixture);
 
     await execCli(["init"], fixture.projectDir);
     await execCli(["factory", "create", "--id", "smoke", "--skip-notion-board"], fixture.projectDir);
 
     await expect(stat(path.join(fixture.projectDir, "factories", "smoke.ts"))).resolves.toBeTruthy();
+
+    const after = await snapshotGlobalNotionflowWrites();
+    assertNoNewGlobalNotionflowWrites(before, after);
+  });
+
+  it("creates factories with --config when run outside the project", async () => {
+    const before = await snapshotGlobalNotionflowWrites();
+    const fixture = await createTempProjectFixture();
+    fixtures.push(fixture);
+    const outsider = await createTempProjectFixture("notionflow-e2e-outside-");
+    fixtures.push(outsider);
+
+    await execCli(["init"], fixture.projectDir);
+    const configPath = path.join(fixture.projectDir, "notionflow.config.ts");
+
+    await execCli(
+      ["factory", "create", "--id", "external", "--config", configPath, "--skip-notion-board"],
+      outsider.projectDir,
+    );
+
+    await expect(stat(path.join(fixture.projectDir, "factories", "external.ts"))).resolves.toBeTruthy();
 
     const after = await snapshotGlobalNotionflowWrites();
     assertNoNewGlobalNotionflowWrites(before, after);

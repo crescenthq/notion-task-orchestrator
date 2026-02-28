@@ -1,15 +1,30 @@
 import { defineCommand } from "citty";
 import { notionToken } from "../config/env";
-import { discoverProjectConfig } from "../project/discoverConfig";
+import { ProjectConfigResolutionError, resolveProjectConfig } from "../project/discoverConfig";
 import { notionWhoAmI } from "../services/notion";
 
 export const doctorCmd = defineCommand({
   meta: { name: "doctor", description: "[common] Validate NotionFlow setup and integration auth" },
-  async run() {
-    const resolvedProject = await discoverProjectConfig(process.cwd());
-    if (!resolvedProject) {
-      console.error("[error] Could not find notionflow.config.ts from current directory.");
-      console.error(`Start directory: ${process.cwd()}`);
+  args: {
+    config: { type: "string", required: false },
+  },
+  async run({ args }) {
+    let resolvedProject;
+    try {
+      resolvedProject = await resolveProjectConfig({
+        startDir: process.cwd(),
+        configPath: args.config ? String(args.config) : undefined,
+      });
+    } catch (error) {
+      if (!(error instanceof ProjectConfigResolutionError)) {
+        throw error;
+      }
+
+      console.error(`[error] ${error.message}`);
+      console.error(`Start directory: ${error.startDir}`);
+      if (error.attemptedPath) {
+        console.error(`Attempted config path: ${error.attemptedPath}`);
+      }
       process.exitCode = 1;
       return;
     }
