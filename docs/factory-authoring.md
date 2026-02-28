@@ -271,12 +271,11 @@ npm run test:e2e
 
 Live Notion API e2e gate (explicit):
 
-1. Required env vars.
+1. Required env vars (if omitted, live-only e2e will fail fast with a clear error).
 
 ```bash
 export NOTION_API_TOKEN="<integration-token>"
 export NOTION_WORKSPACE_PAGE_ID="<parent-page-id>"
-export NOTIONFLOW_RUN_LIVE_E2E=1
 # optional: local DB feedback injection for verification suite
 export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```

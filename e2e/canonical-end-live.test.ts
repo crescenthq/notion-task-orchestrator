@@ -3,18 +3,20 @@ import {existsSync, readFileSync} from 'node:fs'
 import {mkdir, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {pathToFileURL} from 'node:url'
-import {afterEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {notionGetPage, pageState} from '../src/services/notion'
 import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 loadDotEnv()
 
-const hasLiveNotionEnv =
-  Boolean(notionToken()) && process.env.NOTIONFLOW_RUN_LIVE_E2E === '1'
-
 describe('canonical end live e2e', () => {
   let fixture: TempProjectFixture | null = null
+
+  beforeAll(() => {
+    assertLiveNotionEnv()
+  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -22,7 +24,7 @@ describe('canonical end live e2e', () => {
     fixture = null
   })
 
-  it.skipIf(!hasLiveNotionEnv)(
+  it(
     'syncs terminal done/blocked/failed states to Notion task State',
     async () => {
       fixture = await createTempProjectFixture('notionflow-end-live-')
@@ -130,19 +132,21 @@ function terminalFactorySource(
   factoryId: string,
   status: 'done' | 'blocked' | 'failed',
 ): string {
+  const endFactory =
+    status === 'done'
+      ? 'end.done()'
+      : status === 'blocked'
+        ? 'end.blocked()'
+        : 'end.failed("terminal failed")'
+
   return [
     `import {definePipe, end} from ${JSON.stringify(canonicalModuleUrl)};`,
     '',
-    'const compiled = definePipe({',
+    'export default definePipe({',
     `  id: ${JSON.stringify(factoryId)},`,
-    '  start: "terminal",',
-    '  context: {},',
-    '  states: {',
-    `    terminal: end({status: ${JSON.stringify(status)}}),`,
-    '  },',
+    '  initial: {},',
+    `  run: ${endFactory},`,
     '});',
-    '',
-    'export default compiled.factory;',
     '',
   ].join('\n')
 }

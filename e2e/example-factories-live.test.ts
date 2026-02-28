@@ -3,9 +3,8 @@ import {existsSync, readFileSync} from 'node:fs'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
-import {afterEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {openApp} from '../src/app/context'
-import {notionToken} from '../src/config/env'
 import {tasks} from '../src/db/schema'
 import {
   assertNoNewGlobalNotionflowWrites,
@@ -13,14 +12,16 @@ import {
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 loadDotEnv()
 
-const hasLiveNotionEnv =
-  Boolean(notionToken()) && process.env.NOTIONFLOW_RUN_LIVE_E2E === '1'
-
 describe('example factories live e2e', () => {
   let fixture: TempProjectFixture | null = null
+
+  beforeAll(() => {
+    assertLiveNotionEnv()
+  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -28,7 +29,7 @@ describe('example factories live e2e', () => {
     fixture = null
   })
 
-  it.skipIf(!hasLiveNotionEnv)(
+  it(
     'runs rewritten shared-helper-demo example through CLI run in live Notion mode',
     async () => {
       const before = await snapshotGlobalNotionflowWrites()

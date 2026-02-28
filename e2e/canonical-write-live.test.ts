@@ -1,19 +1,21 @@
 import {spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
 import path from 'node:path'
-import {afterEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {definePipe, write} from '../src/factory/canonical'
 import {notionAppendMarkdownToPage, notionGetPageBodyText} from '../src/services/notion'
 import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 loadDotEnv()
 
-const hasLiveNotionEnv =
-  Boolean(notionToken()) && process.env.NOTIONFLOW_RUN_LIVE_E2E === '1'
-
 describe('canonical write live e2e', () => {
   let fixture: TempProjectFixture | null = null
+
+  beforeAll(() => {
+    assertLiveNotionEnv()
+  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -21,7 +23,7 @@ describe('canonical write live e2e', () => {
     fixture = null
   })
 
-  it.skipIf(!hasLiveNotionEnv)(
+  it(
     'appends rendered write output to the Notion task page via writePage adapter',
     async () => {
       fixture = await createTempProjectFixture('notionflow-write-live-')

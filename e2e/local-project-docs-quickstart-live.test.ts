@@ -4,9 +4,8 @@ import {mkdir, symlink} from 'node:fs/promises'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
-import {afterEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
-import {notionToken} from '../src/config/env'
 import {tasks, workflows} from '../src/db/schema'
 import {
   assertNoNewGlobalNotionflowWrites,
@@ -14,14 +13,16 @@ import {
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 loadDotEnv()
 
-const hasLiveNotionEnv =
-  Boolean(notionToken()) && process.env.NOTIONFLOW_RUN_LIVE_E2E === '1'
-
 describe('docs quickstart live smoke', () => {
   let fixture: TempProjectFixture | null = null
+
+  beforeAll(() => {
+    assertLiveNotionEnv()
+  })
 
   afterEach(async () => {
     if (fixture) {
@@ -30,7 +31,7 @@ describe('docs quickstart live smoke', () => {
     }
   })
 
-  it.skipIf(!hasLiveNotionEnv)(
+  it(
     'runs init -> factory create -> doctor -> tick in local project mode',
     async () => {
       const before = await snapshotGlobalNotionflowWrites()

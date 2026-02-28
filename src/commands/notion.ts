@@ -2,7 +2,7 @@ import {defineCommand} from 'citty'
 import {and, eq, sql} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
 import {notionToken, notionWorkspacePageId} from '../config/env'
-import {boards, tasks} from '../db/schema'
+import {boards, tasks, workflows} from '../db/schema'
 import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
@@ -69,6 +69,28 @@ async function upsertTask(
     })
 }
 
+async function ensureWorkflowRecord(
+  db: Awaited<ReturnType<typeof openApp>>['db'],
+  workflowId: string,
+): Promise<void> {
+  const [existing] = await db
+    .select({id: workflows.id})
+    .from(workflows)
+    .where(eq(workflows.id, workflowId))
+    .limit(1)
+
+  if (existing?.id) return
+
+  const now = nowIso()
+  await db.insert(workflows).values({
+    id: workflowId,
+    version: 1,
+    definitionYaml: '{}',
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
 export async function syncNotionBoards(options: {
   boardId?: string
   factoryId?: string
@@ -115,6 +137,7 @@ export async function syncNotionBoards(options: {
         const notionState = pageState(page) ?? 'unknown'
         const localState = localTaskStateFromNotion(notionState)
         const workflowId = options.factoryId ?? options.workflowId ?? board.id
+        await ensureWorkflowRecord(db, workflowId)
         await upsertTask(board.id, page.id, workflowId, localState)
 
         imported += 1
@@ -335,6 +358,7 @@ export const notionCmd = defineCommand({
           state: localStateToDisplayStatus(state),
         })
 
+        await ensureWorkflowRecord(db, workflowId)
         await upsertTask(
           board.id,
           page.id,
