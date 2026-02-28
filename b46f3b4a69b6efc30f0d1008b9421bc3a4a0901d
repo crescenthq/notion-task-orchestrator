@@ -1,0 +1,40 @@
+e2e/canonical-end-live.test.ts
+  97ebf7a6ac1c8592 6,10,17-19,27,135-141,145,147-148
+e2e/factory-verification.test.ts
+  97ebf7a6ac1c8592 23,398,444,482,536,543-546,586,610,615-616,632,658-670,687,713,721
+src/commands/notion.ts
+  97ebf7a6ac1c8592 5,72-93,140,361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "b46f3b4a69b6efc30f0d1008b9421bc3a4a0901d",
+  "prompts": {
+    "97ebf7a6ac1c8592": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca547-d631-7ff1-b042-bebea9dd5dd9",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 80,
+      "total_deletions": 39,
+      "accepted_lines": 72,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    }
+  }
+}
