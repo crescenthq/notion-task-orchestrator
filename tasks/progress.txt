@@ -76,3 +76,13 @@ US-009 completed (`run`/`tick` local execution with no install step):
 - Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
 - Verified: `npm run test:e2e -- e2e/local-project-run-local-factory.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-010 completed (continuous tick loop with backoff and graceful shutdown):
+- Added loop-capable tick execution engine with explicit `--loop` mode, default 2000ms cycle delay, retryable Notion API backoff handling (429/5xx), jitter, and 15000ms cap: `src/commands/tick.ts`
+- Added runtime/error log writes for cycle start/complete, sleep, retryable backoff decisions, and signal-triggered shutdown events under project-local `.notionflow`: `src/commands/tick.ts`
+- Added signal-safe shutdown handling for `SIGINT`/`SIGTERM` that completes the in-flight cycle and avoids scheduling further cycles: `src/commands/tick.ts`
+- Added unit tests for one-shot default behavior, exponential backoff schedule/cap, and graceful signal shutdown behavior: `src/commands/tick.test.ts`
+- Verified: `npm run test -- src/commands/tick.test.ts` passes
+- Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
+- Verified: `npm run test:e2e -- e2e/local-project-runtime-artifacts.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
