@@ -44,7 +44,7 @@ Primary artifacts:
 - `runtime.log`
 - `errors.log`
 
-No runtime state is written to `~/.config/notionflow`.
+All runtime state is project-local.
 
 ## Tick Execution
 

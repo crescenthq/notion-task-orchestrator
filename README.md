@@ -12,7 +12,7 @@ Each project contains:
 - `factories/`
 - `.notionflow/` (runtime DB + logs)
 
-No factory install/copy step is required. `run` and `tick` load factories directly from paths declared in `notionflow.config.ts`.
+`run` and `tick` load factories directly from paths declared in `notionflow.config.ts`.
 
 ## Prerequisites
 
