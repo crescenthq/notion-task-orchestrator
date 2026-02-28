@@ -20,6 +20,7 @@ import {
   notionUpdateTaskPageState,
   pageTitle,
 } from '../services/notion'
+import {formatStatusLabel} from '../services/statusIcons'
 
 type JsonObject = Record<string, unknown>
 
@@ -70,6 +71,12 @@ type PipeEndSignal = {
   message?: string
 }
 
+type PipeStepLifecycleEvent = {
+  name: string
+  kind: string
+  ctx: unknown
+}
+
 function isPipeAwaitFeedbackSignal(
   value: unknown,
 ): value is PipeAwaitFeedbackSignal {
@@ -92,6 +99,28 @@ function isPipeEndSignal(value: unknown): value is PipeEndSignal {
     'ctx' in value &&
     (value.message === undefined || typeof value.message === 'string')
   )
+}
+
+function isMalformedPipeControlSignal(value: unknown): value is JsonObject {
+  if (!isRecord(value)) return false
+  if (value.type !== 'await_feedback' && value.type !== 'end') return false
+  if (isPipeAwaitFeedbackSignal(value) || isPipeEndSignal(value)) return false
+
+  return (
+    'ctx' in value ||
+    'prompt' in value ||
+    'status' in value ||
+    'message' in value
+  )
+}
+
+function normalizeStepLabel(stepName: string): string {
+  const trimmed = stepName.trim()
+  if (trimmed.length === 0) return ''
+
+  const formatted = formatStatusLabel(trimmed)
+  const label = formatted.length > 0 ? formatted : trimmed
+  return label.slice(0, 100)
 }
 
 function mergeContext(base: JsonObject, patch?: JsonObject): JsonObject {
@@ -401,6 +430,85 @@ export async function runFactoryTaskByExternalId(
     throw new Error(message)
   }
 
+  let pipeStepTransitions = 0
+  let activeStepLabel: string | undefined
+  let leaseRenewalError: Error | null = null
+  let leaseHeartbeatTimer: NodeJS.Timeout | null = null
+  let leaseHeartbeatInFlight: Promise<void> | null = null
+
+  const asError = (error: unknown): Error =>
+    error instanceof Error ? error : new Error(String(error))
+
+  const renewRunLeaseSafely = async (): Promise<void> => {
+    if (leaseRenewalError) return
+
+    if (leaseHeartbeatInFlight) {
+      await leaseHeartbeatInFlight
+      return
+    }
+
+    leaseHeartbeatInFlight = renewRunLease()
+      .catch(error => {
+        leaseRenewalError = asError(error)
+      })
+      .finally(() => {
+        leaseHeartbeatInFlight = null
+      })
+
+    await leaseHeartbeatInFlight
+  }
+
+  const ensureActiveLease = async (): Promise<void> => {
+    if (leaseRenewalError) throw leaseRenewalError
+    await renewRunLeaseSafely()
+    if (leaseRenewalError) throw leaseRenewalError
+  }
+
+  const startLeaseHeartbeat = (): void => {
+    const intervalMs = Math.max(1_000, Math.floor(runtimeOptions.leaseMs / 3))
+    leaseHeartbeatTimer = setInterval(() => {
+      void renewRunLeaseSafely()
+    }, intervalMs)
+    leaseHeartbeatTimer.unref?.()
+  }
+
+  const stopLeaseHeartbeat = async (): Promise<void> => {
+    if (leaseHeartbeatTimer) {
+      clearInterval(leaseHeartbeatTimer)
+      leaseHeartbeatTimer = null
+    }
+    if (leaseHeartbeatInFlight) {
+      await leaseHeartbeatInFlight
+    }
+    if (leaseRenewalError) {
+      throw leaseRenewalError
+    }
+  }
+
+  const onPipeStepStart = async (event: PipeStepLifecycleEvent): Promise<void> => {
+    if (leaseRenewalError) {
+      throw leaseRenewalError
+    }
+
+    pipeStepTransitions += 1
+    if (pipeStepTransitions > runtimeOptions.maxTransitionsPerTick) {
+      throw new Error(
+        [
+          `Pipe transition budget exceeded (${runtimeOptions.maxTransitionsPerTick}) for task ${task.externalTaskId}.`,
+          'Increase --max-transitions-per-tick or split work across ticks.',
+        ].join(' '),
+      )
+    }
+
+    const rawStepName =
+      event.name.trim().length > 0 ? event.name : event.kind.trim()
+    const stepLabel = normalizeStepLabel(rawStepName)
+    if (!stepLabel || stepLabel === activeStepLabel) return
+
+    activeStepLabel = stepLabel
+    await syncNotionState('running', stepLabel)
+  }
+
   const finalizeRun = async (
     status: 'done' | 'blocked' | 'failed',
   ): Promise<void> => {
@@ -595,48 +703,48 @@ export async function runFactoryTaskByExternalId(
     })
   }
 
-  await renewRunLease()
-
-    const writePage = async (output: PageContent): Promise<void> => {
-      const markdown = typeof output === 'string' ? output : output.markdown
-      if (!markdown || markdown.trim().length === 0) return
-      await persistRunTrace({
-        type: 'write',
-        stateId: currentStateId,
-        message: 'Pipe emitted page output',
-        payload: {
-          markdownLength: markdown.length,
-          format: typeof output === 'string' ? 'string' : 'markdown',
-        },
-      })
-      if (!board || board.adapter !== 'notion' || !token) return
-      try {
-        await notionAppendMarkdownToPage(token, task.externalTaskId, markdown)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.log(`[warn] failed to append page content to Notion: ${message}`)
-      }
-    }
-
-    const parsePipeContext = (
-      value: unknown,
-      label: string,
-    ): JsonObject => {
-      if (!isRecord(value)) {
-        throw new Error(
-          `Pipe factory \`${definition.id}\` emitted non-object context for ${label}`,
-        )
-      }
-      return value
-    }
-
+  const writePage = async (output: PageContent): Promise<void> => {
+    const markdown = typeof output === 'string' ? output : output.markdown
+    if (!markdown || markdown.trim().length === 0) return
+    await persistRunTrace({
+      type: 'write',
+      stateId: currentStateId,
+      message: 'Pipe emitted page output',
+      payload: {
+        markdownLength: markdown.length,
+        format: typeof output === 'string' ? 'string' : 'markdown',
+      },
+    })
+    if (!board || board.adapter !== 'notion' || !token) return
     try {
-      const feedback =
-        typeof ctx.human_feedback === 'string' && ctx.human_feedback.trim()
-          ? ctx.human_feedback.trim()
-          : undefined
+      await notionAppendMarkdownToPage(token, task.externalTaskId, markdown)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`[warn] failed to append page content to Notion: ${message}`)
+    }
+  }
 
-      const result = await pipeDefinition.run({
+  const parsePipeContext = (value: unknown, label: string): JsonObject => {
+    if (!isRecord(value)) {
+      throw new Error(
+        `Pipe factory \`${definition.id}\` emitted non-object context for ${label}`,
+      )
+    }
+    return value
+  }
+
+  try {
+    const feedback =
+      typeof ctx.human_feedback === 'string' && ctx.human_feedback.trim()
+        ? ctx.human_feedback.trim()
+        : undefined
+
+    await ensureActiveLease()
+    startLeaseHeartbeat()
+
+    let result: unknown
+    try {
+      result = await pipeDefinition.run({
         ctx,
         feedback,
         task: {
@@ -646,124 +754,140 @@ export async function runFactoryTaskByExternalId(
           context: taskContext,
         },
         writePage,
+        onStepStart: onPipeStepStart,
         runId,
         tickId,
       })
+    } finally {
+      await stopLeaseHeartbeat()
+    }
 
-      if (isPipeAwaitFeedbackSignal(result)) {
-        ctx = mergeContext(parsePipeContext(result.ctx, 'await_feedback'), {
-          [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
-        })
-        await persistStepTrace(
-          currentStateId,
-          PIPE_FEEDBACK_STATE_ID,
-          'feedback',
-          'action.feedback',
-          1,
-          0,
-        )
-        currentStateId = PIPE_FEEDBACK_STATE_ID
-        await persistRunTrace({
-          type: 'await_feedback',
-          stateId: currentStateId,
-          message: result.prompt,
-        })
+    await ensureActiveLease()
 
-        if (token && board?.adapter === 'notion') {
-          try {
-            await notionPostComment(token, task.externalTaskId, result.prompt)
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            console.log(`[warn] failed to post Notion comment: ${message}`)
-          }
-        }
-
-        await db
-          .update(tasks)
-          .set({
-            state: 'feedback',
-            currentStepId: currentStateId,
-            stepVarsJson: JSON.stringify(ctx),
-            waitingSince: nowIso(),
-            updatedAt: nowIso(),
-            lastError: null,
-          })
-          .where(getTaskSelector(task))
-        await db
-          .update(runs)
-          .set({
-            status: 'feedback',
-            currentStateId,
-            contextJson: JSON.stringify(ctx),
-            leaseOwner: null,
-            leaseExpiresAt: null,
-            leaseHeartbeatAt: null,
-            updatedAt: nowIso(),
-          })
-          .where(eq(runs.id, runId))
-        await syncNotionState('feedback')
-        await syncNotionLog(`Feedback needed: ${currentStateId}`, result.prompt)
-        return
-      }
-
-      if (isPipeEndSignal(result)) {
-        ctx = parsePipeContext(result.ctx, `end.${result.status}`)
-        if (result.message) {
-          ctx = mergeContext(ctx, {last_error: result.message})
-        }
-
-        const transitionMeta: {
-          toStateId: string
-          event: string
-          reason: RunTraceReasonCode
-        } =
-          result.status === 'done'
-            ? {
-                toStateId: PIPE_DONE_STATE_ID,
-                event: 'done',
-                reason: 'action.done',
-              }
-            : result.status === 'blocked'
-              ? {
-                  toStateId: PIPE_BLOCKED_STATE_ID,
-                  event: 'blocked',
-                  reason: 'orchestrate.agent',
-                }
-              : {
-                  toStateId: PIPE_FAILED_STATE_ID,
-                  event: 'failed',
-                  reason: 'action.failed.exhausted',
-                }
-
-        await persistStepTrace(
-          currentStateId,
-          transitionMeta.toStateId,
-          transitionMeta.event,
-          transitionMeta.reason,
-          1,
-          0,
-        )
-        currentStateId = transitionMeta.toStateId
-        await finalizeRun(result.status)
-        console.log(`Task run complete: ${result.status}`)
-        return
-      }
-
-      ctx = parsePipeContext(result, 'run')
+    if (isPipeAwaitFeedbackSignal(result)) {
+      ctx = mergeContext(parsePipeContext(result.ctx, 'await_feedback'), {
+        [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
+      })
       await persistStepTrace(
         currentStateId,
-        PIPE_DONE_STATE_ID,
-        'done',
-        'action.done',
+        PIPE_FEEDBACK_STATE_ID,
+        'feedback',
+        'action.feedback',
         1,
         0,
       )
-      currentStateId = PIPE_DONE_STATE_ID
-      await finalizeRun('done')
-      console.log('Task run complete: done')
+      currentStateId = PIPE_FEEDBACK_STATE_ID
+      await persistRunTrace({
+        type: 'await_feedback',
+        stateId: currentStateId,
+        message: result.prompt,
+      })
+
+      if (token && board?.adapter === 'notion') {
+        try {
+          await notionPostComment(token, task.externalTaskId, result.prompt)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.log(`[warn] failed to post Notion comment: ${message}`)
+        }
+      }
+
+      await db
+        .update(tasks)
+        .set({
+          state: 'feedback',
+          currentStepId: currentStateId,
+          stepVarsJson: JSON.stringify(ctx),
+          waitingSince: nowIso(),
+          updatedAt: nowIso(),
+          lastError: null,
+        })
+        .where(getTaskSelector(task))
+      await db
+        .update(runs)
+        .set({
+          status: 'feedback',
+          currentStateId,
+          contextJson: JSON.stringify(ctx),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          leaseHeartbeatAt: null,
+          updatedAt: nowIso(),
+        })
+        .where(eq(runs.id, runId))
+      await syncNotionState('feedback')
+      await syncNotionLog(`Feedback needed: ${currentStateId}`, result.prompt)
       return
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      await failRun(`Pipe execution failed: ${message}`)
     }
+
+    if (isPipeEndSignal(result)) {
+      ctx = parsePipeContext(result.ctx, `end.${result.status}`)
+      if (result.message) {
+        ctx = mergeContext(ctx, {last_error: result.message})
+      }
+
+      const transitionMeta: {
+        toStateId: string
+        event: string
+        reason: RunTraceReasonCode
+      } =
+        result.status === 'done'
+          ? {
+              toStateId: PIPE_DONE_STATE_ID,
+              event: 'done',
+              reason: 'action.done',
+            }
+          : result.status === 'blocked'
+            ? {
+                toStateId: PIPE_BLOCKED_STATE_ID,
+                event: 'blocked',
+                reason: 'orchestrate.agent',
+              }
+            : {
+                toStateId: PIPE_FAILED_STATE_ID,
+                event: 'failed',
+                reason: 'action.failed.exhausted',
+              }
+
+      await persistStepTrace(
+        currentStateId,
+        transitionMeta.toStateId,
+        transitionMeta.event,
+        transitionMeta.reason,
+        1,
+        0,
+      )
+      currentStateId = transitionMeta.toStateId
+      await finalizeRun(result.status)
+      console.log(`Task run complete: ${result.status}`)
+      return
+    }
+
+    if (isMalformedPipeControlSignal(result)) {
+      throw new Error(
+        `Pipe factory \`${definition.id}\` emitted malformed ${String(result.type)} control signal`,
+      )
+    }
+
+    ctx = parsePipeContext(result, 'run')
+    await persistStepTrace(
+      currentStateId,
+      PIPE_DONE_STATE_ID,
+      'done',
+      'action.done',
+      1,
+      0,
+    )
+    currentStateId = PIPE_DONE_STATE_ID
+    await finalizeRun('done')
+    console.log('Task run complete: done')
+    return
+  } catch (error) {
+    if (leaseHeartbeatTimer) {
+      clearInterval(leaseHeartbeatTimer)
+      leaseHeartbeatTimer = null
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    await failRun(`Pipe execution failed: ${message}`)
+  }
 }

@@ -1,4 +1,4 @@
-import {mkdtempSync, rmSync} from 'node:fs'
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
@@ -89,5 +89,28 @@ describe('CLI bootstrap flow', () => {
     const namespacedOutput = `${namespaced.stdout}\n${namespaced.stderr}`
     expect(namespaced.status).not.toBe(0)
     expect(namespacedOutput).toContain('No Notion boards registered')
+  })
+
+  it('loads .env from the project resolved via --config', () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
+    const project = mkdtempSync(path.join(tmpdir(), 'notionflow-project-test-'))
+    createdHomes.push(home)
+    createdProjects.push(project)
+
+    const configPath = path.join(project, 'notionflow.config.ts')
+    writeFileSync(configPath, 'export default { factories: [] };\n', 'utf8')
+    writeFileSync(path.join(project, '.env'), 'NOTION_API_TOKEN=test-token\n', 'utf8')
+
+    const run = runCli(
+      ['integrations', 'notion', 'sync', '--config', configPath],
+      home,
+      {},
+      repoRoot,
+    )
+
+    const output = `${run.stdout}\n${run.stderr}`
+    expect(run.status).not.toBe(0)
+    expect(output).toContain('No Notion boards registered')
+    expect(output).not.toContain('NOTION_API_TOKEN is required')
   })
 })

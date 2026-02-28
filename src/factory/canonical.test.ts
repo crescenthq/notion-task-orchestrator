@@ -342,6 +342,29 @@ describe('canonical decide primitive', () => {
       message: 'Unknown branch selected: unknown',
     })
   })
+
+  it('falls back when selected key is inherited from Object.prototype', async () => {
+    const fallback = vi.fn(async (input: PipeInput<DecideCtx>) => ({
+      ...input.ctx,
+      decision: 'fallback' as const,
+      trail: [...input.ctx.trail, 'fallback-prototype'],
+    }))
+
+    const result = await decide<DecideCtx, string>(
+      () => 'toString',
+      {
+        approve: end.done<DecideCtx>('approved'),
+      },
+      {otherwise: fallback},
+    )(decideBaseInput)
+
+    expect(result).toEqual({
+      score: 0,
+      decision: 'fallback',
+      trail: ['fallback-prototype'],
+    })
+    expect(fallback).toHaveBeenCalledTimes(1)
+  })
 })
 
 type LoopCtx = {
@@ -444,6 +467,30 @@ describe('canonical loop primitive', () => {
     })
     expect(body).toHaveBeenCalledTimes(2)
   })
+
+  it('uses a finite default max when config.max is omitted', async () => {
+    const body = vi.fn(async (input: PipeInput<LoopCtx>) => ({
+      ...input.ctx,
+      iterations: input.ctx.iterations + 1,
+      trail: [...input.ctx.trail, `iteration-${input.ctx.iterations + 1}`],
+    }))
+
+    const result = await loop<LoopCtx>({
+      body,
+      until: () => false,
+    })(loopBaseInput)
+
+    expect(result).toEqual({
+      type: 'end',
+      status: 'failed',
+      message: 'Loop exhausted before completion',
+      ctx: {
+        iterations: 100,
+        trail: Array.from({length: 100}, (_, index) => `iteration-${index + 1}`),
+      },
+    })
+    expect(body).toHaveBeenCalledTimes(100)
+  })
 })
 
 type WriteCtx = {
@@ -527,6 +574,10 @@ type EndCtx = {
   trail: string[]
 }
 
+type LifecycleCtx = {
+  count: number
+}
+
 const endBaseInput: PipeInput<EndCtx> = {
   ctx: {score: 1, trail: ['prepared']},
   runId: 'run-end-1',
@@ -536,6 +587,51 @@ const endBaseInput: PipeInput<EndCtx> = {
     title: 'Canonical end test task',
   },
 }
+
+describe('canonical step lifecycle observer', () => {
+  it('emits lifecycle events for canonical primitives', async () => {
+    const events: string[] = []
+
+    const result = await flow(
+      step<LifecycleCtx>('first-step', ctx => ({
+        ...ctx,
+        count: ctx.count + 1,
+      })),
+      loop<LifecycleCtx>({
+        body: step<LifecycleCtx>('loop-step', ctx => ({
+          ...ctx,
+          count: ctx.count + 1,
+        })),
+        until: ctx => ctx.count >= 2,
+        max: 2,
+      }),
+      write<LifecycleCtx>(ctx => `count=${ctx.count}`),
+      end.done<LifecycleCtx>(),
+    )({
+      ctx: {count: 0},
+      runId: 'run-life-1',
+      tickId: 'tick-life-1',
+      onStepStart: event => {
+        events.push(`${event.kind}:${event.name}`)
+      },
+      writePage: async () => undefined,
+    })
+
+    expect(result).toEqual({
+      type: 'end',
+      status: 'done',
+      ctx: {count: 2},
+      message: undefined,
+    })
+    expect(events).toEqual([
+      'step:first-step',
+      'loop:loop',
+      'step:loop-step',
+      'write:write',
+      'end:end.done',
+    ])
+  })
+})
 
 describe('canonical end primitive', () => {
   it('supports end.done() terminal control', async () => {

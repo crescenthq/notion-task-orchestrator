@@ -1,9 +1,13 @@
 import path from 'node:path'
-import {discoverProjectConfig} from '../project/discoverConfig'
+import {
+  discoverProjectConfig,
+  resolveProjectConfig,
+} from '../project/discoverConfig'
 import {z} from 'zod'
 
 type BootstrapOptions = {
   startDir?: string
+  configPath?: string
 }
 
 type RuntimeEnv = {
@@ -19,18 +23,32 @@ const RuntimeEnvSchema = z.object({
   NOTIONFLOW_PROJECT_ROOT: nonEmpty.optional(),
 })
 
-function getExplicitEnvFile(argv: string[]): string | null {
-  const fromArgvPrefix = argv.find(item => item.startsWith('--env-file='))
+function getArgValue(argv: string[], flag: string): string | null {
+  const fromArgvPrefix = argv.find(item => item.startsWith(`${flag}=`))
   if (fromArgvPrefix) {
-    return fromArgvPrefix.slice('--env-file='.length)
+    return fromArgvPrefix.slice(`${flag}=`.length)
   }
 
-  const envFileIndex = argv.indexOf('--env-file')
-  if (envFileIndex >= 0 && argv[envFileIndex + 1]) {
-    return argv[envFileIndex + 1]
+  const flagIndex = argv.indexOf(flag)
+  const nextValue = flagIndex >= 0 ? argv[flagIndex + 1] : undefined
+  if (
+    flagIndex >= 0 &&
+    typeof nextValue === 'string' &&
+    nextValue.trim().length > 0 &&
+    !nextValue.startsWith('--')
+  ) {
+    return nextValue
   }
 
   return null
+}
+
+function getExplicitEnvFile(argv: string[]): string | null {
+  return getArgValue(argv, '--env-file')
+}
+
+export function inferConfigPathFromArgv(argv: string[]): string | null {
+  return getArgValue(argv, '--config')
 }
 
 function loadEnvFile(filePath: string): boolean {
@@ -72,19 +90,41 @@ export async function bootstrapRuntimeEnv(
 ): Promise<void> {
   const startDir = options.startDir ?? process.cwd()
   const envFile = getExplicitEnvFile(process.argv)
+  const explicitConfigPath =
+    options.configPath?.trim() || inferConfigPathFromArgv(process.argv)
   const candidatePaths: string[] = []
 
   if (envFile) {
     candidatePaths.push(path.resolve(startDir, envFile))
   }
 
-  try {
-    const resolvedProject = await discoverProjectConfig(startDir)
-    if (resolvedProject) {
-      candidatePaths.push(path.join(path.dirname(resolvedProject.configPath), '.env'))
+  let resolvedConfigDir: string | null = null
+
+  if (explicitConfigPath) {
+    try {
+      const resolvedProject = await resolveProjectConfig({
+        startDir,
+        configPath: explicitConfigPath,
+      })
+      resolvedConfigDir = path.dirname(resolvedProject.configPath)
+    } catch {
+      // ignore --config resolution failures during env bootstrap
     }
-  } catch {
-    // ignore discovery failures during env bootstrap
+  }
+
+  if (!resolvedConfigDir) {
+    try {
+      const discoveredProject = await discoverProjectConfig(startDir)
+      if (discoveredProject) {
+        resolvedConfigDir = path.dirname(discoveredProject.configPath)
+      }
+    } catch {
+      // ignore discovery failures during env bootstrap
+    }
+  }
+
+  if (resolvedConfigDir) {
+    candidatePaths.push(path.join(resolvedConfigDir, '.env'))
   }
 
   candidatePaths.push(path.join(startDir, '.env'))

@@ -205,12 +205,12 @@ async function provisionNotionBoard({
 }
 
 async function upsertTask(
+  db: Awaited<ReturnType<typeof openApp>>['db'],
   boardId: string,
   externalTaskId: string,
   workflowId: string,
   state: string,
 ): Promise<void> {
-  const {db} = await openApp()
   const now = nowIso()
   await db
     .insert(tasks)
@@ -410,7 +410,7 @@ export async function syncNotionBoards(options: {
         const localState = localTaskStateFromNotion(notionState)
         const workflowId = options.factoryId ?? options.workflowId ?? board.id
         await ensureWorkflowRecord(db, workflowId)
-        await upsertTask(board.id, page.id, workflowId, localState)
+        await upsertTask(db, board.id, page.id, workflowId, localState)
 
         imported += 1
         totalImported += 1
@@ -634,6 +634,7 @@ export const notionCmd = defineCommand({
 
         await ensureWorkflowRecord(db, workflowId)
         await upsertTask(
+          db,
           board.id,
           page.id,
           workflowId,

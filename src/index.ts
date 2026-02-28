@@ -14,6 +14,9 @@ export {
   type PipeDefinition,
   type PipeInput,
   type Step,
+  type StepKind,
+  type StepLifecycle,
+  type StepLifecycleObserver,
 } from './factory/canonical'
 export {
   agentSandbox,

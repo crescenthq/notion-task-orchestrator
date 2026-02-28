@@ -2,8 +2,21 @@ import type {PageOutput} from './helpers'
 
 type JsonRecord = Record<string, unknown>
 const ASK_FEEDBACK_CONTEXT_KEY = 'human_feedback'
+const DEFAULT_LOOP_MAX_ITERATIONS = 100
 
 export type EndStatus = 'done' | 'blocked' | 'failed'
+
+export type StepKind = 'step' | 'ask' | 'decide' | 'loop' | 'write' | 'end'
+
+export type StepLifecycle<C> = {
+  name: string
+  kind: StepKind
+  ctx: C
+}
+
+export type StepLifecycleObserver<C, R = unknown, E = unknown> = (
+  event: StepLifecycle<C>,
+) => PipeResult<void, E, R>
 
 export type AwaitFeedback<C> = {
   type: 'await_feedback'
@@ -29,6 +42,7 @@ export type PipeInput<C, R = unknown, E = unknown> = {
   feedback?: string
   task?: {id: string; title?: string; prompt?: string; context?: string}
   writePage?: WritePage<R, E>
+  onStepStart?: StepLifecycleObserver<C, R, E>
   runId: string
   tickId: string
 }
@@ -85,7 +99,7 @@ function normalizePageOutput(value: unknown): PageOutput {
   )
 }
 
-function readAskReply(input: PipeInput<unknown>): string | undefined {
+function readAskReply(input: {feedback?: string; ctx: unknown}): string | undefined {
   if (typeof input.feedback === 'string' && input.feedback.trim().length > 0) {
     return input.feedback.trim()
   }
@@ -109,6 +123,25 @@ function consumeAskFeedback<C>(ctx: C): C {
     ...ctx,
     [ASK_FEEDBACK_CONTEXT_KEY]: undefined,
   } as C
+}
+
+function normalizeStepName(name: string, fallback: string): string {
+  const trimmed = name.trim()
+  return trimmed.length > 0 ? trimmed : fallback
+}
+
+async function notifyStepStart<C, R = unknown, E = unknown>(
+  input: PipeInput<C, R, E>,
+  kind: StepKind,
+  name: string,
+  ctx?: C,
+): Promise<void> {
+  if (!input.onStepStart) return
+  await input.onStepStart({
+    kind,
+    name: normalizeStepName(name, kind),
+    ctx: ctx ?? input.ctx,
+  })
 }
 
 export function definePipe<C, R = unknown>(
@@ -143,11 +176,13 @@ export function step<C, O, R = unknown, E = unknown>(
   assign: (ctx: C, out: O) => C,
 ): Step<C, R, E>
 export function step<C, O, R = unknown, E = unknown>(
-  _name: string,
+  name: string,
   run: (ctx: C, input: PipeInput<C>) => PipeResult<O, E, R>,
   assign?: (ctx: C, out: O) => C,
 ): Step<C, R, E> {
+  const normalizedName = normalizeStepName(name, 'step')
   return async (input: PipeInput<C>) => {
+    await notifyStepStart(input, 'step', normalizedName)
     const output = await run(input.ctx, input)
     return assign ? assign(input.ctx, output) : (output as C)
   }
@@ -159,10 +194,16 @@ export function ask<C, R = never, E = unknown>(
 ): Step<C, R, E> {
   return async (input: PipeInput<C>) => {
     const ctx = consumeAskFeedback(input.ctx)
+    const resolvedPrompt = typeof prompt === 'function' ? prompt(ctx) : prompt
+    const askStepName =
+      resolvedPrompt
+        .split('\n')
+        .map(line => line.trim())
+        .find(line => line.length > 0) ?? 'ask'
+    await notifyStepStart(input, 'ask', askStepName, ctx)
     const reply = readAskReply(input)
 
     if (!reply) {
-      const resolvedPrompt = typeof prompt === 'function' ? prompt(ctx) : prompt
       return {
         type: 'await_feedback',
         prompt: resolvedPrompt,
@@ -188,9 +229,15 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
   options?: DecideOptions<C, R, E>,
 ): Step<C, R, E> {
   return async (input: PipeInput<C>) => {
+    await notifyStepStart(input, 'decide', 'decide')
     const selected = await select(input.ctx)
-    const branch = branches[selected] ?? options?.otherwise
-    if (!branch) {
+    const branch =
+      typeof selected === 'string' &&
+      Object.prototype.hasOwnProperty.call(branches, selected)
+        ? branches[selected]
+        : undefined
+    const resolvedBranch = branch ?? options?.otherwise
+    if (!resolvedBranch) {
       return {
         type: 'end',
         status: 'failed',
@@ -198,7 +245,7 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
         message: `Unknown branch selected: ${selected}`,
       } satisfies EndSignal<C>
     }
-    return branch(input)
+    return resolvedBranch(input)
   }
 }
 
@@ -206,22 +253,26 @@ export function loop<C, R = unknown, E = unknown>(
   config: LoopConfig<C, R, E>,
 ): Step<C, R, E> {
   return async (input: PipeInput<C>) => {
+    await notifyStepStart(input, 'loop', 'loop')
     const boundedMax =
       typeof config.max === 'number' && Number.isFinite(config.max)
         ? Math.max(0, Math.floor(config.max))
-        : Number.POSITIVE_INFINITY
+        : DEFAULT_LOOP_MAX_ITERATIONS
 
     let ctx = input.ctx
     let iteration = 0
 
+    if (await config.until(ctx)) return ctx
+
     while (iteration < boundedMax) {
-      if (await config.until(ctx)) return ctx
 
       const stepResult = await config.body({...input, ctx})
       if (isControlSignal(stepResult)) return stepResult
 
       ctx = stepResult
       iteration += 1
+
+      if (await config.until(ctx)) return ctx
     }
 
     if (config.onExhausted) {
@@ -241,6 +292,7 @@ export function write<C, R = unknown, E = unknown>(
   render: (ctx: C) => PipeResult<PageOutput, E, R>,
 ): Step<C, R, E> {
   return async (input: PipeInput<C>) => {
+    await notifyStepStart(input, 'write', 'write')
     const pageOutput = normalizePageOutput(await render(input.ctx))
     if (input.writePage) {
       await input.writePage(pageOutput)
@@ -250,12 +302,15 @@ export function write<C, R = unknown, E = unknown>(
 }
 
 function endSignalStep<C>(status: EndStatus, message?: string): Step<C> {
-  return input => ({
-    type: 'end',
-    status,
-    ctx: input.ctx,
-    message,
-  })
+  return async input => {
+    await notifyStepStart(input, 'end', `end.${status}`)
+    return {
+      type: 'end',
+      status,
+      ctx: input.ctx,
+      message,
+    }
+  }
 }
 
 export const end = {
