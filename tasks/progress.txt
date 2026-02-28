@@ -86,3 +86,14 @@ US-010 completed (continuous tick loop with backoff and graceful shutdown):
 - Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
 - Verified: `npm run test:e2e -- e2e/local-project-runtime-artifacts.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-011 completed (stable typed library API exports):
+- Added package root entrypoint and explicit exports map for typed library usage via `import ... from "notionflow"`: `package.json`, `src/index.ts`
+- Added typed `defineFactory` helper alongside existing typed `defineConfig` authoring API: `src/core/factorySchema.ts`, `src/project/projectConfig.ts`
+- Added approved typed runtime helper utilities (`agent`, `select`, `until`) plus result/type exports for shared modules: `src/factory/helpers.ts`, `src/index.ts`
+- Added API contract tests for explicit public runtime export surface and package-root typecheck coverage: `src/index.test.ts`
+- Added compile fixture demonstrating package-root imports for config, factory, and shared helper modules: `e2e/fixtures/library-api/*`
+- Verified: `npm run test -- src/index.test.ts` passes
+- Verified: `npm run test -- src/project/projectConfig.test.ts` passes
+- Verified: `npm run test -- src/core/factorySchema.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` and an existing type error in `src/commands/tick.test.ts` not touched in this task

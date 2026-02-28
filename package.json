@@ -3,6 +3,13 @@
   "version": "0.0.5",
   "description": "Agent-agnostic workflow orchestrator for Notion",
   "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "dev": "npx tsx src/cli.ts",
     "notionflow": "npx tsx src/cli.ts",

@@ -196,3 +196,7 @@ export const factorySchema = z.object({
 });
 
 export type FactoryDefinition = z.infer<typeof factorySchema>;
+
+export function defineFactory<TFactory extends FactoryDefinition>(factory: TFactory): TFactory {
+  return factory;
+}
