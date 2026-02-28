@@ -7,12 +7,11 @@ real-world patterns.
 ## Included factories
 
 - `intent` — captures and refines user intent
-- `expressive-primitives` — deterministic expressive flow showcasing
-  `step`, `ask`, `route`, `loop`, `retry`, `publish`, and `end`
-- `magic-8` — routes a task through a Magic 8-Ball decision state
-- `would-you-rather` — orchestrates a binary choice flow
-- `shared-helper-demo` — demonstrates imported `agent`, `select`, and `until`
-  helpers from `notionflow`
+- `expressive-primitives` — deterministic pipe flow using `step`, `ask`,
+  `decide`, `loop`, `write`, and `end`
+- `magic-8` — multi-round ask/decide loop with generated answers
+- `would-you-rather` — binary choice workflow with bounded input loop
+- `shared-helper-demo` — shared helper composition for loop and branch logic
 
 ## Setup from a clean checkout
 
@@ -96,7 +95,7 @@ example-factories/
     would-you-rather.ts
     shared-helper-demo.ts
     shared/
-      runtime-helpers.ts      # Shared agent/select/until helpers
+      runtime-helpers.ts      # Shared definePipe helper steps/selectors
 ```
 
 ## Passing --config from any directory

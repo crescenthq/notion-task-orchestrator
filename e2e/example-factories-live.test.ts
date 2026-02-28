@@ -1,13 +1,12 @@
 import {spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
-import {mkdir, symlink} from 'node:fs/promises'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
 import {afterEach, describe, expect, it} from 'vitest'
-import {nowIso, openApp} from '../src/app/context'
+import {openApp} from '../src/app/context'
 import {notionToken} from '../src/config/env'
-import {tasks, workflows} from '../src/db/schema'
+import {tasks} from '../src/db/schema'
 import {
   assertNoNewGlobalNotionflowWrites,
   createTempProjectFixture,
@@ -20,48 +19,40 @@ loadDotEnv()
 const hasLiveNotionEnv =
   Boolean(notionToken()) && process.env.NOTIONFLOW_RUN_LIVE_E2E === '1'
 
-describe('docs quickstart live smoke', () => {
+describe('example factories live e2e', () => {
   let fixture: TempProjectFixture | null = null
 
   afterEach(async () => {
-    if (fixture) {
-      await fixture.cleanup()
-      fixture = null
-    }
+    if (!fixture) return
+    await fixture.cleanup()
+    fixture = null
   })
 
   it.skipIf(!hasLiveNotionEnv)(
-    'runs init -> factory create -> doctor -> tick in local project mode',
+    'runs rewritten shared-helper-demo example through CLI run in live Notion mode',
     async () => {
       const before = await snapshotGlobalNotionflowWrites()
-      fixture = await createTempProjectFixture('notionflow-docs-live-')
+      fixture = await createTempProjectFixture('notionflow-example-live-')
 
       await execCli(['init'], fixture.projectDir)
-      await ensureNotionflowDependencyAvailable(fixture.projectDir)
-      await execCli(
-        ['factory', 'create', '--id', 'docs-live', '--skip-notion-board'],
-        fixture.projectDir,
-      )
 
+      const exampleFactoryPath = path.resolve(
+        process.cwd(),
+        'example-factories',
+        'factories',
+        'shared-helper-demo.ts',
+      )
       await writeFile(
         path.join(fixture.projectDir, 'notionflow.config.ts'),
-        docsConfigSource(),
-        'utf8',
-      )
-      await writeFile(
-        path.join(fixture.projectDir, 'factories', 'docs-live.ts'),
-        docsFactorySource(),
+        exampleConfigSource(exampleFactoryPath),
         'utf8',
       )
 
       const doctor = await execCli(['doctor'], fixture.projectDir)
       const resolvedProjectRoot = await realpath(fixture.projectDir)
       expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
-      expect(doctor.stdout).toContain(
-        `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
-      )
 
-      const boardId = `docs-live-${Date.now()}`
+      const boardId = `example-live-${Date.now()}`
       await execCli(
         [
           'integrations',
@@ -70,11 +61,10 @@ describe('docs quickstart live smoke', () => {
           '--board',
           boardId,
           '--title',
-          `Docs Live ${boardId}`,
+          `Example Live ${boardId}`,
         ],
         fixture.projectDir,
       )
-      await ensureWorkflowRegistered(fixture.projectDir, 'docs-live')
 
       const created = await execCli(
         [
@@ -84,9 +74,9 @@ describe('docs quickstart live smoke', () => {
           '--board',
           boardId,
           '--factory',
-          'docs-live',
+          'shared-helper-demo',
           '--title',
-          'Docs quickstart live task',
+          'Shared helper example live task',
           '--status',
           'queue',
         ],
@@ -94,17 +84,10 @@ describe('docs quickstart live smoke', () => {
       )
       const taskExternalId = extractTaskExternalId(created.stdout)
 
-      const tick = await execCli(
-        ['tick', '--board', boardId, '--factory', 'docs-live'],
-        fixture.projectDir,
-      )
-      expect(tick.stdout).toContain('Sync complete')
-
       await execCli(['run', '--task', taskExternalId], fixture.projectDir)
-
-      await expect(
-        readTaskState(fixture.projectDir, taskExternalId),
-      ).resolves.toBe('done')
+      await expect(readTaskState(fixture.projectDir, taskExternalId)).resolves.toBe(
+        'done',
+      )
 
       const after = await snapshotGlobalNotionflowWrites()
       assertNoNewGlobalNotionflowWrites(before, after)
@@ -164,26 +147,6 @@ async function execCli(
   })
 }
 
-async function ensureNotionflowDependencyAvailable(
-  projectDir: string,
-): Promise<void> {
-  const nodeModules = path.join(projectDir, 'node_modules')
-  const linkedPackage = path.join(nodeModules, 'notionflow')
-  const target = process.cwd()
-
-  await mkdir(nodeModules, {recursive: true})
-  await symlink(target, linkedPackage, process.platform === 'win32' ? 'junction' : 'dir')
-}
-
-function extractTaskExternalId(stdout: string): string {
-  const match = stdout.match(/Task created:\s*([^\s]+)/)
-  if (!match?.[1]) {
-    throw new Error(`Unable to extract created task id from output:\n${stdout}`)
-  }
-
-  return match[1]
-}
-
 async function readTaskState(
   projectRoot: string,
   taskExternalId: string,
@@ -201,66 +164,35 @@ async function readTaskState(
   return task.state
 }
 
-function docsConfigSource(): string {
+function exampleConfigSource(factoryPath: string): string {
   return [
     'export default {',
-    '  factories: ["./factories/docs-live.ts"],',
+    `  factories: [${JSON.stringify(factoryPath)}],`,
     '};',
     '',
   ].join('\n')
 }
 
-function docsFactorySource(): string {
-  return [
-    'import {definePipe, end, flow, step} from "notionflow";',
-    '',
-    'export default definePipe({',
-    '  id: "docs-live",',
-    '  initial: {},',
-    '  run: flow(',
-    '    step("complete", ctx => ({ ...ctx, completedBy: "docs-live" })),',
-    '    end.done(),',
-    '  ),',
-    '});',
-    '',
-  ].join('\n')
-}
+function extractTaskExternalId(stdout: string): string {
+  const match = stdout.match(/Task created:\s*([^\s]+)/)
+  if (!match?.[1]) {
+    throw new Error(`Unable to extract created task id from output:\n${stdout}`)
+  }
 
-async function ensureWorkflowRegistered(
-  projectRoot: string,
-  workflowId: string,
-): Promise<void> {
-  const {db} = await openApp({projectRoot})
-  const now = nowIso()
-  await db
-    .insert(workflows)
-    .values({
-      id: workflowId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
+  return match[1]
 }
 
 function loadDotEnv(): void {
   const envPath = path.resolve(process.cwd(), '.env')
-  if (!existsSync(envPath)) {
-    return
-  }
+  if (!existsSync(envPath)) return
 
   const raw = readFileSync(envPath, 'utf8')
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue
-    }
+    if (!trimmed || trimmed.startsWith('#')) continue
 
     const separatorIndex = trimmed.indexOf('=')
-    if (separatorIndex <= 0) {
-      continue
-    }
+    if (separatorIndex <= 0) continue
 
     const key = trimmed.slice(0, separatorIndex).trim()
     const value = trimmed.slice(separatorIndex + 1).trim()

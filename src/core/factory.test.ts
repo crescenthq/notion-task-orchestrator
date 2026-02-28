@@ -2,7 +2,7 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
-import {loadFactoryFromPath} from './factory'
+import {isPipeFactoryDefinition, loadFactoryFromPath} from './factory'
 
 const createdDirs: string[] = []
 
@@ -19,38 +19,48 @@ describe('loadFactoryFromPath', () => {
     }
   })
 
-  it('loads a module with default exported factory object', async () => {
+  it('loads a module with default exported definePipe factory object', async () => {
     const dir = await createTempDir()
-    const filePath = path.join(dir, 'good-factory.mjs')
+    const filePath = path.join(dir, 'pipe-factory.mjs')
 
     await writeFile(
       filePath,
-      `const localAgent = async () => ({ status: "done", data: { ok: true } });\n\nexport default {\n  id: "good-factory",\n  start: "start",\n  states: {\n    start: { type: "action", agent: localAgent, on: { done: "done", failed: "failed" } },\n    done: { type: "done" },\n    failed: { type: "failed" }\n  }\n};\n`,
+      `export default {\n  id: "pipe-factory",\n  initial: { visits: 0 },\n  run: async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
       'utf8',
     )
 
     const loaded = await loadFactoryFromPath(filePath)
-    expect(loaded.definition.id).toBe('good-factory')
+    expect(loaded.definition.id).toBe('pipe-factory')
+    expect(isPipeFactoryDefinition(loaded.definition)).toBe(true)
   })
 
-  it('rejects imported runtime function references', async () => {
+  it('rejects modules that do not export a definePipe factory object shape', async () => {
     const dir = await createTempDir()
-    const helperPath = path.join(dir, 'helper.mjs')
-    const filePath = path.join(dir, 'bad-factory.mjs')
+    const filePath = path.join(dir, 'legacy-factory.mjs')
 
     await writeFile(
-      helperPath,
-      `export async function importedAgent() { return { status: "done" }; }\n`,
-      'utf8',
-    )
-    await writeFile(
       filePath,
-      `import { importedAgent } from "./helper.mjs";\n\nexport default {\n  id: "bad-factory",\n  start: "start",\n  states: {\n    start: { type: "action", agent: importedAgent, on: { done: "done", failed: "failed" } },\n    done: { type: "done" },\n    failed: { type: "failed" }\n  }\n};\n`,
+      `export default {\n  id: "legacy-factory",\n  start: "start",\n  states: {\n    start: { type: "action", agent: async () => ({ status: "done" }), on: { done: "done", failed: "failed" } },\n    done: { type: "done" },\n    failed: { type: "failed" }\n  }\n};\n`,
       'utf8',
     )
 
     await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
-      /Imported function `importedAgent` cannot be used as runtime `agent`/,
+      /Module must export a definePipe factory with shape \{ id, initial, run \}/,
+    )
+  })
+
+  it('rejects modules without a default export object', async () => {
+    const dir = await createTempDir()
+    const filePath = path.join(dir, 'missing-default.mjs')
+
+    await writeFile(
+      filePath,
+      `export const x = 1;\n`,
+      'utf8',
+    )
+
+    await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
+      /Module must export a factory object as default export/,
     )
   })
 })

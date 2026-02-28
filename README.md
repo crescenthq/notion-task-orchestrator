@@ -1,11 +1,11 @@
 # NotionFlow
 
 Project-local orchestration CLI and typed library for running TypeScript
-factories against Notion tasks.
+`definePipe` factories against Notion tasks.
 
 ## Local-First Model
 
-NotionFlow now runs in a project directory, not a global config directory.
+NotionFlow runs inside your project directory.
 
 Each project contains:
 
@@ -13,7 +13,7 @@ Each project contains:
 - `factories/`
 - `.notionflow/` (runtime DB + logs)
 
-`run` and `tick` load factories directly from paths declared in
+`run` and `tick` load factories only from paths declared in
 `notionflow.config.ts`.
 
 ## Prerequisites
@@ -24,31 +24,31 @@ Each project contains:
 ## Quickstart
 
 ```bash
-# 1) Initialize a local NotionFlow project
+# 1) Initialize a local project
 npx notionflow init
 
-# 2) Scaffold a factory file
+# 2) Scaffold a definePipe factory
 npx notionflow factory create --id demo --skip-notion-board
 
 # 3) Declare the factory in notionflow.config.ts
-# Edit factories: ["./factories/demo.ts"] into the generated config
+# factories: ["./factories/demo.ts"]
 
-# 4) Validate project resolution and auth
+# 4) Validate config + auth resolution
 npx notionflow doctor
 
-# 5) Run one orchestration tick
+# 5) Run one queue tick
 npx notionflow tick --factory demo
 ```
 
-You can run commands from anywhere inside the project tree; NotionFlow walks up
-directories to find `notionflow.config.ts`.
+You can run commands from anywhere in the project tree. NotionFlow walks up
+until it finds `notionflow.config.ts`.
 
 ## Config Discovery Rules
 
 - Default: walk up from current working directory to find `notionflow.config.ts`
 - Override: pass `--config <path>` on project-scoped commands (`doctor`,
   `factory create`, `run`, `tick`, `integrations notion sync`)
-- Project root is always the directory containing the resolved config file
+- Project root is the directory containing the resolved config file
 
 ## Config Format
 
@@ -63,7 +63,7 @@ export default defineConfig({
 Factory declarations are explicit and deterministic:
 
 - Relative paths resolve from project root
-- Missing paths fail fast with path diagnostics
+- Missing paths fail fast with diagnostics
 - Duplicate factory IDs fail startup with conflict diagnostics
 
 ## Runtime Artifacts
@@ -73,8 +73,6 @@ NotionFlow writes runtime state under `.notionflow/`:
 - `.notionflow/notionflow.db`
 - `.notionflow/runtime.log`
 - `.notionflow/errors.log`
-
-`notionflow init` creates `.notionflow/` and ensures it is in `.gitignore`.
 
 ## Core Commands
 
@@ -89,98 +87,145 @@ notionflow integrations notion create-task --board <board-id> --title "..." [--f
 notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
 ```
 
-## Library API
+## Canonical Library API
 
-Use package-root typed APIs to author config, runtime factories, and expressive
-primitives:
+Package-root authoring API:
+
+- `defineConfig`
+- `definePipe`
+- `flow`
+- `step`
+- `ask`
+- `decide`
+- `loop`
+- `write`
+- `end`
+
+Reference contract:
+
+- [`docs/definepipe-v1-api-contract.ts`](./docs/definepipe-v1-api-contract.ts)
+- [`docs/definepipe-v1-api-contract.md`](./docs/definepipe-v1-api-contract.md)
+
+### definePipe Example
 
 ```ts
-import {
-  agent,
-  ask,
-  defineConfig,
-  defineFactory,
-  end,
-  loop,
-  publish,
-  retry,
-  route,
-  step,
-} from 'notionflow'
+import {ask, decide, definePipe, end, flow, loop, step, write} from 'notionflow'
 
-const doWork = agent(async ({ctx}) => ({
-  status: 'done',
-  data: {...ctx, completed: true},
-}))
+type Ctx = {
+  decision: 'approve' | 'revise' | ''
+  ready: boolean
+  revisions: number
+}
 
-export const demoFactory = defineFactory({
-  id: 'demo',
-  start: 'start',
-  context: {},
-  states: {
-    start: {
-      type: 'action',
-      agent: doWork,
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
+const draft = step<Ctx>('draft', ctx => ({...ctx, ready: false, revisions: 0}))
+
+const collect = ask<Ctx>('Reply with approve or revise.', (ctx, reply) => {
+  const normalized = reply.trim().toLowerCase()
+  if (normalized === 'approve' || normalized === 'revise') {
+    return {...ctx, decision: normalized as 'approve' | 'revise'}
+  }
+
+  return {
+    type: 'await_feedback',
+    prompt: 'Please reply with "approve" or "revise".',
+    ctx,
+  }
 })
 
-export default defineConfig({
-  factories: ['./factories/demo.ts'],
+const revise = loop<Ctx>({
+  body: step('revise', ctx => ({
+    ...ctx,
+    revisions: ctx.revisions + 1,
+    ready: true,
+  })),
+  until: ctx => ctx.ready,
+  max: 2,
+  onExhausted: end.failed('Revision loop exhausted'),
+})
+
+export default definePipe({
+  id: 'demo',
+  initial: {decision: '', ready: false, revisions: 0} satisfies Ctx,
+  run: flow(
+    draft,
+    collect,
+    decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
+      revise,
+      publish: flow(
+        write(ctx => ({markdown: `# Result\nDecision: ${ctx.decision}`})),
+        end.done(),
+      ),
+    }),
+  ),
 })
 ```
 
-### Expressive Primitive Surface
+### Feedback Suspend/Resume
 
-The public expressive primitive builders are:
+`ask` is first-class feedback control:
 
-- `step({run, on, retries?})`
-- `ask({prompt, parse?, on, resume?})`
-- `route({select, on})`
-- `loop({body, maxIterations, until?, on})`
-- `retry({max, backoff?})`
-- `publish({render, on?})`
-- `end({status: 'done' | 'blocked' | 'failed'})`
+- No reply available: returns `await_feedback` and task moves to `feedback`
+- Prompt is persisted and can be posted back to Notion comments
+- Resume path: when a human reply is available, runtime reads feedback,
+  continues from persisted context, and clears consumed `human_feedback`
 
-Use `publish` for page output and `end` for terminal outcomes. Legacy
-replacement aliases are intentionally not documented or exported.
+Common live loop:
 
-A runnable primitive-composed workflow is available at
-[`example-factories/factories/expressive-primitives.ts`](./example-factories/factories/expressive-primitives.ts).
+1. `notionflow tick --board <board-id> --factory <factory-id>` pauses in
+   `feedback`.
+2. Human replies in Notion comments.
+3. `notionflow integrations notion sync --board <board-id> --run` detects new
+   comments, re-queues feedback tasks, and runs queued work.
 
-### Provider-Agnostic Orchestration Utilities
+## Orchestration Service Layer
 
-`askForRepo`, `invokeAgent`, and `agentSandbox` return `UtilityResult<T>` and
-are intended to be injected with adapters.
+Use layer-backed orchestration utilities (`askForRepo`, `invokeAgent`,
+`agentSandbox`) for provider-agnostic integration.
 
 ```ts
-import {createOrchestrationUtilities} from 'notionflow'
+import {
+  createOrchestrationLayer,
+  createOrchestrationUtilitiesFromLayer,
+  definePipe,
+  end,
+  flow,
+  step,
+} from 'notionflow'
 
-const orchestration = createOrchestrationUtilities({
+const layer = createOrchestrationLayer({
   askForRepo: {
-    request: async () => ({repo: 'https://github.com/acme/demo', branch: 'main'}),
+    request: async () => ({
+      repo: 'https://github.com/acme/demo',
+      branch: 'main',
+    }),
   },
   invokeAgent: {
-    invoke: async () => ({text: 'Plan ready'}),
+    invoke: async ({prompt}) => ({text: `planned: ${prompt}`}),
   },
   agentSandbox: {
     run: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
   },
 })
 
-const repoResult = await orchestration.askForRepo({
-  prompt: 'Which repo should we work on?',
-  timeoutMs: 15000,
-})
-if (!repoResult.ok) throw new Error(repoResult.error.message)
+const utils = createOrchestrationUtilitiesFromLayer(layer)
 
-const planResult = await orchestration.invokeAgent({
-  prompt: `Draft a plan for ${repoResult.value.repo}`,
+const plan = step('plan', async ctx => {
+  const repo = await utils.askForRepo({prompt: 'Choose repo'})
+  if (!repo.ok) return {...ctx, failure: repo.error.message}
+
+  const result = await utils.invokeAgent({
+    prompt: `Draft plan for ${repo.value.repo}`,
+  })
+  if (!result.ok) return {...ctx, failure: result.error.message}
+
+  return {...ctx, plan: result.value.text}
 })
-if (!planResult.ok) throw new Error(planResult.error.message)
+
+export default definePipe({
+  id: 'service-layer-demo',
+  initial: {plan: '', failure: ''},
+  run: flow(plan, end.done()),
+})
 ```
 
 ## Examples
@@ -188,11 +233,12 @@ if (!planResult.ok) throw new Error(planResult.error.message)
 Project-style examples are in [`example-factories/`](./example-factories):
 
 - explicit `notionflow.config.ts`
-- factories under `factories/`
-- shared runtime helper import example
-- setup notes and runnable commands
+- definePipe-only factories under `factories/`
+- shared helper import patterns for reusable steps/selectors
 
 ## Verification Checklist
+
+Local gate:
 
 ```bash
 npm run check
@@ -201,8 +247,50 @@ npm run test
 npm run test:e2e
 ```
 
+Live Notion API e2e gate (explicit):
+
+1. Set required env vars.
+
+```bash
+export NOTION_API_TOKEN="<integration-token>"
+export NOTION_WORKSPACE_PAGE_ID="<parent-page-id>"
+export NOTIONFLOW_RUN_LIVE_E2E=1
+# optional: use local DB feedback injection instead of Notion comments
+export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
+```
+
+2. Run live smoke + primitive live suites.
+
+```bash
+npm run test:e2e -- e2e/local-project-docs-quickstart-live.test.ts
+npm run test:e2e -- e2e/canonical-write-live.test.ts e2e/canonical-end-live.test.ts e2e/example-factories-live.test.ts
+npm run test:e2e -- e2e/factory-verification.test.ts
+```
+
+3. Validate expected outcomes.
+
+- Quickstart live test output includes `Project root:`, `Config path:`,
+  `Task created:`, and `Sync complete:`
+- Verification suite prints
+  `Artifact: .../e2e/artifacts/factory-live-verification-<timestamp>.json`
+- Artifact JSON contains `passedScenarios` and per-scenario `finalState`
+  terminal outcomes (`done`, `blocked`, `failed`) with tick timelines
+
+## Scratchpad
+
+Run a local playground for interactive TypeScript experiments:
+
+```bash
+npm run playground
+```
+
+Then open `http://127.0.0.1:4173`.
+
 ## Docs
 
 - [CLI Reference](./docs/cli-reference.md)
 - [Factory Authoring](./docs/factory-authoring.md)
+- [Scratchpad Playground](./docs/scratchpad-playground.md)
+- [definePipe v1 API Contract (TypeScript)](./docs/definepipe-v1-api-contract.ts)
+- [definePipe v1 API Contract (Overview)](./docs/definepipe-v1-api-contract.md)
 - [Architecture](./docs/architecture.md)

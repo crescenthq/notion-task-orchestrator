@@ -1,34 +1,12 @@
-type ResumeBudgetInput = {
-  stateId: string
-  ctx: Record<string, unknown>
-}
+import {definePipe, end, flow, step} from '../../src/factory/canonical'
 
-const step = async ({stateId, ctx}: ResumeBudgetInput) => ({
-  status: 'done',
-  data: {...ctx, last_completed_state: String(stateId)},
-})
-
-export default {
+export default definePipe({
   id: 'verify-resume-budget',
-  start: 'step_one',
-  context: {},
-  states: {
-    step_one: {
-      type: 'action',
-      agent: step,
-      on: {done: 'step_two', failed: 'failed'},
-    },
-    step_two: {
-      type: 'action',
-      agent: step,
-      on: {done: 'step_three', failed: 'failed'},
-    },
-    step_three: {
-      type: 'action',
-      agent: step,
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
-}
+  initial: {},
+  run: flow(
+    step('step_one', ctx => ({...ctx, last_completed_state: 'step_one'})),
+    step('step_two', ctx => ({...ctx, last_completed_state: 'step_two'})),
+    step('step_three', ctx => ({...ctx, last_completed_state: 'step_three'})),
+    end.done(),
+  ),
+})

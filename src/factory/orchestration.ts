@@ -76,8 +76,37 @@ export type OrchestrationAdapters = {
   agentSandbox: AgentSandboxAdapter
 }
 
+export type AskForRepoService = {
+  askForRepo(input: AskForRepoInput): Promise<AskForRepoOutput>
+}
+
+export type InvokeAgentService = {
+  invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentOutput>
+}
+
+export type AgentSandboxService = {
+  agentSandbox(input: AgentSandboxInput): Promise<AgentSandboxOutput>
+}
+
+export type OrchestrationServices = AskForRepoService &
+  InvokeAgentService &
+  AgentSandboxService
+
+export type Effect<TServices, TValue> = (
+  services: TServices,
+) => Promise<TValue> | TValue
+
+export type Layer<TServices> = {
+  build(): Promise<TServices> | TServices
+}
+
+export type OrchestrationEffect<TValue> = Effect<OrchestrationServices, TValue>
+
+export type OrchestrationLayer = Layer<OrchestrationServices>
+
 type UtilityOptions<TAdapter> = {
   adapter?: TAdapter
+  layer?: OrchestrationLayer
   timeoutMs?: number
 }
 
@@ -179,31 +208,170 @@ async function runUtilityOperation<TValue>(
   }
 }
 
+function buildServices(
+  adapters: Partial<OrchestrationAdapters> = {},
+): OrchestrationServices {
+  const resolvedAdapters: OrchestrationAdapters = {
+    askForRepo: adapters.askForRepo ?? defaultOrchestrationAdapters.askForRepo,
+    invokeAgent: adapters.invokeAgent ?? defaultOrchestrationAdapters.invokeAgent,
+    agentSandbox: adapters.agentSandbox ?? defaultOrchestrationAdapters.agentSandbox,
+  }
+
+  return {
+    askForRepo: input => resolvedAdapters.askForRepo.request(input),
+    invokeAgent: input => resolvedAdapters.invokeAgent.invoke(input),
+    agentSandbox: input => resolvedAdapters.agentSandbox.run(input),
+  }
+}
+
+export function createOrchestrationLayer(
+  adapters: Partial<OrchestrationAdapters> = {},
+): OrchestrationLayer {
+  return {
+    build: () => buildServices(adapters),
+  }
+}
+
+export const defaultOrchestrationLayer = createOrchestrationLayer()
+
+type OrchestrationServiceOverrides = Partial<OrchestrationServices>
+
+export function createOrchestrationTestLayer(
+  overrides: OrchestrationServiceOverrides = {},
+  baseLayer: OrchestrationLayer = defaultOrchestrationLayer,
+): OrchestrationLayer {
+  return {
+    build: async () => {
+      const base = await baseLayer.build()
+      return {
+        ...base,
+        ...overrides,
+      }
+    },
+  }
+}
+
+function hasServiceOverrides(overrides: OrchestrationServiceOverrides): boolean {
+  return Boolean(
+    overrides.askForRepo || overrides.invokeAgent || overrides.agentSandbox,
+  )
+}
+
+function resolveLayer(
+  layer: OrchestrationLayer | undefined,
+  overrides: OrchestrationServiceOverrides,
+): OrchestrationLayer {
+  const baseLayer = layer ?? defaultOrchestrationLayer
+  if (!hasServiceOverrides(overrides)) {
+    return baseLayer
+  }
+
+  return createOrchestrationTestLayer(overrides, baseLayer)
+}
+
+export async function runOrchestrationEffect<TValue>(
+  effect: OrchestrationEffect<TValue>,
+  layer: OrchestrationLayer = defaultOrchestrationLayer,
+): Promise<TValue> {
+  const services = await layer.build()
+  return effect(services)
+}
+
+type UtilityExecutionOptions = {
+  timeoutMs?: number
+}
+
+export function askForRepoEffect(
+  input: AskForRepoInput,
+  options: UtilityExecutionOptions = {},
+): OrchestrationEffect<UtilityResult<AskForRepoOutput>> {
+  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
+  return services =>
+    runUtilityOperation('askForRepo', timeoutMs, () =>
+      services.askForRepo(input),
+    )
+}
+
+export function invokeAgentEffect(
+  input: InvokeAgentInput,
+  options: UtilityExecutionOptions = {},
+): OrchestrationEffect<UtilityResult<InvokeAgentOutput>> {
+  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
+  return services =>
+    runUtilityOperation('invokeAgent', timeoutMs, () =>
+      services.invokeAgent(input),
+    )
+}
+
+export function agentSandboxEffect(
+  input: AgentSandboxInput,
+  options: UtilityExecutionOptions = {},
+): OrchestrationEffect<UtilityResult<AgentSandboxOutput>> {
+  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
+  return services =>
+    runUtilityOperation('agentSandbox', timeoutMs, () =>
+      services.agentSandbox(input),
+    )
+}
+
 export async function askForRepo(
   input: AskForRepoInput,
   options: AskForRepoOptions = {},
 ): Promise<UtilityResult<AskForRepoOutput>> {
-  const adapter = options.adapter ?? defaultOrchestrationAdapters.askForRepo
-  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
-  return runUtilityOperation('askForRepo', timeoutMs, () => adapter.request(input))
+  const adapter = options.adapter
+  const layer = resolveLayer(
+    options.layer,
+    adapter
+      ? {
+          askForRepo: askInput => adapter.request(askInput),
+        }
+      : {},
+  )
+
+  return runOrchestrationEffect(
+    askForRepoEffect(input, {timeoutMs: options.timeoutMs}),
+    layer,
+  )
 }
 
 export async function invokeAgent(
   input: InvokeAgentInput,
   options: InvokeAgentOptions = {},
 ): Promise<UtilityResult<InvokeAgentOutput>> {
-  const adapter = options.adapter ?? defaultOrchestrationAdapters.invokeAgent
-  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
-  return runUtilityOperation('invokeAgent', timeoutMs, () => adapter.invoke(input))
+  const adapter = options.adapter
+  const layer = resolveLayer(
+    options.layer,
+    adapter
+      ? {
+          invokeAgent: invokeInput => adapter.invoke(invokeInput),
+        }
+      : {},
+  )
+
+  return runOrchestrationEffect(
+    invokeAgentEffect(input, {timeoutMs: options.timeoutMs}),
+    layer,
+  )
 }
 
 export async function agentSandbox(
   input: AgentSandboxInput,
   options: AgentSandboxOptions = {},
 ): Promise<UtilityResult<AgentSandboxOutput>> {
-  const adapter = options.adapter ?? defaultOrchestrationAdapters.agentSandbox
-  const timeoutMs = resolveTimeoutMs(input.timeoutMs, options.timeoutMs)
-  return runUtilityOperation('agentSandbox', timeoutMs, () => adapter.run(input))
+  const adapter = options.adapter
+  const layer = resolveLayer(
+    options.layer,
+    adapter
+      ? {
+          agentSandbox: sandboxInput => adapter.run(sandboxInput),
+        }
+      : {},
+  )
+
+  return runOrchestrationEffect(
+    agentSandboxEffect(input, {timeoutMs: options.timeoutMs}),
+    layer,
+  )
 }
 
 type BoundUtilityOptions = {
@@ -225,30 +393,30 @@ export type OrchestrationUtilities = {
   ) => Promise<UtilityResult<AgentSandboxOutput>>
 }
 
+export function createOrchestrationUtilitiesFromLayer(
+  layer: OrchestrationLayer = defaultOrchestrationLayer,
+): OrchestrationUtilities {
+  return {
+    askForRepo: (input, options = {}) =>
+      runOrchestrationEffect(
+        askForRepoEffect(input, {timeoutMs: options.timeoutMs}),
+        layer,
+      ),
+    invokeAgent: (input, options = {}) =>
+      runOrchestrationEffect(
+        invokeAgentEffect(input, {timeoutMs: options.timeoutMs}),
+        layer,
+      ),
+    agentSandbox: (input, options = {}) =>
+      runOrchestrationEffect(
+        agentSandboxEffect(input, {timeoutMs: options.timeoutMs}),
+        layer,
+      ),
+  }
+}
+
 export function createOrchestrationUtilities(
   adapters: Partial<OrchestrationAdapters> = {},
 ): OrchestrationUtilities {
-  const resolvedAdapters: OrchestrationAdapters = {
-    askForRepo: adapters.askForRepo ?? defaultOrchestrationAdapters.askForRepo,
-    invokeAgent: adapters.invokeAgent ?? defaultOrchestrationAdapters.invokeAgent,
-    agentSandbox: adapters.agentSandbox ?? defaultOrchestrationAdapters.agentSandbox,
-  }
-
-  return {
-    askForRepo: (input, options = {}) =>
-      askForRepo(input, {
-        adapter: resolvedAdapters.askForRepo,
-        timeoutMs: options.timeoutMs,
-      }),
-    invokeAgent: (input, options = {}) =>
-      invokeAgent(input, {
-        adapter: resolvedAdapters.invokeAgent,
-        timeoutMs: options.timeoutMs,
-      }),
-    agentSandbox: (input, options = {}) =>
-      agentSandbox(input, {
-        adapter: resolvedAdapters.agentSandbox,
-        timeoutMs: options.timeoutMs,
-      }),
-  }
+  return createOrchestrationUtilitiesFromLayer(createOrchestrationLayer(adapters))
 }

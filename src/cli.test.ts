@@ -9,7 +9,13 @@ const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 )
-const tsxBin = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const tsxLoader = path.join(
+  repoRoot,
+  'node_modules',
+  'tsx',
+  'dist',
+  'loader.mjs',
+)
 const cliEntry = path.join(repoRoot, 'src', 'cli.ts')
 const createdHomes: string[] = []
 const createdProjects: string[] = []
@@ -20,11 +26,15 @@ function runCli(
   env: NodeJS.ProcessEnv = {},
   cwd = repoRoot,
 ) {
-  return spawnSync(process.execPath, [tsxBin, cliEntry, ...args], {
-    cwd,
-    env: {...process.env, HOME: home, ...env},
-    encoding: 'utf8',
-  })
+  return spawnSync(
+    process.execPath,
+    ['--import', tsxLoader, cliEntry, ...args],
+    {
+      cwd,
+      env: {...process.env, HOME: home, ...env},
+      encoding: 'utf8',
+    },
+  )
 }
 
 describe('CLI bootstrap flow', () => {

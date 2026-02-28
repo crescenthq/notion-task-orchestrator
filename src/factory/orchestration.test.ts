@@ -4,12 +4,17 @@ import {tmpdir} from 'node:os'
 import {pathToFileURL} from 'node:url'
 import {asc, eq} from 'drizzle-orm'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {compileExpressiveFactory, step} from './expressive'
-import type {ActionResult} from './helpers'
+import {definePipe, end, flow, step} from './canonical'
 import {
   agentSandbox,
+  agentSandboxEffect,
+  askForRepoEffect,
+  createOrchestrationTestLayer,
   createOrchestrationUtilities,
+  createOrchestrationUtilitiesFromLayer,
   invokeAgent,
+  invokeAgentEffect,
+  runOrchestrationEffect,
 } from './orchestration'
 
 const homes: string[] = []
@@ -42,6 +47,10 @@ async function setupRuntime() {
   return {db, paths, runtime, schema, timestamp}
 }
 
+function transitionLike<T extends {type: string | null}>(traces: T[]): T[] {
+  return traces.filter(trace => trace.type === 'step' || trace.type === 'retry')
+}
+
 describe('orchestration utility contracts', () => {
   afterEach(async () => {
     vi.useRealTimers()
@@ -50,6 +59,51 @@ describe('orchestration utility contracts', () => {
     for (const home of homes.splice(0, homes.length)) {
       await rm(home, {recursive: true, force: true})
     }
+  })
+
+  it('runs layer-backed orchestration effects for success cases', async () => {
+    const layer = createOrchestrationTestLayer({
+      askForRepo: async () => ({
+        repo: 'https://github.com/notionflow/demo.git',
+      }),
+      invokeAgent: async ({prompt}) => ({
+        text: `ack:${prompt}`,
+      }),
+      agentSandbox: async () => ({
+        exitCode: 0,
+        stdout: 'ok',
+        stderr: '',
+      }),
+    })
+
+    const repoResult = await runOrchestrationEffect(
+      askForRepoEffect({prompt: 'Repo URL?'}),
+      layer,
+    )
+    const invokeResult = await runOrchestrationEffect(
+      invokeAgentEffect({prompt: 'Draft a plan.'}),
+      layer,
+    )
+    const sandboxResult = await runOrchestrationEffect(
+      agentSandboxEffect({
+        command: 'git',
+        args: ['status'],
+      }),
+      layer,
+    )
+
+    expect(repoResult).toEqual({
+      ok: true,
+      value: {repo: 'https://github.com/notionflow/demo.git'},
+    })
+    expect(invokeResult).toEqual({
+      ok: true,
+      value: {text: 'ack:Draft a plan.'},
+    })
+    expect(sandboxResult).toEqual({
+      ok: true,
+      value: {exitCode: 0, stdout: 'ok', stderr: ''},
+    })
   })
 
   it('supports provider-agnostic injected adapters', async () => {
@@ -105,70 +159,89 @@ describe('orchestration utility contracts', () => {
     })
   })
 
-  it('can be composed inside primitive step handlers through compileExpressiveFactory', async () => {
-    const utilities = createOrchestrationUtilities({
-      askForRepo: {
-        request: async () => ({
-          repo: 'https://github.com/notionflow/composed.git',
+  it('supports provider swapping via injected test layers in compiled workflows', async () => {
+    const runScenario = async (
+      providerName: 'alpha' | 'beta',
+    ): Promise<Record<string, unknown>> => {
+      const layer = createOrchestrationTestLayer({
+        askForRepo: async () => ({
+          repo: `https://github.com/notionflow/${providerName}.git`,
         }),
-      },
-      invokeAgent: {
-        invoke: async ({prompt}) => ({
-          text: `plan:${prompt}`,
+        invokeAgent: async ({prompt}) => ({
+          text: `${providerName}:${prompt}`,
         }),
-      },
-    })
+      })
+      const utilities = createOrchestrationUtilitiesFromLayer(layer)
 
-    const compiled = compileExpressiveFactory({
-      id: 'orchestration-utility-compose-factory',
-      start: 'collect',
-      context: {},
-      states: {
-        collect: step({
-          run: async () => {
+      const pipe = definePipe({
+        id: `orchestration-provider-swap-${providerName}`,
+        initial: {},
+        run: flow(
+          step('collect', async ctx => {
             const repo = await utilities.askForRepo({
               prompt: 'Share repo',
             })
             if (!repo.ok) {
-              return {status: 'failed', message: repo.error.message}
+              return {
+                ...ctx,
+                provider: providerName,
+                error: repo.error.message,
+              }
             }
 
             const plan = await utilities.invokeAgent({
               prompt: `Plan for ${repo.value.repo}`,
             })
             if (!plan.ok) {
-              return {status: 'failed', message: plan.error.message}
+              return {
+                ...ctx,
+                provider: providerName,
+                error: plan.error.message,
+              }
             }
 
             return {
-              status: 'done',
-              data: {
-                repo_url: repo.value.repo,
-                plan: plan.value.text,
-              },
+              ...ctx,
+              provider: providerName,
+              repo_url: repo.value.repo,
+              plan: plan.value.text,
             }
-          },
-          on: {done: 'done', failed: 'failed'},
-        }),
-        done: {type: 'done'},
-        failed: {type: 'failed'},
-      },
-    })
+          }),
+          end.done(),
+        ),
+      })
 
-    const collectState = compiled.states.collect
-    if (!collectState || collectState.type !== 'action') {
-      throw new Error('Expected compiled action state for `collect`')
+      const result = await pipe.run({
+        ctx: pipe.initial,
+        runId: `run-${providerName}`,
+        tickId: `tick-${providerName}`,
+      })
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        !('type' in result) ||
+        !('status' in result) ||
+        !('ctx' in result) ||
+        result.type !== 'end' ||
+        result.status !== 'done'
+      ) {
+        throw new Error('Expected pipe to terminate with end.done()')
+      }
+      return result.ctx as Record<string, unknown>
     }
 
-    const result = await (
-      collectState.agent as (input: {
-        ctx: Record<string, unknown>
-      }) => Promise<ActionResult<Record<string, unknown>>>
-    )({ctx: {}})
-    expect(result.status).toBe('done')
-    expect(result.data).toEqual({
-      repo_url: 'https://github.com/notionflow/composed.git',
-      plan: 'plan:Plan for https://github.com/notionflow/composed.git',
+    const alphaResult = await runScenario('alpha')
+    const betaResult = await runScenario('beta')
+
+    expect(alphaResult).toEqual({
+      provider: 'alpha',
+      repo_url: 'https://github.com/notionflow/alpha.git',
+      plan: 'alpha:Plan for https://github.com/notionflow/alpha.git',
+    })
+    expect(betaResult).toEqual({
+      provider: 'beta',
+      repo_url: 'https://github.com/notionflow/beta.git',
+      plan: 'beta:Plan for https://github.com/notionflow/beta.git',
     })
   })
 
@@ -177,8 +250,8 @@ describe('orchestration utility contracts', () => {
     const factoryId = 'orchestration-utility-runtime-factory'
     const externalTaskId = 'task-orchestration-utility-runtime-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-    const expressiveModuleUrl = pathToFileURL(
-      path.resolve('src/factory/expressive.ts'),
+    const canonicalModuleUrl = pathToFileURL(
+      path.resolve('src/factory/canonical.ts'),
     ).href
     const orchestrationModuleUrl = pathToFileURL(
       path.resolve('src/factory/orchestration.ts'),
@@ -186,60 +259,43 @@ describe('orchestration utility contracts', () => {
 
     await writeFile(
       factoryPath,
-      `import {compileExpressiveFactory, step} from "${expressiveModuleUrl}";\n` +
-        `import {createOrchestrationUtilities} from "${orchestrationModuleUrl}";\n` +
-        `const utilities = createOrchestrationUtilities({\n` +
-        `  askForRepo: {\n` +
-        `    request: async () => ({ repo: "https://github.com/notionflow/integration.git", branch: "main" })\n` +
-        `  },\n` +
-        `  invokeAgent: {\n` +
-        `    invoke: async ({ prompt }) => ({ text: \`plan:\${prompt}\` })\n` +
-        `  },\n` +
-        `  agentSandbox: {\n` +
-        `    run: async () => ({ exitCode: 0, stdout: "M README.md", stderr: "" })\n` +
-        `  }\n` +
+      `import {definePipe, end, flow, step} from "${canonicalModuleUrl}";\n` +
+        `import {createOrchestrationTestLayer, createOrchestrationUtilitiesFromLayer} from "${orchestrationModuleUrl}";\n` +
+        `const utilityLayer = createOrchestrationTestLayer({\n` +
+        `  askForRepo: async () => ({ repo: "https://github.com/notionflow/integration.git", branch: "main" }),\n` +
+        `  invokeAgent: async ({ prompt }) => ({ text: \`plan:\${prompt}\` }),\n` +
+        `  agentSandbox: async () => ({ exitCode: 0, stdout: "M README.md", stderr: "" })\n` +
         `});\n` +
-        `const compiled = compileExpressiveFactory({\n` +
+        `const utilities = createOrchestrationUtilitiesFromLayer(utilityLayer);\n` +
+        `const pipe = definePipe({\n` +
         `  id: "${factoryId}",\n` +
-        `  start: "collect_repo",\n` +
-        `  context: {},\n` +
-        `  states: {\n` +
-        `    collect_repo: step({\n` +
-        `      run: async () => {\n` +
+        `  initial: {},\n` +
+        `  run: flow(\n` +
+        `    step("collect_repo", async ctx => {\n` +
         `        const repo = await utilities.askForRepo({ prompt: "Share repo URL" });\n` +
-        `        if (!repo.ok) return { status: "failed", message: repo.error.message };\n` +
+        `        if (!repo.ok) return { ...ctx, error: repo.error.message };\n` +
         `        return {\n` +
-        `          status: "done",\n` +
-        `          data: {\n` +
+        `          ...ctx,\n` +
         `            repo_url: repo.value.repo,\n` +
         `            repo_branch: repo.value.branch ?? "unknown"\n` +
-        `          }\n` +
         `        };\n` +
-        `      },\n` +
-        `      on: { done: "draft_plan", failed: "failed" }\n` +
-        `    }),\n` +
-        `    draft_plan: step({\n` +
-        `      run: async ({ ctx }) => {\n` +
+        `      }),\n` +
+        `    step("draft_plan", async ctx => {\n` +
         `        const repoUrl = String(ctx.repo_url ?? "");\n` +
         `        const plan = await utilities.invokeAgent({ prompt: \`Plan for \${repoUrl}\` });\n` +
-        `        if (!plan.ok) return { status: "failed", message: plan.error.message };\n` +
+        `        if (!plan.ok) return { ...ctx, error: plan.error.message };\n` +
         `        const sandbox = await utilities.agentSandbox({ command: "git", args: ["status", "--short"] });\n` +
-        `        if (!sandbox.ok) return { status: "failed", message: sandbox.error.message };\n` +
+        `        if (!sandbox.ok) return { ...ctx, error: sandbox.error.message };\n` +
         `        return {\n` +
-        `          status: "done",\n` +
-        `          data: {\n` +
+        `          ...ctx,\n` +
         `            plan_text: plan.value.text,\n` +
         `            sandbox_stdout: sandbox.value.stdout\n` +
-        `          }\n` +
         `        };\n` +
-        `      },\n` +
-        `      on: { done: "done", failed: "failed" }\n` +
-        `    }),\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
+        `      }),\n` +
+        `    end.done(),\n` +
+        `  ),\n` +
         `});\n` +
-        `export default compiled.factory;\n`,
+        `export default pipe;\n`,
       'utf8',
     )
 
@@ -296,24 +352,22 @@ describe('orchestration utility contracts', () => {
     )
     expect(persistedContext.sandbox_stdout).toBe('M README.md')
 
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-      .orderBy(
-        asc(schema.transitionEvents.timestamp),
-        asc(schema.transitionEvents.id),
-      )
+    const events = transitionLike(
+      await db
+        .select()
+        .from(schema.runTraces)
+        .where(eq(schema.runTraces.taskId, updatedTask!.id))
+        .orderBy(
+          asc(schema.runTraces.timestamp),
+          asc(schema.runTraces.id),
+        ),
+    )
 
-    expect(events).toHaveLength(2)
-    expect(events[0]?.fromStateId).toBe('collect_repo')
-    expect(events[0]?.toStateId).toBe('draft_plan')
+    expect(events).toHaveLength(1)
+    expect(events[0]?.fromStateId).toBe('__pipe_run__')
+    expect(events[0]?.toStateId).toBe('__pipe_done__')
     expect(events[0]?.event).toBe('done')
     expect(events[0]?.reason).toBe('action.done')
-    expect(events[1]?.fromStateId).toBe('draft_plan')
-    expect(events[1]?.toStateId).toBe('done')
-    expect(events[1]?.event).toBe('done')
-    expect(events[1]?.reason).toBe('action.done')
   })
 
   it('returns adapter errors when adapter execution fails', async () => {

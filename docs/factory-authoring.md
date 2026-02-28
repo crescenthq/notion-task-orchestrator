@@ -1,104 +1,167 @@
 # Factory Authoring Guide
 
-## Authoring Modes
+## Canonical Authoring Model
 
-NotionFlow supports two factory authoring styles:
+NotionFlow authoring is `definePipe`-only.
 
-- Runtime-state authoring with `defineFactory(...)`
-- Expressive primitive authoring with `step`, `ask`, `route`, `loop`, `retry`,
-  `publish`, and `end`
+Use these package-root APIs:
 
-`publish` and `end` are the canonical output/terminal primitive names.
-Legacy replacement aliases are intentionally not part of the docs or public API.
+- `definePipe`
+- `flow`
+- `step`
+- `ask`
+- `decide`
+- `loop`
+- `write`
+- `end`
 
-## Runtime Factory Shape
+Reference contract:
+[`definepipe-v1-api-contract.ts`](./definepipe-v1-api-contract.ts).
 
-A runtime-state factory is a default export state machine:
+Quick try-it path: [`scratchpad-playground.md`](./scratchpad-playground.md).
+
+## Minimal Factory Shape
 
 ```ts
-import {defineFactory} from 'notionflow'
+import {definePipe, end, flow, step} from 'notionflow'
 
-export default defineFactory({
+export default definePipe({
   id: 'my-factory',
-  start: 'start',
-  context: {},
-  states: {
-    start: {
-      type: 'action',
-      agent: async ({ctx}) => ({status: 'done', data: ctx}),
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
+  initial: {completed: false},
+  run: flow(
+    step('complete', ctx => ({...ctx, completed: true})),
+    end.done(),
+  ),
 })
 ```
 
-## Expressive Primitive API
+## Primitive Semantics
 
-Package-root primitive builders:
+- `step(name, run, assign?)`: run one unit of work and return updated context
+- `ask(prompt, parse)`: request human input; returns `await_feedback` when no
+  reply is available
+- `decide(select, branches, options?)`: route to a branch step/flow by selected
+  key
+- `loop({body, until, max, onExhausted})`: bounded repeat-until execution
+- `write(render)`: render and emit Notion page output (`string` or
+  `{markdown, body?}`)
+- `end.done()`, `end.blocked()`, `end.failed(message)`: explicit terminal
+  outcomes
 
-- `step({run, on, retries?})` for action work
-- `ask({prompt, parse?, on, resume?})` for feedback pause/resume
-- `route({select, on})` for deterministic branching
-- `loop({body, maxIterations, until?, on})` for bounded iteration
-- `retry({max, backoff?})` for transient retry policy
-- `publish({render, on?})` for page output
-- `end({status})` for terminal states (`done`, `blocked`, `failed`)
-
-Primitive composition example (state fragments):
+## Full Composition Example
 
 ```ts
-import {ask, end, loop, publish, retry, route, step} from 'notionflow'
+import {ask, decide, definePipe, end, flow, loop, step, write} from 'notionflow'
 
-const states = {
-  collect_input: ask({
-    prompt: 'Reply with approve or revise.',
-    on: {done: 'decide', failed: 'failed'},
-  }),
-  decide: route({
-    select: ({ctx}) => (ctx.decision === 'approve' ? 'publish' : 'revise'),
-    on: {publish: 'publish_result', revise: 'revise_loop'},
-  }),
-  revise_loop: loop({
-    body: 'revise_step',
-    maxIterations: 2,
-    until: ({ctx}) => Boolean(ctx.ready),
-    on: {continue: 'revise_step', done: 'publish_result', exhausted: 'failed'},
-  }),
-  revise_step: step({
-    run: async ({ctx}) => ({status: 'done', data: {...ctx, ready: true}}),
-    retries: retry({max: 1, backoff: {strategy: 'fixed', ms: 250}}),
-    on: {done: 'revise_loop', failed: 'failed'},
-  }),
-  publish_result: publish({
-    render: ({ctx}) => ({markdown: `# Result\nReady: ${ctx.ready}`}),
-    on: {done: 'done', failed: 'failed'},
-  }),
-  done: end({status: 'done'}),
-  failed: end({status: 'failed'}),
+type Context = {
+  decision: 'approve' | 'revise' | ''
+  ready: boolean
+  revisions: number
 }
+
+const collectDecision = ask<Context>(
+  'Reply with approve or revise.',
+  (ctx, reply) => {
+    const normalized = reply.trim().toLowerCase()
+
+    if (normalized === 'approve' || normalized === 'revise') {
+      return {...ctx, decision: normalized as 'approve' | 'revise'}
+    }
+
+    return {
+      type: 'await_feedback',
+      prompt: 'Please reply with "approve" or "revise".',
+      ctx,
+    }
+  },
+)
+
+const reviseUntilReady = loop<Context>({
+  body: step('revise', ctx => ({
+    ...ctx,
+    revisions: ctx.revisions + 1,
+    ready: true,
+  })),
+  until: ctx => ctx.ready,
+  max: 2,
+  onExhausted: end.failed('Revision loop exhausted before ready state'),
+})
+
+export default definePipe({
+  id: 'approval-demo',
+  initial: {
+    decision: '',
+    ready: false,
+    revisions: 0,
+  } satisfies Context,
+  run: flow(
+    collectDecision,
+    decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
+      revise: flow(reviseUntilReady),
+      publish: flow(
+        write(ctx => ({
+          markdown: `# Approval Result\nDecision: ${ctx.decision}`,
+        })),
+        end.done(),
+      ),
+    }),
+  ),
+})
 ```
 
-For a full runnable flow, see
-[`example-factories/factories/expressive-primitives.ts`](../example-factories/factories/expressive-primitives.ts).
+For runnable examples, see
+[`example-factories/factories/`](../example-factories/factories).
 
-## Provider-Agnostic Orchestration Utilities
+## Feedback Suspend/Resume Lifecycle
 
-`askForRepo`, `invokeAgent`, and `agentSandbox` return `UtilityResult<T>` and
-share the same usage pattern:
+`ask` is stateful and resume-safe.
 
-1. Inject adapters once with `createOrchestrationUtilities(...)`.
-2. Call utility methods inside an action/step handler.
-3. Check `result.ok` before reading `result.value`.
-4. Use `timeoutMs` at call time (or utility options) for operation bounds.
+- If no feedback is present, `ask` emits `await_feedback` and runtime moves task
+  to `feedback`
+- Runtime persists context + prompt and writes feedback traces
+  (`await_feedback`)
+- On resume, runtime restores persisted context, consumes feedback, and emits a
+  `resumed` trace before continuing
+
+Feedback sources consumed by `ask`:
+
+- `input.feedback` (direct input)
+- persisted `ctx.human_feedback` (resume path)
+
+Typical Notion loop:
+
+1. `notionflow tick --board <board-id> --factory <factory-id>` pauses task in
+   `feedback`.
+2. Human replies in Notion comments.
+3. `notionflow integrations notion sync --board <board-id> --run` detects new
+   comments, stores `human_feedback`, re-queues the task, and runs queued work.
+
+## Service Layer Setup (Layer-Based)
+
+Orchestration utilities are Layer-backed services:
+
+- `askForRepo`
+- `invokeAgent`
+- `agentSandbox`
+
+### Production Wiring
 
 ```ts
-import {createOrchestrationUtilities, defineFactory} from 'notionflow'
+import {
+  createOrchestrationLayer,
+  createOrchestrationUtilitiesFromLayer,
+  definePipe,
+  end,
+  flow,
+  step,
+} from 'notionflow'
 
-const utils = createOrchestrationUtilities({
+const layer = createOrchestrationLayer({
   askForRepo: {
-    request: async () => ({repo: 'https://github.com/acme/demo', branch: 'main'}),
+    request: async () => ({
+      repo: 'https://github.com/acme/demo',
+      branch: 'main',
+    }),
   },
   invokeAgent: {
     invoke: async ({prompt}) => ({text: `processed: ${prompt}`}),
@@ -108,39 +171,45 @@ const utils = createOrchestrationUtilities({
   },
 })
 
-export default defineFactory({
-  id: 'utility-pattern-demo',
-  start: 'run',
-  context: {},
-  states: {
-    run: {
-      type: 'action',
-      agent: async ({ctx}) => {
-        const repo = await utils.askForRepo({prompt: 'Pick repo', timeoutMs: 10000})
-        if (!repo.ok) return {status: 'failed', message: repo.error.message}
+const utils = createOrchestrationUtilitiesFromLayer(layer)
 
-        const plan = await utils.invokeAgent({
-          prompt: `Draft a plan for ${repo.value.repo}`,
-        })
-        if (!plan.ok) return {status: 'failed', message: plan.error.message}
+const runPlanning = step('run-planning', async ctx => {
+  const repo = await utils.askForRepo({prompt: 'Select repository'})
+  if (!repo.ok) return {...ctx, failure: repo.error.message}
 
-        const sandbox = await utils.agentSandbox({
-          command: 'echo',
-          args: ['ok'],
-        })
-        if (!sandbox.ok) return {status: 'failed', message: sandbox.error.message}
+  const plan = await utils.invokeAgent({
+    prompt: `Create plan for ${repo.value.repo}`,
+  })
+  if (!plan.ok) return {...ctx, failure: plan.error.message}
 
-        return {
-          status: 'done',
-          data: {...ctx, plan: plan.value.text, sandbox_stdout: sandbox.value.stdout},
-        }
-      },
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
+  return {...ctx, plan: plan.value.text}
 })
+
+export default definePipe({
+  id: 'service-layer-demo',
+  initial: {plan: '', failure: ''},
+  run: flow(runPlanning, end.done()),
+})
+```
+
+### Test Overrides
+
+```ts
+import {
+  createOrchestrationLayer,
+  createOrchestrationTestLayer,
+  createOrchestrationUtilitiesFromLayer,
+} from 'notionflow'
+
+const baseLayer = createOrchestrationLayer()
+const testLayer = createOrchestrationTestLayer(
+  {
+    invokeAgent: async () => ({text: 'stubbed-plan'}),
+  },
+  baseLayer,
+)
+
+const utils = createOrchestrationUtilitiesFromLayer(testLayer)
 ```
 
 ## Local Project Workflow
@@ -167,90 +236,30 @@ export default defineConfig({
 })
 ```
 
-4. Validate project context and auth.
+4. Validate context and auth.
 
 ```bash
 npx notionflow doctor
 ```
 
-5. Execute tasks with `run` or `tick` directly from local files.
+5. Run work via queue or direct task execution.
 
-## Runtime Hooks And Shared Modules
-
-Runtime hooks may be imported from shared modules. This is supported:
-
-- `agent`
-- `select`
-- `until`
-
-Example shared runtime helper module:
-
-```ts
-import {agent, select, until} from 'notionflow'
-
-export const enrich = agent(async ({ctx}) => ({
-  status: 'done',
-  data: {...ctx, enriched: true},
-}))
-
-export const route = select(({ctx}) => (ctx.enriched ? 'finish' : 'retry'))
-
-export const shouldStop = until(({iteration}) => iteration >= 1)
+```bash
+npx notionflow tick --factory <factory-id>
+npx notionflow run --task <notion_page_id>
 ```
-
-Factory using imported helpers:
-
-```ts
-import {defineFactory} from 'notionflow'
-import {enrich, route, shouldStop} from './shared/runtime-helpers'
-
-export default defineFactory({
-  id: 'shared-helper-demo',
-  start: 'run_loop',
-  context: {enriched: false},
-  states: {
-    run_loop: {
-      type: 'loop',
-      body: 'enrich',
-      maxIterations: 3,
-      until: shouldStop,
-      on: {continue: 'enrich', done: 'done', exhausted: 'failed'},
-    },
-    enrich: {
-      type: 'action',
-      agent: enrich,
-      on: {done: 'route', failed: 'failed'},
-    },
-    route: {
-      type: 'orchestrate',
-      select: route,
-      on: {finish: 'done', retry: 'run_loop'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
-})
-```
-
-## Validation Rules
-
-- `start` state must exist
-- transition targets must exist
-- action states require `on.done` and `on.failed`
-- loop states require `on.continue`, `on.done`, `on.exhausted`
-- loop `on.continue` must equal `body`
-- declared factories in config must exist on disk
-- duplicate factory IDs across declared files fail startup
 
 ## Authoring Tips
 
 - Keep context JSON-serializable
-- Keep `id` stable after tasks are in-flight
-- prefer additive context writes (`data`) over destructive replacements
-- use retries only for transient failures
-- treat utility failures (`result.ok === false`) as explicit workflow branches
+- Keep factory `id` stable once tasks are in-flight
+- Use `flow(...)` as the default composition style
+- Return explicit `end.*` outcomes for deterministic terminals
+- Treat utility failures (`result.ok === false`) as explicit workflow branches
 
 ## Verification Checklist
+
+Local gate:
 
 ```bash
 npx notionflow doctor
@@ -260,14 +269,31 @@ npm run test
 npm run test:e2e
 ```
 
-## Smoke Test
+Live Notion API e2e gate (explicit):
+
+1. Required env vars.
 
 ```bash
-npx notionflow run --task <notion_page_id>
+export NOTION_API_TOKEN="<integration-token>"
+export NOTION_WORKSPACE_PAGE_ID="<parent-page-id>"
+export NOTIONFLOW_RUN_LIVE_E2E=1
+# optional: local DB feedback injection for verification suite
+export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```
 
-Or queue-driven:
+2. Live command sequence.
 
 ```bash
-npx notionflow tick --factory <factory-id>
+npm run test:e2e -- e2e/local-project-docs-quickstart-live.test.ts
+npm run test:e2e -- e2e/canonical-write-live.test.ts e2e/canonical-end-live.test.ts e2e/example-factories-live.test.ts
+npm run test:e2e -- e2e/factory-verification.test.ts
 ```
+
+3. Expected outputs.
+
+- Quickstart test prints `Project root:`, `Config path:`, `Task created:`, and
+  `Sync complete:`
+- Verification suite prints
+  `Artifact: .../e2e/artifacts/factory-live-verification-<timestamp>.json`
+- Artifact JSON includes `passedScenarios` and per-scenario terminal
+  `finalState` entries

@@ -1,43 +1,44 @@
-import {defineFactory} from 'notionflow'
+import {decide, definePipe, end, flow, loop, write} from '../../src/factory/canonical'
 import {
   chooseRoute,
   enrichContext,
   loopComplete,
+  markFinished,
+  prepareRetry,
+  type SharedHelperContext,
 } from './shared/runtime-helpers'
 
-export default defineFactory({
+export default definePipe({
   id: 'shared-helper-demo',
-  start: 'loop',
-  context: {enriched: false},
-  states: {
-    loop: {
-      type: 'loop',
-      body: 'enrich',
-      maxIterations: 3,
+  initial: {
+    enriched: false,
+    attempts: 0,
+    finished: false,
+    summary: '',
+  } satisfies SharedHelperContext,
+  run: flow(
+    loop({
+      body: flow(
+        enrichContext,
+        decide(chooseRoute, {
+          finish: markFinished,
+          retry: prepareRetry,
+        }),
+      ),
       until: loopComplete,
-      on: {
-        continue: 'enrich',
-        done: 'done',
-        exhausted: 'failed',
-      },
-    },
-    enrich: {
-      type: 'action',
-      agent: enrichContext,
-      on: {
-        done: 'route',
-        failed: 'failed',
-      },
-    },
-    route: {
-      type: 'orchestrate',
-      select: chooseRoute,
-      on: {
-        finish: 'done',
-        retry: 'loop',
-      },
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
+      max: 3,
+      onExhausted: end.failed(
+        'Shared helper demo exhausted before reaching the finish route.',
+      ),
+    }),
+    write(ctx => ({
+      markdown: [
+        '# Shared Helper Demo',
+        `Attempts: ${ctx.attempts}`,
+        `Finished: ${ctx.finished}`,
+        `Summary: ${ctx.summary}`,
+      ].join('\n'),
+    })),
+    end.done(),
+  ),
 })

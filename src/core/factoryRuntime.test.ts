@@ -3,7 +3,7 @@ import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {eq} from 'drizzle-orm'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {replayTransitionEvents} from './transitionEvents'
+import {replayRunTraces} from './runTraces'
 
 const homes: string[] = []
 const originalHome = process.env.HOME
@@ -33,7 +33,52 @@ async function setupRuntime() {
   return {db, paths, runtime, schema, timestamp}
 }
 
-describe('factoryRuntime', () => {
+async function insertQueuedTask(input: {
+  db: Awaited<ReturnType<typeof setupRuntime>>['db']
+  schema: Awaited<ReturnType<typeof setupRuntime>>['schema']
+  timestamp: string
+  factoryId: string
+  externalTaskId: string
+}): Promise<void> {
+  await input.db.insert(input.schema.boards).values({
+    id: input.factoryId,
+    adapter: 'local',
+    externalId: 'local-board',
+    configJson: '{}',
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  })
+
+  await input.db.insert(input.schema.workflows).values({
+    id: input.factoryId,
+    version: 1,
+    definitionYaml: '{}',
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  })
+
+  await input.db.insert(input.schema.tasks).values({
+    id: crypto.randomUUID(),
+    boardId: input.factoryId,
+    externalTaskId: input.externalTaskId,
+    workflowId: input.factoryId,
+    state: 'queued',
+    currentStepId: null,
+    stepVarsJson: null,
+    waitingSince: null,
+    lockToken: null,
+    lockExpiresAt: null,
+    lastError: null,
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  })
+}
+
+function transitionLike<T extends {type: string | null}>(traces: T[]): T[] {
+  return traces.filter(trace => trace.type === 'step' || trace.type === 'retry')
+}
+
+describe('factoryRuntime (definePipe only)', () => {
   afterEach(async () => {
     process.env.HOME = originalHome
     process.env.NOTIONFLOW_PROJECT_ROOT = originalProjectRoot
@@ -42,63 +87,26 @@ describe('factoryRuntime', () => {
     }
   })
 
-  it('executes action + orchestrate transitions to terminal done', async () => {
+  it('executes direct pipe factories and persists task/run state', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-route-factory'
-    const externalTaskId = 'task-route-1'
+    const factoryId = 'runtime-direct-pipe-factory'
+    const externalTaskId = 'task-direct-pipe-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
 
     await writeFile(
       factoryPath,
-      `const plan = async ({ ctx }) => ({ status: "done", data: { ...ctx, routeEvent: "matched" } });\n` +
-        `const route = ({ ctx }) => ctx.routeEvent;\n` +
-        `export default {\n` +
+      `export default {\n` +
         `  id: "${factoryId}",\n` +
-        `  start: "plan",\n` +
-        `  context: { routeEvent: "unmatched" },\n` +
-        `  states: {\n` +
-        `    plan: { type: "action", agent: plan, on: { done: "route", failed: "failed" } },\n` +
-        `    route: { type: "orchestrate", select: route, on: { matched: "done", unmatched: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
+        `  initial: { visits: 0 },\n` +
+        `  run: async ({ ctx, writePage }) => {\n` +
+        `    await writePage({ markdown: "# Pipe Output" });\n` +
+        `    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1, finishedBy: "pipe" };\n` +
+        `  },\n` +
         `};\n`,
       'utf8',
     )
 
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await runtime.runFactoryTaskByExternalId(externalTaskId)
 
     const [updatedTask] = await db
@@ -107,82 +115,70 @@ describe('factoryRuntime', () => {
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(updatedTask?.state).toBe('done')
     expect(updatedTask?.currentStepId).toBeNull()
-    expect(updatedTask).toBeTruthy()
 
-    const events = await db
+    const persistedCtx = JSON.parse(updatedTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(persistedCtx.visits).toBe(1)
+    expect(persistedCtx.finishedBy).toBe('pipe')
+
+    const [run] = await db
       .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-    expect(events.length).toBe(2)
-    expect(
-      events.map(event => `${event.fromStateId}->${event.toStateId}`),
-    ).toEqual(['plan->route', 'route->done'])
-    expect(events[1]?.event).toBe('matched')
-    expect(replayTransitionEvents(events)).toBe('done')
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, updatedTask!.id))
+    expect(run?.status).toBe('done')
+    expect(run?.currentStateId).toBeNull()
+    expect(run?.endedAt).toBeTruthy()
+
+    const traces = await db
+      .select()
+      .from(schema.runTraces)
+      .where(eq(schema.runTraces.taskId, updatedTask!.id))
+    const events = transitionLike(traces)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.fromStateId).toBe('__pipe_run__')
+    expect(events[0]?.toStateId).toBe('__pipe_done__')
+    expect(replayRunTraces(events)).toBe('__pipe_done__')
+
+    const traceTypes = new Set(traces.map(trace => trace.type))
+    expect(traceTypes.has('started')).toBe(true)
+    expect(traceTypes.has('write')).toBe(true)
+    expect(traceTypes.has('completed')).toBe(true)
   })
 
-  it('persists feedback pause state and resumes from persisted state/context', async () => {
+  it('persists direct pipe feedback state and resumes from persisted context', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-feedback-factory'
-    const externalTaskId = 'task-feedback-1'
+    const factoryId = 'runtime-direct-pipe-feedback'
+    const externalTaskId = 'task-direct-pipe-feedback-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
 
     await writeFile(
       factoryPath,
-      `const askOrFinish = async ({ ctx }) => {\n` +
-        `  const visits = Number(ctx.visits ?? 0) + 1;\n` +
-        `  if (!ctx.human_feedback) {\n` +
-        `    return { status: "feedback", message: "Need your answer", data: { visits } };\n` +
-        `  }\n` +
-        `  return { status: "done", data: { visits } };\n` +
-        `};\n` +
-        `export default {\n` +
+      `export default {\n` +
         `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  context: { visits: 0 },\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: askOrFinish, on: { done: "done", feedback: "await_human", failed: "failed" } },\n` +
-        `    await_human: { type: "feedback", resume: "previous" },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
+        `  initial: { attempts: 0, approved: false },\n` +
+        `  run: async ({ ctx }) => {\n` +
+        `    const attempts = Number(ctx.attempts ?? 0) + 1;\n` +
+        `    if (!ctx.human_feedback) {\n` +
+        `      return {\n` +
+        `        type: "await_feedback",\n` +
+        `        prompt: "Please approve",\n` +
+        `        ctx: { ...ctx, attempts },\n` +
+        `      };\n` +
+        `    }\n` +
+        `    const { human_feedback: _ignored, ...rest } = ctx;\n` +
+        `    return {\n` +
+        `      type: "end",\n` +
+        `      status: "done",\n` +
+        `      ctx: { ...rest, attempts, approved: true },\n` +
+        `    };\n` +
+        `  },\n` +
         `};\n`,
       'utf8',
     )
 
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await runtime.runFactoryTaskByExternalId(externalTaskId)
 
     const [paused] = await db
@@ -190,19 +186,22 @@ describe('factoryRuntime', () => {
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(paused?.state).toBe('feedback')
-    expect(paused?.currentStepId).toBe('work')
+    expect(paused?.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
       unknown
     >
-    expect(pausedCtx.visits).toBe(1)
+    expect(pausedCtx.attempts).toBe(1)
+    expect(pausedCtx.__nf_feedback_prompt).toBe('Please approve')
 
-    const resumedCtx = {...pausedCtx, human_feedback: 'approved'}
     await db
       .update(schema.tasks)
       .set({
         state: 'queued',
-        stepVarsJson: JSON.stringify(resumedCtx),
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'approved',
+        }),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
@@ -214,792 +213,104 @@ describe('factoryRuntime', () => {
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(doneTask?.state).toBe('done')
-    expect(doneTask).toBeTruthy()
     const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
       string,
       unknown
     >
-    expect(doneCtx.visits).toBe(2)
+    expect(doneCtx.attempts).toBe(2)
+    expect(doneCtx.approved).toBe(true)
+    expect(doneCtx.human_feedback).toBeUndefined()
 
-    const events = await db
+    const traces = await db
       .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, doneTask!.id))
-    expect(events.map(event => event.event)).toEqual(['feedback', 'done'])
+      .from(schema.runTraces)
+      .where(eq(schema.runTraces.taskId, doneTask!.id))
+    const events = transitionLike(traces)
+    expect(
+      events.map(event => `${event.fromStateId}->${event.toStateId}:${event.event}`),
+    ).toEqual([
+      '__pipe_run__->__pipe_feedback__:feedback',
+      '__pipe_feedback__->__pipe_done__:done',
+    ])
+
+    const traceTypes = new Set(traces.map(trace => trace.type))
+    expect(traceTypes.has('await_feedback')).toBe(true)
+    expect(traceTypes.has('resumed')).toBe(true)
   })
 
-  it('uses feedback resume override target when configured', async () => {
+  it('maps terminal end signals to persisted task and run statuses', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-feedback-resume-override-factory'
-    const externalTaskId = 'task-feedback-override-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+    const terminalStates = ['done', 'blocked', 'failed'] as const
 
-    await writeFile(
-      factoryPath,
-      `const ask = async ({ ctx }) => {\n` +
-        `  if (!ctx.human_feedback) {\n` +
-        `    return { status: "feedback", message: "Need approval" };\n` +
-        `  }\n` +
-        `  return { status: "done" };\n` +
-        `};\n` +
-        `const summarize = async () => ({ status: "done" });\n` +
+    for (const terminalState of terminalStates) {
+      const factoryId = `runtime-terminal-${terminalState}`
+      const externalTaskId = `task-terminal-${terminalState}`
+      const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+      await writeFile(
+        factoryPath,
         `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: ask, on: { done: "done", feedback: "await_human", failed: "failed" } },\n` +
-        `    await_human: { type: "feedback", resume: "summary" },\n` +
-        `    summary: { type: "action", agent: summarize, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
+          `  id: "${factoryId}",\n` +
+          `  initial: {},\n` +
+          `  run: async ({ ctx }) => ({ type: "end", status: "${terminalState}", ctx, message: "terminal ${terminalState}" }),\n` +
+          `};\n`,
+        'utf8',
+      )
 
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
+      await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+      await runtime.runFactoryTaskByExternalId(externalTaskId)
 
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
+      const [updatedTask] = await db
+        .select()
+        .from(schema.tasks)
+        .where(eq(schema.tasks.externalTaskId, externalTaskId))
+      expect(updatedTask).toBeTruthy()
+      expect(updatedTask?.state).toBe(terminalState)
 
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [paused] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
-    expect(paused?.currentStepId).toBe('summary')
-
-    const resumedCtx = {
-      ...(JSON.parse(paused?.stepVarsJson ?? '{}') as Record<string, unknown>),
-      human_feedback: 'approved',
+      const [run] = await db
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.taskId, updatedTask!.id))
+      expect(run?.status).toBe(terminalState)
+      expect(run?.currentStateId).toBeNull()
+      expect(run?.endedAt).toBeTruthy()
     }
-    await db
-      .update(schema.tasks)
-      .set({
-        state: 'queued',
-        stepVarsJson: JSON.stringify(resumedCtx),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, paused!.id))
-    expect(
-      events.map(event => `${event.fromStateId}->${event.toStateId}`),
-    ).toEqual(['work->await_human', 'summary->done'])
   })
 
-  it('executes bounded loop until done guard is satisfied', async () => {
+  it('fails run when pipe returns non-object context', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-loop-done-factory'
-    const externalTaskId = 'task-loop-done-1'
+    const factoryId = 'runtime-invalid-pipe-context'
+    const externalTaskId = 'task-invalid-pipe-context-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
 
     await writeFile(
       factoryPath,
-      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
-        `const loopDone = ({ ctx }) => Number(ctx.iterations ?? 0) >= 2;\n` +
-        `export default {\n` +
+      `export default {\n` +
         `  id: "${factoryId}",\n` +
-        `  start: "loop_gate",\n` +
-        `  context: { iterations: 0 },\n` +
-        `  guards: { loopDone },\n` +
-        `  states: {\n` +
-        `    loop_gate: { type: "loop", body: "work", maxIterations: 5, until: "loopDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
-        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
+        `  initial: {},\n` +
+        `  run: async () => "invalid-context",\n` +
         `};\n`,
       'utf8',
     )
 
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [updatedTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(updatedTask?.state).toBe('done')
-    const doneCtx = JSON.parse(updatedTask?.stepVarsJson ?? '{}') as Record<
-      string,
-      unknown
-    >
-    expect(doneCtx.iterations).toBe(2)
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-    expect(
-      events.map(
-        event => `${event.fromStateId}->${event.toStateId}:${event.event}`,
-      ),
-    ).toEqual([
-      'loop_gate->work:continue',
-      'work->loop_gate:done',
-      'loop_gate->work:continue',
-      'work->loop_gate:done',
-      'loop_gate->done:done',
-    ])
-
-    const loopEvents = events.filter(event => event.fromStateId === 'loop_gate')
-    expect(loopEvents.map(event => event.loopIteration)).toEqual([1, 2, 2])
-  })
-
-  it('exits bounded loop with exhausted route when max iterations reached', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-loop-exhausted-factory'
-    const externalTaskId = 'task-loop-exhausted-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
-        `const neverDone = () => false;\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "loop_gate",\n` +
-        `  context: { iterations: 0 },\n` +
-        `  guards: { neverDone },\n` +
-        `  states: {\n` +
-        `    loop_gate: { type: "loop", body: "work", maxIterations: 2, until: "neverDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
-        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [updatedTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(updatedTask?.state).toBe('failed')
-    const doneCtx = JSON.parse(updatedTask?.stepVarsJson ?? '{}') as Record<
-      string,
-      unknown
-    >
-    expect(doneCtx.iterations).toBe(2)
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-    expect(
-      events.map(
-        event => `${event.fromStateId}->${event.toStateId}:${event.event}`,
-      ),
-    ).toEqual([
-      'loop_gate->work:continue',
-      'work->loop_gate:done',
-      'loop_gate->work:continue',
-      'work->loop_gate:done',
-      'loop_gate->failed:exhausted',
-    ])
-
-    const exhausted = events.find(event => event.event === 'exhausted')
-    expect(exhausted?.loopIteration).toBe(2)
-    expect(exhausted?.reason).toBe('loop.exhausted')
-  })
-
-  it('retries failed action states and succeeds before exhaustion', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-retry-success-factory'
-    const externalTaskId = 'task-retry-success-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const flaky = async ({ ctx }) => {\n` +
-        `  const attempts = Number(ctx.attempts ?? 0) + 1;\n` +
-        `  if (attempts < 3) {\n` +
-        `    return { status: "failed", message: "transient", data: { attempts } };\n` +
-        `  }\n` +
-        `  return { status: "done", data: { attempts } };\n` +
-        `};\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  context: { attempts: 0 },\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: flaky, retries: { max: 2, backoff: { ms: 0 } }, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [updatedTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(updatedTask?.state).toBe('done')
-    const doneCtx = JSON.parse(updatedTask?.stepVarsJson ?? '{}') as Record<
-      string,
-      unknown
-    >
-    expect(doneCtx.attempts).toBe(3)
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-    expect(events).toHaveLength(3)
-    expect(
-      events.map(
-        event =>
-          `${event.fromStateId}->${event.toStateId}:${event.reason}:${event.attempt}`,
-      ),
-    ).toEqual([
-      'work->work:action.attempt.failed:1',
-      'work->work:action.attempt.failed:2',
-      'work->done:action.done:3',
-    ])
-  })
-
-  it('routes to configured failed target when retries are exhausted', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-retry-fail-factory'
-    const externalTaskId = 'task-retry-fail-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const alwaysFail = async ({ ctx }) => ({ status: "failed", message: "hard-fail", data: { attempts: Number(ctx.attempts ?? 0) + 1 } });\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  context: { attempts: 0 },\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: alwaysFail, retries: { max: 1 }, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [updatedTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(updatedTask?.state).toBe('failed')
-    expect(updatedTask?.lastError).toContain('hard-fail')
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, updatedTask!.id))
-    expect(
-      events.map(
-        event =>
-          `${event.fromStateId}->${event.toStateId}:${event.reason}:${event.attempt}`,
-      ),
-    ).toEqual([
-      'work->work:action.attempt.failed:1',
-      'work->failed:action.failed.exhausted:2',
-    ])
-  })
-
-  it('pauses at maxTransitionsPerTick and resumes on later ticks', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-tick-budget-factory'
-    const externalTaskId = 'task-tick-budget-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const iterate = async ({ ctx }) => ({ status: "done", data: { iterations: Number(ctx.iterations ?? 0) + 1 } });\n` +
-        `const loopDone = ({ ctx }) => Number(ctx.iterations ?? 0) >= 2;\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "loop_gate",\n` +
-        `  context: { iterations: 0 },\n` +
-        `  guards: { loopDone },\n` +
-        `  states: {\n` +
-        `    loop_gate: { type: "loop", body: "work", maxIterations: 5, until: "loopDone", on: { continue: "work", done: "done", exhausted: "failed" } },\n` +
-        `    work: { type: "action", agent: iterate, on: { done: "loop_gate", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId, {
-      maxTransitionsPerTick: 2,
-      leaseMode: 'strict',
-      workerId: 'worker-budget',
-    })
-
-    const [afterFirstTick] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(afterFirstTick?.state).toBe('running')
-    expect(afterFirstTick?.currentStepId).toBe('loop_gate')
-
-    const firstTickEvents = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, afterFirstTick!.id))
-    expect(firstTickEvents).toHaveLength(2)
-
-    const [activeRun] = await db
-      .select()
-      .from(schema.runs)
-      .where(eq(schema.runs.taskId, afterFirstTick!.id))
-    expect(activeRun?.status).toBe('running')
-    expect(activeRun?.leaseOwner).toBeNull()
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId, {
-      maxTransitionsPerTick: 2,
-      leaseMode: 'strict',
-      workerId: 'worker-budget',
-    })
-    await runtime.runFactoryTaskByExternalId(externalTaskId, {
-      maxTransitionsPerTick: 2,
-      leaseMode: 'strict',
-      workerId: 'worker-budget',
-    })
-
-    const [finalTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(finalTask?.state).toBe('done')
-    const finalEvents = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, finalTask!.id))
-    expect(finalEvents).toHaveLength(5)
-  })
-
-  it('rejects strict mode execution when another worker holds a valid lease', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-strict-lease-factory'
-    const externalTaskId = 'task-strict-lease-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const work = async () => ({ status: "done" });\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: work, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    const taskId = crypto.randomUUID()
-    await db.insert(schema.tasks).values({
-      id: taskId,
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.runs).values({
-      id: crypto.randomUUID(),
-      taskId,
-      status: 'running',
-      currentStateId: 'work',
-      contextJson: '{}',
-      leaseOwner: 'worker-other',
-      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-      leaseHeartbeatAt: timestamp,
-      startedAt: timestamp,
-      endedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId, {
-        leaseMode: 'strict',
-        workerId: 'worker-self',
-      }),
-    ).rejects.toThrow('currently leased by another worker')
-
-    const [unchangedTask] = await db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(unchangedTask?.state).toBe('queued')
-
-    const events = await db
-      .select()
-      .from(schema.transitionEvents)
-      .where(eq(schema.transitionEvents.taskId, taskId))
-    expect(events).toHaveLength(0)
-  })
-
-  it('fails when action agent returns an invalid status', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-invalid-action-status-factory'
-    const externalTaskId = 'task-invalid-action-status-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const badStatus = async () => ({ status: "route" });\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: badStatus, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+      runtime.runFactoryTaskByExternalId(externalTaskId),
+    ).rejects.toThrow(/Pipe execution failed/)
 
     const [updatedTask] = await db
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(updatedTask?.state).toBe('failed')
-    expect(updatedTask?.lastError).toContain(
-      'must be one of done, feedback, failed',
-    )
-  })
+    expect(updatedTask?.lastError).toContain('Pipe execution failed')
 
-  it('fails when action agent returns non-object data payload', async () => {
-    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-    const factoryId = 'runtime-invalid-action-data-factory'
-    const externalTaskId = 'task-invalid-action-data-1'
-    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-
-    await writeFile(
-      factoryPath,
-      `const badData = async () => ({ status: "done", data: "not-an-object" });\n` +
-        `export default {\n` +
-        `  id: "${factoryId}",\n` +
-        `  start: "work",\n` +
-        `  states: {\n` +
-        `    work: { type: "action", agent: badData, on: { done: "done", failed: "failed" } },\n` +
-        `    done: { type: "done" },\n` +
-        `    failed: { type: "failed" }\n` +
-        `  }\n` +
-        `};\n`,
-      'utf8',
-    )
-
-    await db.insert(schema.boards).values({
-      id: factoryId,
-      adapter: 'local',
-      externalId: 'local-board',
-      configJson: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.workflows).values({
-      id: factoryId,
-      version: 1,
-      definitionYaml: '{}',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await db.insert(schema.tasks).values({
-      id: crypto.randomUUID(),
-      boardId: factoryId,
-      externalTaskId,
-      workflowId: factoryId,
-      state: 'queued',
-      currentStepId: null,
-      stepVarsJson: null,
-      waitingSince: null,
-      lockToken: null,
-      lockExpiresAt: null,
-      lastError: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
-
-    const [updatedTask] = await db
+    const traces = await db
       .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(updatedTask?.state).toBe('failed')
-    expect(updatedTask?.lastError).toContain('field `data` must be an object')
+      .from(schema.runTraces)
+      .where(eq(schema.runTraces.taskId, updatedTask!.id))
+    const traceTypes = traces.map(trace => trace.type)
+    expect(traceTypes).toContain('error')
+    expect(traceTypes).toContain('completed')
   })
 })
