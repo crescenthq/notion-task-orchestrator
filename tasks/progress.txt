@@ -40,3 +40,11 @@ US-005 completed (project context resolver + `--config` override):
 - Extended E2E factory-create coverage for `--config` execution from outside the project root: `e2e/local-project-factory-create.test.ts`
 - Verified: `npm run test:e2e -- e2e/local-project-doctor.test.ts e2e/local-project-factory-create.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-006 completed (explicit factory declarations and deterministic loader primitives):
+- Added typed project config schema/loader with explicit `factories: string[]` declarations and actionable config-load errors: `src/project/projectConfig.ts`
+- Added deterministic factory path resolution from config entries (relative-to-project-root or absolute) with no implicit glob/directory scanning: `src/project/projectConfig.ts`
+- Added declared-factory loading helper that only loads explicitly listed modules and wraps per-path failures with offending declaration context: `src/project/projectConfig.ts`
+- Added unit tests for explicit path resolution and non-scanning behavior with unlisted invalid factory files present: `src/project/projectConfig.test.ts`
+- Verified: `npm run test -- src/project/projectConfig.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
