@@ -1,0 +1,39 @@
+tasks/hard-reset-release-checklist.md
+  1f1b487e7b342db3 1-175
+tasks/progress.txt
+  add16ecf05ed1867 45-51
+  1f1b487e7b342db3 52-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "72d74b31052707ca57e0a3c19a148a4148d86652",
+  "prompts": {
+    "1f1b487e7b342db3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92df9ed3-585f-4ede-8955-9d0d3b148143",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 182,
+      "total_deletions": 0,
+      "accepted_lines": 182,
+      "overriden_lines": 0
+    },
+    "add16ecf05ed1867": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d847cca8-b079-4a3a-8ca4-a4c9a8d5930d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 0,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
