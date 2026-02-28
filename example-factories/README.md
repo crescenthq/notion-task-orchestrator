@@ -1,12 +1,14 @@
 # Example Factories
 
 A standalone example NotionFlow project demonstrating project-local
-architecture. Contains four factories and a shared helper module to show
+architecture. Contains five factories and a shared helper module to show
 real-world patterns.
 
 ## Included factories
 
 - `intent` — captures and refines user intent
+- `expressive-primitives` — deterministic expressive flow showcasing
+  `step`, `ask`, `route`, `loop`, `retry`, `publish`, and `end`
 - `magic-8` — routes a task through a Magic 8-Ball decision state
 - `would-you-rather` — orchestrates a binary choice flow
 - `shared-helper-demo` — demonstrates imported `agent`, `select`, and `until`
@@ -66,6 +68,12 @@ To tick any factory by name:
 npm run tick -- --factory intent
 ```
 
+The expressive primitive demo can be run directly:
+
+```bash
+npm run tick -- --factory expressive-primitives
+```
+
 ## Available scripts
 
 | Script      | Command                                                                               | Description                                          |
@@ -83,6 +91,7 @@ example-factories/
   package.json                # Standalone package with runnable scripts
   factories/
     intent.ts
+    expressive-primitives.ts
     magic-8.ts
     would-you-rather.ts
     shared-helper-demo.ts

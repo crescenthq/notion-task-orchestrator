@@ -91,10 +91,22 @@ notionflow integrations notion sync [--config <path>] [--board <board-id>] [--fa
 
 ## Library API
 
-Use package-root typed APIs to author factories and config:
+Use package-root typed APIs to author config, runtime factories, and expressive
+primitives:
 
 ```ts
-import {defineConfig, defineFactory, agent} from 'notionflow'
+import {
+  agent,
+  ask,
+  defineConfig,
+  defineFactory,
+  end,
+  loop,
+  publish,
+  retry,
+  route,
+  step,
+} from 'notionflow'
 
 const doWork = agent(async ({ctx}) => ({
   status: 'done',
@@ -121,6 +133,56 @@ export default defineConfig({
 })
 ```
 
+### Expressive Primitive Surface
+
+The public expressive primitive builders are:
+
+- `step({run, on, retries?})`
+- `ask({prompt, parse?, on, resume?})`
+- `route({select, on})`
+- `loop({body, maxIterations, until?, on})`
+- `retry({max, backoff?})`
+- `publish({render, on?})`
+- `end({status: 'done' | 'blocked' | 'failed'})`
+
+Use `publish` for page output and `end` for terminal outcomes. Legacy
+replacement aliases are intentionally not documented or exported.
+
+A runnable primitive-composed workflow is available at
+[`example-factories/factories/expressive-primitives.ts`](./example-factories/factories/expressive-primitives.ts).
+
+### Provider-Agnostic Orchestration Utilities
+
+`askForRepo`, `invokeAgent`, and `agentSandbox` return `UtilityResult<T>` and
+are intended to be injected with adapters.
+
+```ts
+import {createOrchestrationUtilities} from 'notionflow'
+
+const orchestration = createOrchestrationUtilities({
+  askForRepo: {
+    request: async () => ({repo: 'https://github.com/acme/demo', branch: 'main'}),
+  },
+  invokeAgent: {
+    invoke: async () => ({text: 'Plan ready'}),
+  },
+  agentSandbox: {
+    run: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
+  },
+})
+
+const repoResult = await orchestration.askForRepo({
+  prompt: 'Which repo should we work on?',
+  timeoutMs: 15000,
+})
+if (!repoResult.ok) throw new Error(repoResult.error.message)
+
+const planResult = await orchestration.invokeAgent({
+  prompt: `Draft a plan for ${repoResult.value.repo}`,
+})
+if (!planResult.ok) throw new Error(planResult.error.message)
+```
+
 ## Examples
 
 Project-style examples are in [`example-factories/`](./example-factories):
@@ -129,6 +191,15 @@ Project-style examples are in [`example-factories/`](./example-factories):
 - factories under `factories/`
 - shared runtime helper import example
 - setup notes and runnable commands
+
+## Verification Checklist
+
+```bash
+npm run check
+npm run lint
+npm run test
+npm run test:e2e
+```
 
 ## Docs
 

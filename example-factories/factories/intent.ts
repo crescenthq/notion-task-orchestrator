@@ -2,6 +2,17 @@ import {spawnSync} from 'node:child_process'
 import {access, mkdir} from 'node:fs/promises'
 import {homedir} from 'node:os'
 import path from 'node:path'
+import {
+  ask,
+  compileExpressiveFactory,
+  end,
+  loop,
+  publish,
+  retry,
+  route,
+  step,
+} from '../../src/factory/expressive'
+import type {ActionResult} from '../../src/factory/helpers'
 
 const FACTORY_ID = 'intent'
 const WORKSPACE_ROOT = path.join(
@@ -158,6 +169,74 @@ const parsePlanDecision = (
   return {decision: 'clarify', notes: ''}
 }
 
+const buildPlanFeedbackPrompt = (ctx: Record<string, unknown>): string => {
+  const planText = asText(ctx.plan_text)
+  const planRound = Number(ctx.plan_round ?? 0)
+  const heading =
+    planRound > 1 ? 'Updated implementation plan:' : 'Proposed implementation plan:'
+
+  return clipText(
+    [
+      heading,
+      '',
+      planText || '(plan unavailable)',
+      '',
+      'Reply with:',
+      '- APPROVE PLAN',
+      '- REVISE PLAN: <changes>',
+    ].join('\n'),
+  )
+}
+
+const parsePlanFeedback = (
+  reply: string,
+): ActionResult<Record<string, unknown>> => {
+  const decision = parsePlanDecision(reply)
+
+  if (decision.decision === 'approve') {
+    return {
+      status: 'done',
+      data: {
+        plan_decision: 'approve',
+        plan_approved: true,
+        plan_feedback: reply,
+        plan_revision_notes: '',
+        human_feedback: null,
+      },
+    }
+  }
+
+  if (decision.decision === 'revise') {
+    return {
+      status: 'done',
+      data: {
+        plan_decision: 'revise',
+        plan_approved: false,
+        plan_feedback: reply,
+        plan_revision_notes: decision.notes,
+        human_feedback: null,
+      },
+    }
+  }
+
+  return {
+    status: 'feedback',
+    message:
+      'I could not classify that response. Please reply with APPROVE PLAN or REVISE PLAN: <notes>.',
+    data: {
+      plan_decision: 'clarify',
+      human_feedback: null,
+    },
+  }
+}
+
+const selectPlanFeedbackRoute = ({ctx}: {ctx: Record<string, unknown>}) => {
+  const decision = asText(ctx.plan_decision).toLowerCase()
+  if (decision === 'approve') return 'approve'
+  if (decision === 'revise') return 'revise'
+  return '__route_unmapped__'
+}
+
 const parseReviewDecision = (
   raw: string,
 ): {decision: 'approve' | 'revise' | 'clarify'; notes: string} => {
@@ -182,6 +261,76 @@ const parseReviewDecision = (
   }
 
   return {decision: 'clarify', notes: ''}
+}
+
+const buildReviewFeedbackPrompt = (ctx: Record<string, unknown>): string =>
+  clipText(
+    [
+      'Implementation update ready for review.',
+      '',
+      asText(ctx.implementation_summary)
+        ? `Implementation summary: ${asText(ctx.implementation_summary)}`
+        : '',
+      asText(ctx.implementation_checks)
+        ? `Checks: ${asText(ctx.implementation_checks)}`
+        : '',
+      '',
+      asText(ctx.change_summary) || '(change summary unavailable)',
+      '',
+      'Reply with:',
+      '- APPROVE CHANGES',
+      '- REVISE CHANGES: <updates>',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
+
+const parseReviewFeedback = (
+  reply: string,
+): ActionResult<Record<string, unknown>> => {
+  const decision = parseReviewDecision(reply)
+  if (decision.decision === 'approve') {
+    return {
+      status: 'done',
+      data: {
+        review_decision: 'approve',
+        review_approved: true,
+        review_feedback: reply,
+        review_revision_notes: '',
+        human_feedback: null,
+      },
+    }
+  }
+
+  if (decision.decision === 'revise') {
+    return {
+      status: 'done',
+      data: {
+        review_decision: 'revise',
+        review_approved: false,
+        review_feedback: reply,
+        review_revision_notes: decision.notes,
+        human_feedback: null,
+      },
+    }
+  }
+
+  return {
+    status: 'feedback',
+    message:
+      'I could not classify that response. Please reply with APPROVE CHANGES or REVISE CHANGES: <notes>.',
+    data: {
+      review_decision: 'clarify',
+      human_feedback: null,
+    },
+  }
+}
+
+const selectReviewFeedbackRoute = ({ctx}: {ctx: Record<string, unknown>}) => {
+  const decision = asText(ctx.review_decision).toLowerCase()
+  if (decision === 'approve') return 'approve'
+  if (decision === 'revise') return 'revise'
+  return '__route_unmapped__'
 }
 
 type CodexPlanResult = {
@@ -408,7 +557,11 @@ const planApproved = ({ctx}: {ctx: Record<string, unknown>}) =>
 const reviewApproved = ({ctx}: {ctx: Record<string, unknown>}) =>
   ctx.review_approved === true
 
-const collectRepo = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const collectRepo = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   if (asText(ctx.repo_url)) {
     return {status: 'done', data: {human_feedback: null}}
   }
@@ -448,7 +601,11 @@ const collectRepo = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 }
 
-const cloneRepo = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const cloneRepo = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   const repoUrl = asText(ctx.repo_url)
   if (!repoUrl) {
     return {
@@ -524,7 +681,11 @@ const cloneRepo = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 }
 
-const collectFeature = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const collectFeature = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   if (asText(ctx.feature_request)) {
     return {status: 'done', data: {human_feedback: null}}
   }
@@ -565,82 +726,71 @@ const collectFeature = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 }
 
-const draftPlan = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const draftPlan = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   const repoDir = asText(ctx.repo_dir)
   const featureRequest = asText(ctx.feature_request)
   const currentPlan = asText(ctx.plan_text)
-  const reply = asText(ctx.human_feedback)
 
   if (!repoDir)
     return {status: 'failed', message: 'Missing repo_dir in context'}
   if (!featureRequest)
     return {status: 'failed', message: 'Missing feature_request in context'}
 
-  if (!currentPlan) {
-    const generated = runCodexPlan(repoDir, featureRequest, '', '')
-    if (!generated.ok) {
-      return {
-        status: 'failed',
-        message: clipText(`Planning with codex failed: ${generated.error}`),
-      }
-    }
-
-    return {
-      status: 'feedback',
-      message: clipText(
-        [
-          'Proposed implementation plan:',
-          '',
-          generated.plan,
-          '',
-          'Reply with:',
-          '- APPROVE PLAN',
-          '- REVISE PLAN: <changes>',
-        ].join('\n'),
-      ),
-      data: {
-        plan_text: generated.plan,
-        plan_approved: false,
-        plan_round: Number(ctx.plan_round ?? 0) + 1,
-        human_feedback: null,
-      },
-    }
-  }
-
-  if (!reply) {
-    return {
-      status: 'feedback',
-      message: 'Please reply with APPROVE PLAN or REVISE PLAN: <notes>.',
-    }
-  }
-
-  const decision = parsePlanDecision(reply)
-  if (decision.decision === 'approve') {
+  if (currentPlan) {
     return {
       status: 'done',
-      data: {
-        plan_approved: true,
-        plan_feedback: reply,
-        human_feedback: null,
-      },
     }
   }
 
-  if (decision.decision === 'clarify') {
+  const generated = runCodexPlan(repoDir, featureRequest, '', '')
+  if (!generated.ok) {
     return {
-      status: 'feedback',
-      message:
-        'I could not classify that response. Please reply with APPROVE PLAN or REVISE PLAN: <notes>.',
-      data: {human_feedback: null},
+      status: 'failed',
+      message: clipText(`Planning with codex failed: ${generated.error}`),
     }
   }
 
-  const revised = runCodexPlan(
-    repoDir,
-    featureRequest,
-    currentPlan,
-    decision.notes,
-  )
+  return {
+    status: 'done',
+    data: {
+      plan_text: generated.plan,
+      plan_approved: false,
+      plan_feedback: '',
+      plan_revision_notes: '',
+      plan_decision: '',
+      plan_round: Number(ctx.plan_round ?? 0) + 1,
+      human_feedback: null,
+    },
+  }
+}
+
+const revisePlan = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
+  const repoDir = asText(ctx.repo_dir)
+  const featureRequest = asText(ctx.feature_request)
+  const currentPlan = asText(ctx.plan_text)
+  const revisionNotes = asText(ctx.plan_revision_notes)
+
+  if (!repoDir)
+    return {status: 'failed', message: 'Missing repo_dir in context'}
+  if (!featureRequest)
+    return {status: 'failed', message: 'Missing feature_request in context'}
+  if (!currentPlan)
+    return {status: 'failed', message: 'Missing plan_text in context'}
+  if (!revisionNotes)
+    return {
+      status: 'failed',
+      message: 'Missing plan_revision_notes for plan revision',
+    }
+
+  const revised = runCodexPlan(repoDir, featureRequest, currentPlan, revisionNotes)
   if (!revised.ok) {
     return {
       status: 'failed',
@@ -649,30 +799,24 @@ const draftPlan = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 
   return {
-    status: 'feedback',
-    message: clipText(
-      [
-        'Updated implementation plan:',
-        '',
-        revised.plan,
-        '',
-        'Reply with:',
-        '- APPROVE PLAN',
-        '- REVISE PLAN: <changes>',
-      ].join('\n'),
-    ),
+    status: 'done',
     data: {
       plan_text: revised.plan,
       plan_approved: false,
-      plan_feedback: reply,
-      plan_revision_notes: decision.notes,
+      plan_feedback: asText(ctx.plan_feedback),
+      plan_revision_notes: revisionNotes,
+      plan_decision: '',
       plan_round: Number(ctx.plan_round ?? 0) + 1,
       human_feedback: null,
     },
   }
 }
 
-const implementWithClaude = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const implementWithClaude = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   const repoDir = asText(ctx.repo_dir)
   const featureRequest = asText(ctx.feature_request)
   const planText = asText(ctx.plan_text)
@@ -698,96 +842,70 @@ const implementWithClaude = async ({ctx}: {ctx: Record<string, unknown>}) => {
     data: {
       implementation_summary: run.summary,
       implementation_checks: run.checks,
+      review_decision: '',
       review_approved: false,
       review_feedback: '',
+      review_revision_notes: '',
       human_feedback: null,
     },
   }
 }
 
-const reviewChanges = async ({ctx}: {ctx: Record<string, unknown>}) => {
+const captureReviewSummary = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
   const repoDir = asText(ctx.repo_dir)
-  const featureRequest = asText(ctx.feature_request)
-  const planText = asText(ctx.plan_text)
-  const reply = asText(ctx.human_feedback)
-
   if (!repoDir)
     return {status: 'failed', message: 'Missing repo_dir in context'}
 
-  if (!reply) {
-    const summary = summarizeGit(repoDir)
-    if (!summary.ok) {
-      return {
-        status: 'failed',
-        message: clipText(`Unable to summarize changes: ${summary.error}`),
-      }
-    }
-
+  const summary = summarizeGit(repoDir)
+  if (!summary.ok) {
     return {
-      status: 'feedback',
-      message: clipText(
-        [
-          'Implementation update ready for review.',
-          '',
-          asText(ctx.implementation_summary)
-            ? `Implementation summary: ${asText(ctx.implementation_summary)}`
-            : '',
-          asText(ctx.implementation_checks)
-            ? `Checks: ${asText(ctx.implementation_checks)}`
-            : '',
-          '',
-          summary.summary,
-          '',
-          'Reply with:',
-          '- APPROVE CHANGES',
-          '- REVISE CHANGES: <updates>',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      ),
-      data: {
-        repo_branch: summary.branch,
-        git_status_short: summary.statusShort,
-        git_diff_stat: summary.diffStat,
-        change_summary: summary.summary,
-        human_feedback: null,
-      },
+      status: 'failed',
+      message: clipText(`Unable to summarize changes: ${summary.error}`),
     }
   }
 
-  const decision = parseReviewDecision(reply)
-  if (decision.decision === 'approve') {
-    return {
-      status: 'done',
-      data: {
-        review_approved: true,
-        review_feedback: reply,
-        human_feedback: null,
-      },
-    }
+  return {
+    status: 'done',
+    data: {
+      repo_branch: summary.branch,
+      git_status_short: summary.statusShort,
+      git_diff_stat: summary.diffStat,
+      change_summary: summary.summary,
+      human_feedback: null,
+    },
   }
+}
 
-  if (decision.decision === 'clarify') {
-    return {
-      status: 'feedback',
-      message:
-        'I could not classify that response. Please reply with APPROVE CHANGES or REVISE CHANGES: <notes>.',
-      data: {human_feedback: null},
-    }
-  }
+const reviseChanges = async ({
+  ctx,
+}: {
+  ctx: Record<string, unknown>
+}): Promise<ActionResult<Record<string, unknown>>> => {
+  const repoDir = asText(ctx.repo_dir)
+  const featureRequest = asText(ctx.feature_request)
+  const planText = asText(ctx.plan_text)
+  const revisionNotes = asText(ctx.review_revision_notes)
 
+  if (!repoDir)
+    return {status: 'failed', message: 'Missing repo_dir in context'}
   if (!featureRequest || !planText) {
     return {
       status: 'failed',
       message: 'Missing feature_request or plan_text for revision step',
     }
   }
+  if (!revisionNotes) {
+    return {
+      status: 'failed',
+      message: 'Missing review_revision_notes for revision step',
+    }
+  }
 
-  const revisionPrompt = buildClaudePrompt(
-    featureRequest,
-    planText,
-    decision.notes,
-  )
+  const revisionPrompt = buildClaudePrompt(featureRequest, planText, revisionNotes)
   const revision = runClaude(repoDir, revisionPrompt)
   if (!revision.ok) {
     return {
@@ -807,29 +925,13 @@ const reviewChanges = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 
   return {
-    status: 'feedback',
-    message: clipText(
-      [
-        'Applied requested revisions.',
-        '',
-        `Revision summary: ${revision.summary}`,
-        revision.checks ? `Checks: ${revision.checks}` : '',
-        '',
-        summary.summary,
-        '',
-        'Reply with:',
-        '- APPROVE CHANGES',
-        '- REVISE CHANGES: <updates>',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    ),
+    status: 'done',
     data: {
       implementation_summary: revision.summary,
       implementation_checks: revision.checks,
-      review_feedback: reply,
+      review_decision: '',
       review_approved: false,
-      review_revision_notes: decision.notes,
+      review_revision_notes: revisionNotes,
       repo_branch: summary.branch,
       git_status_short: summary.statusShort,
       git_diff_stat: summary.diffStat,
@@ -839,8 +941,8 @@ const reviewChanges = async ({ctx}: {ctx: Record<string, unknown>}) => {
   }
 }
 
-const finalizeReport = async ({ctx}: {ctx: Record<string, unknown>}) => {
-  const markdown = [
+const renderFinalReport = (ctx: Record<string, unknown>): string =>
+  [
     '# Intent Demo Outcome',
     '',
     '## Repository',
@@ -871,14 +973,7 @@ const finalizeReport = async ({ctx}: {ctx: Record<string, unknown>}) => {
     asText(ctx.review_feedback) || 'Approved',
   ].join('\n')
 
-  return {
-    status: 'done',
-    page: {markdown},
-    data: {final_report: markdown},
-  }
-}
-
-export default {
+const compiled = compileExpressiveFactory({
   id: FACTORY_ID,
   start: 'collect_repo',
   context: {
@@ -889,6 +984,7 @@ export default {
     plan_text: '',
     plan_feedback: '',
     plan_revision_notes: '',
+    plan_decision: '',
     plan_approved: false,
     plan_round: 0,
     implementation_summary: '',
@@ -897,6 +993,7 @@ export default {
     git_status_short: '',
     git_diff_stat: '',
     change_summary: '',
+    review_decision: '',
     review_feedback: '',
     review_revision_notes: '',
     review_approved: false,
@@ -908,45 +1005,41 @@ export default {
     reviewApproved,
   },
   states: {
-    collect_repo: {
-      type: 'action',
-      agent: collectRepo,
+    collect_repo: step({
+      run: collectRepo,
       on: {
         done: 'clone_repo',
         feedback: 'wait_repo',
         failed: 'failed',
       },
-    },
+    }),
     wait_repo: {
       type: 'feedback',
       resume: 'collect_repo',
     },
-    clone_repo: {
-      type: 'action',
-      agent: cloneRepo,
+    clone_repo: step({
+      run: cloneRepo,
       on: {
         done: 'collect_feature',
         feedback: 'wait_repo',
         failed: 'failed',
       },
-    },
+    }),
 
-    collect_feature: {
-      type: 'action',
-      agent: collectFeature,
+    collect_feature: step({
+      run: collectFeature,
       on: {
         done: 'plan_loop',
         feedback: 'wait_feature',
         failed: 'failed',
       },
-    },
+    }),
     wait_feature: {
       type: 'feedback',
       resume: 'collect_feature',
     },
 
-    plan_loop: {
-      type: 'loop',
+    plan_loop: loop({
       body: 'draft_plan',
       maxIterations: 5,
       until: 'planApproved',
@@ -955,74 +1048,119 @@ export default {
         done: 'implement_with_claude',
         exhausted: 'blocked',
       },
-    },
-    draft_plan: {
-      type: 'action',
-      agent: draftPlan,
-      retries: {
+    }),
+    draft_plan: step({
+      run: draftPlan,
+      retries: retry({
         max: 1,
         backoff: {strategy: 'fixed', ms: 1000},
-      },
+      }),
       on: {
-        done: 'plan_loop',
-        feedback: 'wait_plan_feedback',
+        done: 'ask_plan_feedback',
         failed: 'failed',
       },
-    },
-    wait_plan_feedback: {
-      type: 'feedback',
-      resume: 'draft_plan',
-    },
+    }),
+    ask_plan_feedback: ask({
+      prompt: ({ctx}) => buildPlanFeedbackPrompt(ctx),
+      parse: reply => parsePlanFeedback(reply),
+      on: {
+        done: 'plan_feedback_route',
+        failed: 'failed',
+      },
+      resume: 'ask_plan_feedback',
+    }),
+    plan_feedback_route: route({
+      select: selectPlanFeedbackRoute,
+      on: {
+        approve: 'plan_loop',
+        revise: 'revise_plan',
+        __route_unmapped__: 'ask_plan_feedback',
+      },
+    }),
+    revise_plan: step({
+      run: revisePlan,
+      retries: retry({
+        max: 1,
+        backoff: {strategy: 'fixed', ms: 1000},
+      }),
+      on: {
+        done: 'ask_plan_feedback',
+        failed: 'failed',
+      },
+    }),
 
-    implement_with_claude: {
-      type: 'action',
-      agent: implementWithClaude,
-      retries: {
+    implement_with_claude: step({
+      run: implementWithClaude,
+      retries: retry({
         max: 1,
         backoff: {strategy: 'exponential', ms: 1000, maxMs: 8000},
-      },
+      }),
       on: {
         done: 'review_loop',
         failed: 'failed',
       },
-    },
+    }),
 
-    review_loop: {
-      type: 'loop',
-      body: 'review_changes',
+    review_loop: loop({
+      body: 'capture_review_summary',
       maxIterations: 5,
       until: 'reviewApproved',
       on: {
-        continue: 'review_changes',
+        continue: 'capture_review_summary',
         done: 'finalize_report',
         exhausted: 'blocked',
       },
-    },
-    review_changes: {
-      type: 'action',
-      agent: reviewChanges,
+    }),
+    capture_review_summary: step({
+      run: captureReviewSummary,
       on: {
-        done: 'review_loop',
-        feedback: 'wait_review_feedback',
+        done: 'ask_review_feedback',
         failed: 'failed',
       },
-    },
-    wait_review_feedback: {
-      type: 'feedback',
-      resume: 'review_changes',
-    },
-
-    finalize_report: {
-      type: 'action',
-      agent: finalizeReport,
+    }),
+    ask_review_feedback: ask({
+      prompt: ({ctx}) => buildReviewFeedbackPrompt(ctx),
+      parse: reply => parseReviewFeedback(reply),
+      on: {
+        done: 'review_feedback_route',
+        failed: 'failed',
+      },
+      resume: 'ask_review_feedback',
+    }),
+    review_feedback_route: route({
+      select: selectReviewFeedbackRoute,
+      on: {
+        approve: 'review_loop',
+        revise: 'revise_changes',
+        __route_unmapped__: 'ask_review_feedback',
+      },
+    }),
+    revise_changes: step({
+      run: reviseChanges,
+      retries: retry({
+        max: 1,
+        backoff: {strategy: 'exponential', ms: 1000, maxMs: 8000},
+      }),
+      on: {
+        done: 'review_loop',
+        failed: 'failed',
+      },
+    }),
+    finalize_report: publish({
+      render: ({ctx}) => {
+        const markdown = renderFinalReport(ctx)
+        return {markdown}
+      },
       on: {
         done: 'done',
         failed: 'failed',
       },
-    },
+    }),
 
-    done: {type: 'done'},
-    blocked: {type: 'blocked'},
-    failed: {type: 'failed'},
+    done: end({status: 'done'}),
+    blocked: end({status: 'blocked'}),
+    failed: end({status: 'failed'}),
   },
-}
+})
+
+export default compiled.factory

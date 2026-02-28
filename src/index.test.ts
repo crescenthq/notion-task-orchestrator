@@ -13,9 +13,21 @@ describe('public library API', () => {
   it('exports an explicit stable runtime surface', () => {
     expect(Object.keys(api).sort()).toEqual([
       'agent',
+      'agentSandbox',
+      'ask',
+      'askForRepo',
+      'createOrchestrationUtilities',
+      'defaultOrchestrationAdapters',
       'defineConfig',
       'defineFactory',
+      'end',
+      'invokeAgent',
+      'loop',
+      'publish',
+      'retry',
+      'route',
       'select',
+      'step',
       'until',
     ])
   })
