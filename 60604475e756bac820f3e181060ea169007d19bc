@@ -1,0 +1,25 @@
+docs/architecture.md
+  add16ecf05ed1867 47
+src/guardrails.test.ts
+  add16ecf05ed1867 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "60604475e756bac820f3e181060ea169007d19bc",
+  "prompts": {
+    "add16ecf05ed1867": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d847cca8-b079-4a3a-8ca4-a4c9a8d5930d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 110,
+      "total_deletions": 2,
+      "accepted_lines": 109,
+      "overriden_lines": 0
+    }
+  }
+}
