@@ -5,19 +5,19 @@ description: Guide a user through setting up NotionFlow. Use when the user asks 
 
 # NotionFlow Setup
 
-Guided, conversational installer. Run steps automatically — only pause for user input (Notion token, parent page, factory shape). Use AskUserQuestion for all decisions.
+Guided, conversational installer. Run steps automatically — only pause for user input (Notion token, factory shape). Use AskUserQuestion for all decisions.
 
 **Principle:** Fix what you can. Only ask when it genuinely requires user action (creating a Notion integration, pasting a token, choosing a factory shape).
 
-## 1. Initialize Workspace
+## 1. Initialize Project
 
 ```bash
-npx notionflow setup
+npx notionflow init
 ```
 
-This creates `~/.config/notionflow/` with the SQLite database and factories directory.
+This creates `notionflow.config.ts`, `factories/`, and `.notionflow/` in the current directory.
 
-If this fails, ensure Node.js ≥18 is installed.
+If this fails, ensure Node.js ≥20 is installed.
 
 ## 2. Notion Credentials
 
@@ -32,18 +32,10 @@ If the doctor output shows the Notion token is missing:
 1. Tell the user: "To connect to Notion, you need an integration token."
 2. Direct them to https://www.notion.so/profile/integrations
 3. Ask them to create a new internal integration named "NotionFlow"
-4. Use AskUserQuestion: "Paste your Notion integration token (starts with ntn* or secret*)"
-5. Save the token:
-   ```bash
-   npx notionflow config set NOTION_API_TOKEN <token>
-   ```
-
-Then use AskUserQuestion: "Do you have a specific Notion page where you want NotionFlow boards created? (paste the page ID, or 'no' to skip)"
-
-If yes:
-   ```bash
-   npx notionflow config set NOTION_WORKSPACE_PAGE_ID <page-id>
-   ```
+4. Use AskUserQuestion: "Paste your Notion integration token (starts with ntn_ or secret_)"
+5. Save the token as an environment variable. Ask how they prefer to store it:
+   - Add `NOTION_API_TOKEN=<token>` to a `.env` file in the project root (recommended for local dev)
+   - Or export it in the shell: `export NOTION_API_TOKEN=<token>`
 
 Validate:
 
@@ -51,7 +43,7 @@ Validate:
 npx notionflow doctor
 ```
 
-Expected: `[ok] Notion auth`. If it fails, revisit token.
+Expected: `[ok] Notion auth`. If it fails, revisit the token value.
 
 ## 3. Design the Factory
 
@@ -71,9 +63,39 @@ Offer these examples (lead with the more novel/interesting ones):
 
 Once the user picks a direction, propose a concrete state list: state IDs, what each state does, and what kind of agent logic it needs. Confirm the state list, then use the **add-factory** skill to create the TypeScript factory file.
 
-## 4. Connect Notion Board
+## 4. Register the Factory
 
-After the factory is installed, provision a Notion database for it:
+After the factory file is created under `factories/`, declare it in `notionflow.config.ts`:
+
+```ts
+import { defineConfig } from "notionflow";
+
+export default defineConfig({
+  factories: ["./factories/<factory-id>.ts"],
+});
+```
+
+NotionFlow walks up parent directories to find `notionflow.config.ts`, so you can run commands from anywhere inside the project tree.
+
+Use `--config <path>` on any project-scoped command to override config resolution explicitly.
+
+## 5. Test It
+
+Run one tick to process any queued tasks:
+
+```bash
+npx notionflow tick --factory <factory-id>
+```
+
+Watch the output. It should execute each factory state through its inline agent function.
+
+If you want to provision a Notion board for queue-driven workflows, run:
+
+```bash
+npx notionflow factory create --id <factory-id> --config notionflow.config.ts
+```
+
+Or provision a board for an existing factory:
 
 ```bash
 npx notionflow integrations notion provision-board --board <factory-id>
@@ -81,44 +103,16 @@ npx notionflow integrations notion provision-board --board <factory-id>
 
 **Important:** Tell the user they must share the database with the "NotionFlow" integration in Notion (click "..." on the database → "Connect to" → select "NotionFlow").
 
-If they already have an existing Notion database:
-
-```bash
-npx notionflow board add --id <factory-id> --external-id <notion_database_id>
-```
-
-## 5. Test It
-
-Create a test task:
-
-```bash
-npx notionflow integrations notion create-task --board <factory-id> --title "Test task" --factory <factory-id> --status queue
-```
-
-Run one tick:
-
-```bash
-npx notionflow tick
-```
-
-Watch the output. It should:
-
-1. Sync the board and find the test task
-2. Pick it up as queued
-3. Execute each factory state through its inline agent function
-4. Update the Notion page status as states progress
-
 ## 6. Verify
 
 ```bash
 npx notionflow doctor
-npx notionflow board list
 npx notionflow factory list
 ```
 
-All should show configured resources. The Notion board should show the test task with an updated status.
+All should show configured resources. Setup complete.
 
-Setup complete. The user can now:
+The user can now:
 
 - Add tasks via Notion or `npx notionflow integrations notion create-task`
 - Run `npx notionflow tick` to process queued tasks
@@ -126,10 +120,12 @@ Setup complete. The user can now:
 
 ## Troubleshooting
 
-**`doctor` shows NOTION_API_TOKEN missing:** Check `~/.config/notionflow/config.json` contains the token, or that `NOTION_API_TOKEN` is set as an environment variable.
+**`doctor` shows NOTION_API_TOKEN missing:** Ensure `NOTION_API_TOKEN` is set as an environment variable or in a `.env` file at the project root. NotionFlow does not read global config files.
 
-**`tick` finds no boards:** Run `board list`. If empty, re-run step 4.
+**`tick` processes nothing:** Run `npx notionflow doctor` to confirm the project is resolved and auth is valid. Check that at least one factory is declared in `notionflow.config.ts`.
 
-**Factory load error:** Check that the TypeScript file exports a valid factory object. Run `factory list` to verify it's registered.
+**Factory load error:** Check that the TypeScript file exports a valid factory object and the path in `notionflow.config.ts` matches the file location. Relative paths resolve from the project root (directory containing `notionflow.config.ts`).
 
 **Notion page not updating:** Ensure the integration is connected to the database in Notion (Share → Connect to → NotionFlow).
+
+**Config not found:** Run commands from inside the project directory, or pass `--config <path>` to point to your `notionflow.config.ts` explicitly.

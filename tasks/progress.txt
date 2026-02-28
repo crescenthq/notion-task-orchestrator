@@ -3,6 +3,7 @@ Hard-Reset Library-First Cleanup Progress:
 - Source PRD: tasks/prd-hard-reset-library-first-cleanup.md
 - Status: in progress
 - Completed: US-001 Clean up CLI surface for hard-reset onboarding
+- Completed: US-002 Canonicalize docs to one local-project quickstart
 - Notes:
   - Updated CLI description to library-first project-local positioning.
   - Removed `setup`, `config`, and `board` from top-level CLI command registration.
@@ -10,3 +11,17 @@ Hard-Reset Library-First Cleanup Progress:
   - Updated CLI integration tests to assert removed commands return unknown-command errors.
   - Updated `tasks/prd-hard-reset-library-first-cleanup.md` and `tasks/prd.json` to require hard removal (no migration/deprecation path).
   - Verification passed: `npm run check` and `npm run test`.
+  US-002:
+  - Simplified README quickstart to canonical init -> factory create -> doctor -> tick (4 steps).
+  - Removed manual notionflow.config.ts overwrite step, provision-board, and create-task from README quickstart.
+  - Removed NOTION_WORKSPACE_PAGE_ID from prerequisites (only needed for provision-board, not in canonical quickstart).
+  - Removed deprecated `config` and `board` entries from docs/cli-reference.md command groups list.
+  - Verification passed: `npm run check` and `npm run test`.
+- Completed: US-003 Rewrite local setup skill for project-local mode
+  US-003:
+  - Rewrote skills/setup/SKILL.md to remove global-path initialization (`~/.config/notionflow/`).
+  - Replaced deprecated `npx notionflow setup` with `npx notionflow init`.
+  - Removed `npx notionflow config set` workflow; credentials now stored as env vars or .env file.
+  - Updated factory step to use `factory create` + explicit `notionflow.config.ts` factories array edits.
+  - Updated troubleshooting to reference project-local conventions and `--config` override instead of global paths.
+  - Verification passed: `npm run check`.
