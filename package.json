@@ -1,6 +1,6 @@
 {
   "name": "notionflow",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Agent-agnostic workflow orchestrator for Notion",
   "license": "MIT",
   "author": "Kamal <https://github.com/Kamalnrf>",
