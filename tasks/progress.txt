@@ -35,3 +35,10 @@ Hard-Reset Library-First Cleanup Progress:
   - Updated CLI cheat sheet and "Modifying Later" to remove re-install steps.
   - Added "Factory not loading" gotcha pointing to notionflow.config.ts path and doctor.
   - Verification passed: `npm run check`.
+- Completed: US-005 Make example-factories a standalone runnable package
+  US-005:
+  - Added example-factories/package.json with doctor, tick, and tick:demo scripts using `tsx ../src/cli.ts`.
+  - Added example-factories/tsconfig.json for local type checking (noImplicitAny: false for demo files).
+  - Rewrote example-factories/README.md with full setup steps, env vars, and script table from a clean checkout.
+  - Fixed example-factories/factories/shared/runtime-helpers.ts to use proper generic types for agent/select/until.
+  - Verification passed: `npm run check` (root), `npm run check` (example-factories), `npm run test`.
