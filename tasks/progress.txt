@@ -1,0 +1,6 @@
+US-001 completed (E2E infrastructure only):
+- Added temp project fixture helper: `e2e/helpers/projectFixture.ts`
+- Added global write guard snapshot/assertion for `~/.config/notionflow`
+- Added E2E usage test: `e2e/local-project-helpers.test.ts`
+- Verified: `npm run test:e2e -- e2e/local-project-helpers.test.ts` passes
+- Note: `npm run check` currently fails due pre-existing implicit-any issues in existing `e2e/factories/*.ts` files not touched in this task
