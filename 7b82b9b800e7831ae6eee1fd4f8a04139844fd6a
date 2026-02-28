@@ -1,0 +1,23 @@
+src/index.ts
+  fb0b7eba3edf6d2e 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "7b82b9b800e7831ae6eee1fd4f8a04139844fd6a",
+  "prompts": {
+    "fb0b7eba3edf6d2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca295-acb4-74f2-be0d-d2f4cc71a25d",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 323,
+      "total_deletions": 89,
+      "accepted_lines": 323,
+      "overriden_lines": 0
+    }
+  }
+}
