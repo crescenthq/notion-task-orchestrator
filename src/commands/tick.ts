@@ -6,6 +6,7 @@ export const tickCmd = defineCommand({
   args: {
     board: { type: "string", required: false },
     factory: { type: "string", required: false },
+    config: { type: "string", required: false },
     maxTransitionsPerTick: { type: "string", required: false, alias: "max-transitions-per-tick" },
     leaseMs: { type: "string", required: false, alias: "lease-ms" },
     leaseMode: { type: "string", required: false, alias: "lease-mode" },
@@ -20,6 +21,8 @@ export const tickCmd = defineCommand({
     await syncNotionBoards({
       boardId: args.board ? String(args.board) : undefined,
       factoryId: args.factory ? String(args.factory) : undefined,
+      configPath: args.config ? String(args.config) : undefined,
+      startDir: process.cwd(),
       runQueued: true,
       maxTransitionsPerTick: Number.isFinite(maxTransitionsPerTick) ? maxTransitionsPerTick : undefined,
       leaseMs: Number.isFinite(leaseMs) ? leaseMs : undefined,

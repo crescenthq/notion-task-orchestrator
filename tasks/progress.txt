@@ -66,3 +66,13 @@ US-008 completed (project-local runtime artifacts under `.notionflow`):
 - Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
 - Verified: `npm run test:e2e -- e2e/local-project-runtime-artifacts.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-009 completed (`run`/`tick` local execution with no install step):
+- Removed `factory install` from the CLI command surface and updated Notion sync guidance text to stop referencing install flow: `src/commands/factory.ts`, `src/commands/notion.ts`
+- Updated runtime factory resolution to prefer config-declared local factories (`notionflow.config.ts`) by factory ID on every run, with actionable error output when requested IDs are not declared: `src/core/factoryRuntime.ts`
+- Added `--config <path>` passthrough for `run`, `tick`, and `integrations notion sync` so local project resolution can be explicit outside project roots: `src/commands/run.ts`, `src/commands/tick.ts`, `src/commands/notion.ts`
+- Added E2E coverage proving `run` executes directly from declared local factory files, picks up file edits without install/copy, enforces removed `factory install` surface, and preserves no-write guard for `~/.config/notionflow`: `e2e/local-project-run-local-factory.test.ts`
+- Verified: `npm run test -- src/project/projectConfig.test.ts` passes
+- Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
+- Verified: `npm run test:e2e -- e2e/local-project-run-local-factory.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task

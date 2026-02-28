@@ -4,7 +4,9 @@ import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
 import { notionToken } from "../config/env";
 import { loadFactoryFromPath } from "./factory";
-import { boards, runs, tasks, transitionEvents, workflows } from "../db/schema";
+import { boards, runs, tasks, transitionEvents } from "../db/schema";
+import { resolveProjectConfig, type ResolvedProjectConfig } from "../project/discoverConfig";
+import { loadDeclaredFactories } from "../project/projectConfig";
 import { parseTransitionEvent, TransitionEventReasonCode } from "./transitionEvents";
 import {
   notionAppendMarkdownToPage,
@@ -48,6 +50,8 @@ export type RuntimeRunOptions = {
   leaseMs?: number;
   leaseMode?: LeaseMode;
   workerId?: string;
+  configPath?: string;
+  startDir?: string;
 };
 
 type NormalizedRuntimeRunOptions = {
@@ -235,6 +239,36 @@ async function resolveInstalledFactoryPath(factoryId: string, workflowsDir: stri
   );
 }
 
+async function resolveFactoryPathById(options: {
+  factoryId: string;
+  projectConfig: ResolvedProjectConfig | null;
+  workflowsDir: string;
+}): Promise<string> {
+  if (options.projectConfig) {
+    const declaredFactories = await loadDeclaredFactories({
+      configPath: options.projectConfig.configPath,
+      projectRoot: options.projectConfig.projectRoot,
+    });
+    if (declaredFactories.length > 0) {
+      const declaredFactory = declaredFactories.find((entry) => entry.definition.id === options.factoryId);
+      if (declaredFactory) {
+        return declaredFactory.resolvedPath;
+      }
+
+      const availableFactoryIds = declaredFactories.map((entry) => entry.definition.id).sort();
+      throw new Error(
+        [
+          `Factory \`${options.factoryId}\` is not declared in project config.`,
+          `Config path: ${options.projectConfig.configPath}`,
+          `Available factories: ${availableFactoryIds.join(", ") || "<none>"}`,
+        ].join("\n"),
+      );
+    }
+  }
+
+  return resolveInstalledFactoryPath(options.factoryId, options.workflowsDir);
+}
+
 function getTaskSelector(task: { boardId: string; externalTaskId: string }) {
   return and(eq(tasks.boardId, task.boardId), eq(tasks.externalTaskId, task.externalTaskId));
 }
@@ -254,12 +288,13 @@ export async function runFactoryTaskByExternalId(
   options: RuntimeRunOptions = {},
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options);
-  const { db, paths } = await openApp();
+  const startDir = options.startDir ?? process.cwd();
+  const { db, paths } = await openApp({ startDir, configPath: options.configPath });
+  const resolvedProjectConfig = await resolveProjectConfig({ startDir, configPath: options.configPath }).catch(
+    () => null,
+  );
   const [task] = await db.select().from(tasks).where(eq(tasks.externalTaskId, taskExternalId));
   if (!task) throw new Error(`Task not found: ${taskExternalId}`);
-
-  const [workflowRow] = await db.select().from(workflows).where(eq(workflows.id, task.workflowId));
-  if (!workflowRow) throw new Error(`Factory not found: ${task.workflowId}`);
 
   const [board] = await db.select().from(boards).where(eq(boards.id, task.boardId));
   const token = notionToken();
@@ -288,7 +323,11 @@ export async function runFactoryTaskByExternalId(
     }
   };
 
-  const factoryPath = await resolveInstalledFactoryPath(task.workflowId, paths.workflowsDir);
+  const factoryPath = await resolveFactoryPathById({
+    factoryId: task.workflowId,
+    projectConfig: resolvedProjectConfig,
+    workflowsDir: paths.workflowsDir,
+  });
   const { definition } = await loadFactoryFromPath(factoryPath);
 
   let taskTitle = task.externalTaskId;

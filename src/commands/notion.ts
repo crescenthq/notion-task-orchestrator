@@ -73,16 +73,21 @@ export async function syncNotionBoards(options: {
 	boardId?: string;
 	factoryId?: string;
 	workflowId?: string;
+	configPath?: string;
+	startDir?: string;
 	runQueued?: boolean;
 	maxTransitionsPerTick?: number;
 	leaseMs?: number;
-	leaseMode?: "strict" | "best-effort";
-	workerId?: string;
+        leaseMode?: "strict" | "best-effort";
+        workerId?: string;
 }): Promise<void> {
 	const token = notionToken();
 	if (!token) throw new Error("NOTION_API_TOKEN is required");
 
-	const { db } = await openApp();
+	const { db } = await openApp({
+                startDir: options.startDir ?? process.cwd(),
+                configPath: options.configPath,
+        });
 	const targetBoards = options.boardId
 		? await db.select().from(boards).where(eq(boards.id, options.boardId))
 		: await db.select().from(boards);
@@ -94,7 +99,7 @@ export async function syncNotionBoards(options: {
 		if (options.boardId)
 			throw new Error(`No Notion board found for: ${options.boardId}`);
 		throw new Error(
-			"No Notion boards registered. Use factory install/create or integrations notion provision-board first",
+			"No Notion boards registered. Use factory create or integrations notion provision-board first",
 		);
 	}
 
@@ -203,11 +208,13 @@ export async function syncNotionBoards(options: {
 		console.log(`Running queued task: ${taskId}`);
 		try {
 			await runTaskByExternalId(taskId, {
+				configPath: options.configPath,
+				startDir: options.startDir,
 				maxTransitionsPerTick: options.maxTransitionsPerTick,
 				leaseMs: options.leaseMs,
-				leaseMode: options.leaseMode,
-				workerId: options.workerId,
-			});
+                                leaseMode: options.leaseMode,
+                                workerId: options.workerId,
+                        });
 		} catch (error) {
 			runFailures += 1;
 			const message = error instanceof Error ? error.message : String(error);
@@ -348,15 +355,18 @@ export const notionCmd = defineCommand({
 			args: {
 				board: { type: "string", required: false },
 				factory: { type: "string", required: false },
-				run: { type: "boolean", required: false },
+				config: { type: "string", required: false },
+                                run: { type: "boolean", required: false },
 			},
-			async run({ args }) {
-				await syncNotionBoards({
+                        async run({ args }) {
+                                await syncNotionBoards({
 					boardId: args.board ? String(args.board) : undefined,
 					factoryId: args.factory ? String(args.factory) : undefined,
-					runQueued: Boolean(args.run),
-				});
-			},
-		}),
+                                        configPath: args.config ? String(args.config) : undefined,
+                                        startDir: process.cwd(),
+                                        runQueued: Boolean(args.run),
+                                });
+                        },
+                }),
 	},
 });
