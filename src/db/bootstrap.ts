@@ -1,21 +1,26 @@
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
+import {mkdir} from 'node:fs/promises'
+import path from 'node:path'
 
 export async function ensureDbDirectory(dbPath: string): Promise<void> {
-  await mkdir(path.dirname(dbPath), { recursive: true });
+  await mkdir(path.dirname(dbPath), {recursive: true})
 }
 
 type BootstrapClient = {
-  executeMultiple: (sql: string) => Promise<void>;
-  execute: (sql: string) => Promise<{ rows?: Array<Record<string, unknown>> }>;
-};
+  executeMultiple: (sql: string) => Promise<void>
+  execute: (sql: string) => Promise<{rows?: Array<Record<string, unknown>>}>
+}
 
-async function ensureColumn(client: BootstrapClient, table: string, column: string, ddl: string): Promise<void> {
-  const result = await client.execute(`PRAGMA table_info(${table});`);
-  const rows = Array.isArray(result.rows) ? result.rows : [];
-  const hasColumn = rows.some((row) => String(row.name ?? "") === column);
-  if (hasColumn) return;
-  await client.execute(ddl);
+async function ensureColumn(
+  client: BootstrapClient,
+  table: string,
+  column: string,
+  ddl: string,
+): Promise<void> {
+  const result = await client.execute(`PRAGMA table_info(${table});`)
+  const rows = Array.isArray(result.rows) ? result.rows : []
+  const hasColumn = rows.some(row => String(row.name ?? '') === column)
+  if (hasColumn) return
+  await client.execute(ddl)
 }
 
 export async function bootstrapSchema(client: BootstrapClient): Promise<void> {
@@ -110,10 +115,24 @@ CREATE TABLE IF NOT EXISTS transition_events (
   FOREIGN KEY(run_id) REFERENCES runs(id),
   FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
-`);
+`)
 
-  await ensureColumn(client, "runs", "lease_owner", "ALTER TABLE runs ADD COLUMN lease_owner TEXT;");
-  await ensureColumn(client, "runs", "lease_expires_at", "ALTER TABLE runs ADD COLUMN lease_expires_at TEXT;");
-  await ensureColumn(client, "runs", "lease_heartbeat_at", "ALTER TABLE runs ADD COLUMN lease_heartbeat_at TEXT;");
-
+  await ensureColumn(
+    client,
+    'runs',
+    'lease_owner',
+    'ALTER TABLE runs ADD COLUMN lease_owner TEXT;',
+  )
+  await ensureColumn(
+    client,
+    'runs',
+    'lease_expires_at',
+    'ALTER TABLE runs ADD COLUMN lease_expires_at TEXT;',
+  )
+  await ensureColumn(
+    client,
+    'runs',
+    'lease_heartbeat_at',
+    'ALTER TABLE runs ADD COLUMN lease_heartbeat_at TEXT;',
+  )
 }

@@ -1,19 +1,32 @@
 {
   "name": "notionflow",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Agent-agnostic workflow orchestrator for Notion",
+  "license": "MIT",
+  "author": "Kamal <https://github.com/Kamalnrf>",
+  "bin": {
+    "notionflow": "./dist/cli.js"
+  },
   "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "dev": "npx tsx src/cli.ts",
     "notionflow": "npx tsx src/cli.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "build": "bun build src/cli.ts --target=node --outdir=dist",
     "publish:npm": "bun run build && npm publish"
-  },
-  "bin": {
-    "notionflow": "./dist/cli.js"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",
@@ -25,10 +38,10 @@
   "devDependencies": {
     "@types/node": "^22.15.0",
     "drizzle-kit": "^0.31.4",
+    "oxfmt": "^0.35.0",
+    "oxlint": "^1.50.0",
     "tsx": "^4.19.4",
     "typescript": "^5.9.2",
     "vitest": "^3.2.1"
-  },
-  "author": "Kamal <https://github.com/Kamalnrf>",
-  "license": "MIT"
+  }
 }
