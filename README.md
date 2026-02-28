@@ -18,35 +18,24 @@ No factory install/copy step is required. `run` and `tick` load factories direct
 
 - Node.js 20+
 - `NOTION_API_TOKEN`
-- `NOTION_WORKSPACE_PAGE_ID` (or pass `--parent-page` when provisioning a board)
 
-## Quickstart (Project Local)
+## Quickstart
 
 ```bash
-# 1) Create a local NotionFlow project
+# 1) Initialize a local NotionFlow project
 npx notionflow init
 
 # 2) Scaffold a factory file
 npx notionflow factory create --id demo --skip-notion-board
 
-# 3) Declare your factory paths explicitly
-cat > notionflow.config.ts <<'TS'
-import { defineConfig } from "notionflow";
-
-export default defineConfig({
-  factories: ["./factories/demo.ts"],
-});
-TS
+# 3) Declare the factory in notionflow.config.ts
+# Edit factories: ["./factories/demo.ts"] into the generated config
 
 # 4) Validate project resolution and auth
 npx notionflow doctor
 
-# 5) Provision a Notion board and create a queued task
-npx notionflow integrations notion provision-board --board demo
-npx notionflow integrations notion create-task --board demo --factory demo --title "Local quickstart" --status queue
-
-# 6) Run one orchestration tick
-npx notionflow tick --board demo --factory demo
+# 5) Run one orchestration tick
+npx notionflow tick --factory demo
 ```
 
 You can run commands from anywhere inside the project tree; NotionFlow walks up directories to find `notionflow.config.ts`.

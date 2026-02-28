@@ -9,8 +9,6 @@ Top-level commands:
 - `tick`
 - `run`
 - `status`
-- `config`
-- `board`
 - `factory`
 - `integrations`
 
