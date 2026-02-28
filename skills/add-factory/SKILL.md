@@ -7,7 +7,7 @@ description: Create a TypeScript state-machine factory with inline agent functio
 
 A factory is a TypeScript state machine. Each state has an inline `agent` function that runs your logic, and an `on` map that routes to the next state based on the result.
 
-**Principle:** One file, all logic inline. No separate executor scripts. No YAML.
+**Principle:** One file, all logic inline. No separate executor scripts. No YAML. No global install step — factories are local files declared in `notionflow.config.ts`.
 
 ## Phase 1 — Design
 
@@ -27,10 +27,10 @@ Map out the states: what each state does, what agent logic it runs, and what suc
 ## Phase 2 — Scaffold
 
 ```bash
-npx notionflow factory create --id <factory-id> --skip-notion-board
+npx notionflow factory create --id <factory-id>
 ```
 
-This writes a minimal scaffold to `~/.config/notionflow/workflows/<factory-id>.ts`. Edit it directly — it's just TypeScript.
+This creates `./factories/<factory-id>.ts` relative to the project root (the directory containing `notionflow.config.ts`). Edit the file directly — it's just TypeScript.
 
 ## Phase 3 — Write the Factory
 
@@ -41,6 +41,25 @@ The factory is an `export default` object with:
 - `context` — initial context object (shared across all states)
 - `states` — record of state definitions
 - `guards` — optional pure functions used by loop `until` and orchestrate `select`
+
+### Package Helper Imports
+
+The `notionflow` package exports typed wrappers for agent functions, select functions, and guards. Use them to get type-checking on your inline functions:
+
+```ts
+import { agent, select, until } from "notionflow";
+
+const doWork = agent(async ({ ctx }) => ({
+  status: "done",
+  data: { ...ctx, result: "ok" },
+}));
+
+const chooseRoute = select(({ ctx }) => (ctx.ready ? "publish" : "revise"));
+
+const isDone = until(({ ctx }) => Boolean(ctx.complete));
+```
+
+These are optional — plain async functions work too — but using them surfaces type errors earlier.
 
 ### State Types
 
@@ -174,18 +193,19 @@ const proc = spawn(
 ### Full Example (content factory)
 
 ```ts
+import { agent } from "notionflow";
 import { spawn } from "node:child_process";
 
-const research = async ({ task, ctx }) => {
+const research = agent(async ({ task, ctx }) => {
   // inline logic, or call a CLI
   return { status: "done", data: { sources: "..." } };
-};
+});
 
-const write = async ({ task, ctx }) => {
+const write = agent(async ({ task, ctx }) => {
   return { status: "done", data: { draft: "..." } };
-};
+});
 
-const review = async ({ task, ctx }) => {
+const review = agent(async ({ task, ctx }) => {
   const score = ctx.draft ? 90 : 40;
   if (score < 60) {
     return {
@@ -194,7 +214,7 @@ const review = async ({ task, ctx }) => {
     };
   }
   return { status: "done", data: { qualityScore: score } };
-};
+});
 
 export default {
   id: "content-factory",
@@ -233,27 +253,23 @@ export default {
 };
 ```
 
-## Phase 4 — Install
+## Phase 4 — Register
 
-```bash
-npx notionflow factory install --path ~/.config/notionflow/workflows/<factory-id>.ts
+After `factory create` writes the file, declare it in `notionflow.config.ts` so NotionFlow loads it:
+
+```ts
+import { defineConfig } from "notionflow";
+
+export default defineConfig({
+  factories: ["./factories/<factory-id>.ts"],
+});
 ```
 
-Verify:
+Relative paths resolve from the project root (the directory containing `notionflow.config.ts`). Add one entry per factory.
 
-```bash
-npx notionflow factory list
-```
+NotionFlow discovers `notionflow.config.ts` by walking up parent directories from the current working directory. Use `--config <path>` on any command to override config resolution explicitly.
 
-## Phase 5 — Provision Board
-
-```bash
-npx notionflow integrations notion provision-board --board <factory-id>
-```
-
-Remind the user to **share the database with the "NotionFlow" integration** in Notion (click `...` → "Connect to" → "NotionFlow").
-
-## Phase 6 — End-to-End Test
+## Phase 5 — End-to-End Test
 
 ```bash
 # Create a test task in Queue state
@@ -284,20 +300,20 @@ If a factory state returns `status: "feedback"`:
 2. Run `npx notionflow tick` — state retries up to `retries.max`, then routes via `on.failed`
 3. Revert the agent, reset the Notion State to Queue, run `tick` again
 
-## Phase 7 — Verify
+## Phase 6 — Verify
 
 ```bash
-npx notionflow factory list
-npx notionflow board list
 npx notionflow doctor
+npx notionflow factory list
 ```
 
 ## CLI Cheat Sheet
 
 ```bash
-# Manage factories
+# Scaffold a new factory file
 npx notionflow factory create --id <id>
-npx notionflow factory install --path <file.ts>
+
+# List loaded factories (reads from notionflow.config.ts)
 npx notionflow factory list
 
 # Create and run tasks
@@ -310,14 +326,14 @@ npx notionflow run --task <notion-page-id>
 
 # Check setup
 npx notionflow doctor
-npx notionflow board list
 ```
 
 ## Modifying Later
 
-- **Edit logic:** Open the `.ts` factory file, change the inline agent function, re-install with `factory install --path <file.ts>`.
-- **Add a state:** Add the state to `states`, wire up `on` maps in affected states, re-install.
-- **Change routing:** Update `select` or `orchestrate.agent` return value, update `on` map, re-install.
+- **Edit logic:** Open `./factories/<factory-id>.ts`, change the inline agent function. No re-install needed — NotionFlow reads the file on each run via `notionflow.config.ts`.
+- **Add a state:** Add the state to `states`, wire up `on` maps in affected states, save the file.
+- **Change routing:** Update `select` or `orchestrate.agent` return value, update `on` map, save the file.
+- **Add another factory:** Run `npx notionflow factory create --id <new-id>`, write the factory, add the path to the `factories` array in `notionflow.config.ts`.
 
 ## Common Gotchas
 
@@ -335,3 +351,6 @@ After a state returns `status: "feedback"`, the task only resumes when a Notion 
 
 **`action` states require both `on.done` and `on.failed`**
 Both routes must be declared. The runtime rejects factories missing either route at load time.
+
+**Factory not loading**
+Check that the path in `notionflow.config.ts` matches the actual file location. Paths are relative to the project root. Run `npx notionflow doctor` to confirm the config is resolved correctly.
