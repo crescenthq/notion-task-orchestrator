@@ -1,4 +1,4 @@
-import { copyFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { defineCommand } from "citty";
 import { eq } from "drizzle-orm";
@@ -7,6 +7,7 @@ import { notionToken, notionWorkspacePageId } from "../config/env";
 import { paths } from "../config/paths";
 import { loadFactoryFromPath, serializeFactoryDefinition } from "../core/factory";
 import { boards, workflows } from "../db/schema";
+import { discoverProjectConfig } from "../project/discoverConfig";
 import { notionCreateBoardDataSource, notionFindPageByTitle, notionGetDataSource } from "../services/notion";
 
 function prettifyBoardId(id: string): string {
@@ -130,18 +131,26 @@ export const factoryCmd = defineCommand({
         parentPage: { type: "string", required: false, alias: "parent-page" },
       },
       async run({ args }) {
-        await openApp();
+        const resolvedProject = await discoverProjectConfig(process.cwd());
+        if (!resolvedProject) {
+          console.error("[error] Could not find notionflow.config.ts from current directory.");
+          console.error("Run `notionflow init` in your project root first.");
+          process.exitCode = 1;
+          return;
+        }
+
         const id = String(args.id);
-        const targetPath = path.join(paths.workflowsDir, `${id}.ts`);
+        const targetDir = path.join(resolvedProject.projectRoot, "factories");
+        const targetPath = path.join(targetDir, `${id}.ts`);
         const template = `const doWork = async ({ ctx }) => ({\n  status: \"done\",\n  data: { ...ctx, result: \"ok\" },\n});\n\nexport default {\n  id: \"${id}\",\n  start: \"start\",\n  context: {},\n  states: {\n    start: {\n      type: \"action\",\n      agent: doWork,\n      on: { done: \"done\", failed: \"failed\" },\n    },\n    done: { type: \"done\" },\n    failed: { type: \"failed\" },\n  },\n};\n`;
+        await mkdir(targetDir, { recursive: true });
         await writeFile(targetPath, template, "utf8");
-        await saveFactoryDefinition(targetPath);
 
         console.log(`Factory scaffold created: ${id}`);
-        console.log(`Edit: ${targetPath}`);
+        console.log(`Path: ${targetPath}`);
 
         if (!args.skipNotionBoard) {
-          await maybeProvisionNotionBoard(id, prettifyBoardId(id), args.parentPage ? String(args.parentPage) : undefined);
+          console.log("[warn] Notion board provisioning is not yet supported for local-only factory scaffolds.");
         }
       },
     }),

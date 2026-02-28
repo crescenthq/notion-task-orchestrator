@@ -23,3 +23,11 @@ US-003 completed (E2E doctor nested config discovery):
 - Test validates no writes under `~/.config/notionflow` during init + doctor scenario
 - Verified: `npm run test:e2e -- e2e/local-project-doctor.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-004 completed (E2E factory create in local project):
+- Updated `factory create` to resolve local project context via `notionflow.config.ts` and scaffold to `<project>/factories/<id>.ts`: `src/commands/factory.ts`
+- Removed global runtime dependency from `factory create` path so command no longer requires `openApp()`/global DB writes for scaffold flow
+- Added E2E test: `e2e/local-project-factory-create.test.ts`
+- Test validates `factory create --id smoke --skip-notion-board` creates `factories/smoke.ts` in temp project
+- Test validates no writes under `~/.config/notionflow` during init + factory create scenario
+- Verified: `npm run test:e2e -- e2e/local-project-factory-create.test.ts` passes
