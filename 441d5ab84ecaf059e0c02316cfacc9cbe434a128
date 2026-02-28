@@ -1,0 +1,36 @@
+README.md
+  aed06f1824bd1997 22,25,31-32,37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "441d5ab84ecaf059e0c02316cfacc9cbe434a128",
+  "prompts": {
+    "8a9ef2c7c575cef9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c978e0ae-f1ba-48fe-a4c9-40084e42ff00",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 921,
+      "overriden_lines": 0
+    },
+    "aed06f1824bd1997": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "281e631e-c14d-4f2f-82b5-734f41513f68",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 19,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
