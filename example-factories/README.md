@@ -54,9 +54,15 @@ Expected output: all checks pass, factory files resolved from
 
 ### 4. Seed a task
 
+Provision declared factory boards first:
+
 ```bash
-# Boards are provisioned automatically from factory config.
-# Seed a queued task for the shared-helper-demo workflow.
+npm run notion:sync-factories
+```
+
+Then seed a queued task for the shared-helper-demo workflow.
+
+```bash
 npm run notion:create-task -- --factory shared-helper-demo --title "Run shared helper demo" --status queue
 ```
 
@@ -87,6 +93,7 @@ npm run tick -- --factory expressive-primitives
 | ----------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `doctor`    | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts`                            | Validate config and factory resolution               |
 | `notion:provision-board` | `tsx ../src/cli.ts integrations notion provision-board --config ./notionflow.config.ts` | Provision a Notion board for local examples          |
+| `notion:sync-factories` | `tsx ../src/cli.ts integrations notion sync-factories --config ./notionflow.config.ts` | Provision all factory boards from config before tick     |
 | `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a new Notion task and mirror local task state   |
 | `tick`      | `tsx ../src/cli.ts tick --config ./notionflow.config.ts`                              | Tick the next queued task across all factories       |
 | `tick:demo` | `tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts` | Tick next task for `shared-helper-demo` specifically |

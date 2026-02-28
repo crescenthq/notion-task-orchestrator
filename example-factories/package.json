@@ -7,6 +7,7 @@
   "scripts": {
     "doctor": "tsx ../src/cli.ts doctor --config ./notionflow.config.ts",
     "notion:provision-board": "tsx ../src/cli.ts integrations notion provision-board --config ./notionflow.config.ts",
+    "notion:sync-factories": "tsx ../src/cli.ts integrations notion sync-factories --config ./notionflow.config.ts",
     "notion:create-task": "tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts",
     "tick": "tsx ../src/cli.ts tick --config ./notionflow.config.ts",
     "tick:demo": "tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts",

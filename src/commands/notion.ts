@@ -100,6 +100,45 @@ async function resolveConfiguredFactoryBoardInfo(
   }
 }
 
+async function resolveConfiguredFactoryBoardInfos(
+  options: {
+    factoryId?: string
+    configPath?: string
+    startDir?: string
+  },
+): Promise<FactoryNotionBoardInfo[]> {
+  const resolvedProject = await resolveProjectConfig({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: options.configPath,
+  })
+  const declaredFactories = await loadDeclaredFactories({
+    configPath: resolvedProject.configPath,
+    projectRoot: resolvedProject.projectRoot,
+  })
+
+  const targetFactories = options.factoryId
+    ? declaredFactories.filter(entry => entry.definition.id === options.factoryId)
+    : declaredFactories
+
+  if (options.factoryId && targetFactories.length === 0) {
+    const availableFactoryIds = declaredFactories
+      .map(entry => entry.definition.id)
+      .sort()
+    throw new Error(
+      [
+        `Factory \`${options.factoryId}\` is not declared in project config.`,
+        `Config path: ${resolvedProject.configPath}`,
+        `Available factories: ${availableFactoryIds.join(', ') || '<none>'}`,
+      ].join('\n'),
+    )
+  }
+
+  return targetFactories.map(entry => ({
+    boardId: entry.definition.id,
+    boardTitle: resolveBoardTitle(entry.definition.name, entry.definition.id),
+  }))
+}
+
 async function provisionNotionBoard({
   boardId,
   title,
@@ -221,6 +260,72 @@ async function ensureWorkflowRecord(
   })
 }
 
+export async function provisionConfiguredNotionBoards(
+  options: {
+    factoryId?: string
+    parentPage?: string | null
+    configPath?: string
+    startDir?: string
+  },
+): Promise<void> {
+  const token = notionToken()
+  if (!token) throw new Error('NOTION_API_TOKEN is required')
+
+  const factoryBoards = await resolveConfiguredFactoryBoardInfos({
+    factoryId: options.factoryId,
+    configPath: options.configPath,
+    startDir: options.startDir,
+  })
+  if (factoryBoards.length === 0) {
+    console.log('No factories declared in project config; nothing to provision.')
+    return
+  }
+
+  const resolvedProject = await resolveProjectConfig({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: options.configPath,
+  })
+  const {db} = await openApp({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: resolvedProject.configPath,
+  })
+
+  let provisioned = 0
+  let reused = 0
+  for (const {boardId, boardTitle} of factoryBoards) {
+    const [existing] = await db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, boardId))
+      .limit(1)
+
+    if (existing) {
+      console.log(`[skip] board already registered for factory: ${boardId}`)
+      reused += 1
+      continue
+    }
+
+    await provisionNotionBoard({
+      boardId,
+      title: boardTitle,
+      parentPage: options.parentPage,
+      token,
+      db,
+    })
+    provisioned += 1
+    console.log(`Board provisioned for factory: ${boardId}`)
+  }
+
+  if (options.factoryId && factoryBoards.length === 1) {
+    console.log(`Factory ${options.factoryId}: provisioned=${provisioned} reused=${reused}`)
+    return
+  }
+
+  console.log(
+    `Factory board sync complete: provisioned=${provisioned} reused=${reused} total=${factoryBoards.length}`,
+  )
+}
+
 export async function syncNotionBoards(options: {
   boardId?: string
   factoryId?: string
@@ -286,7 +391,7 @@ export async function syncNotionBoards(options: {
     if (options.boardId)
       throw new Error(`No Notion board found for: ${options.boardId}`)
     throw new Error(
-      'No Notion boards registered. Use factory create or integrations notion provision-board first',
+      'No Notion boards registered. Use integrations notion sync-factories first',
     )
   }
 
@@ -554,6 +659,29 @@ export const notionCmd = defineCommand({
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
           runQueued: Boolean(args.run),
+        })
+      },
+    }),
+    'sync-factories': defineCommand({
+      meta: {
+        name: 'sync-factories',
+        description: 'Provision Notion boards for declared project factories',
+      },
+      args: {
+        factory: {type: 'string', required: false},
+        config: {type: 'string', required: false},
+        parentPage: {
+          type: 'string',
+          required: false,
+          alias: 'parent-page',
+        },
+      },
+      async run({args}) {
+        await provisionConfiguredNotionBoards({
+          factoryId: args.factory ? String(args.factory) : undefined,
+          parentPage: args.parentPage ? String(args.parentPage) : null,
+          configPath: args.config ? String(args.config) : undefined,
+          startDir: process.cwd(),
         })
       },
     }),

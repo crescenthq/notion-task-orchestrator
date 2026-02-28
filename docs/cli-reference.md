@@ -24,6 +24,8 @@ Supported `--config <path>` override:
 - `run`
 - `tick`
 - `integrations notion sync`
+- `integrations notion sync-factories`
+- `integrations notion create-task`
 
 When `--config` is provided, NotionFlow resolves project root from that config
 file's directory.
@@ -163,6 +165,14 @@ Sync tasks from registered Notion boards.
 notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
 ```
 
+### `integrations notion sync-factories`
+
+Provision (or refresh) Notion boards for declared factories.
+
+```bash
+notionflow integrations notion sync-factories [--config <path>] [--factory <factory-id>] [--parent-page <notion_page_id>]
+```
+
 ## Runtime Paths
 
 All runtime artifacts are project-local:
@@ -177,5 +187,6 @@ All runtime artifacts are project-local:
 notionflow init
 notionflow factory create --id demo --skip-notion-board
 notionflow doctor
+notionflow integrations notion sync-factories --factory demo
 notionflow tick --factory demo
 ```

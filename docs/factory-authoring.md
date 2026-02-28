@@ -135,6 +135,8 @@ Typical Notion loop:
 2. Human replies in Notion comments.
 3. `notionflow integrations notion sync --board <board-id> --run` detects new
    comments, stores `human_feedback`, re-queues the task, and runs queued work.
+4. `notionflow integrations notion sync-factories --config <path>` provisions
+   all declared factory boards in a new environment before running the first tick.
 
 ## Service Layer Setup (Layer-Based)
 
