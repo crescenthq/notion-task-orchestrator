@@ -1,0 +1,36 @@
+src/config/env.ts
+  10b38198af456a4d 1-3,7,11-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "cc0e65fc3335a30cb32e95d90b7cfdf6c01f0e43",
+  "prompts": {
+    "10b38198af456a4d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca58a-5678-76c2-9e54-08e6dd2b7b2e",
+        "model": "unknown"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 25,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    }
+  }
+}
