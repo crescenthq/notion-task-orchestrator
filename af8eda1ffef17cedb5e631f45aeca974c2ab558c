@@ -1,0 +1,65 @@
+example-factories/package.json
+  97ebf7a6ac1c8592 9-10
+README.md
+  97ebf7a6ac1c8592 63-71,95
+src/commands/notion.ts
+  97ebf7a6ac1c8592 4,7,40-121,129-130,157-167,239,243-277,280-282,430,440,443-449,451-453,456,467,471,477-514,519-520
+src/core/factory.ts
+  97ebf7a6ac1c8592 7
+example-factories/README.md
+  97ebf7a6ac1c8592 43,55,58-63,89-90
+src/cli.test.ts
+  e2774d3ceae74a10 86-88,91
+docs/cli-reference.md
+  97ebf7a6ac1c8592 147,155
+src/core/factory.test.ts
+  97ebf7a6ac1c8592 37-51
+docs/factory-authoring.md
+  97ebf7a6ac1c8592 239-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "af8eda1ffef17cedb5e631f45aeca974c2ab558c",
+  "prompts": {
+    "97ebf7a6ac1c8592": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca547-d631-7ff1-b042-bebea9dd5dd9",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 272,
+      "total_deletions": 62,
+      "accepted_lines": 238,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    },
+    "e2774d3ceae74a10": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca5b6-f4e5-7f60-8a24-361d4c2719fc",
+        "model": "unknown"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 2,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
