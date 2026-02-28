@@ -25,3 +25,13 @@ Hard-Reset Library-First Cleanup Progress:
   - Updated factory step to use `factory create` + explicit `notionflow.config.ts` factories array edits.
   - Updated troubleshooting to reference project-local conventions and `--config` override instead of global paths.
   - Verification passed: `npm run check`.
+- Completed: US-004 Rewrite add-factory skill without install flow
+  US-004:
+  - Rewrote skills/add-factory/SKILL.md to remove `factory install` instructions entirely.
+  - Removed all `~/.config/notionflow/workflows/` path references from the skill.
+  - Phase 2 scaffold now references local `./factories/<factory-id>.ts` (project root relative).
+  - Added Phase 4 "Register" that teaches editing `notionflow.config.ts` factories array.
+  - Added package helper import examples (`agent`, `select`, `until` from `notionflow`).
+  - Updated CLI cheat sheet and "Modifying Later" to remove re-install steps.
+  - Added "Factory not loading" gotcha pointing to notionflow.config.ts path and doctor.
+  - Verification passed: `npm run check`.
