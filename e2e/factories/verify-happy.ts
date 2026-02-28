@@ -1,4 +1,8 @@
-const draftPlan = async ({ ctx }) => ({
+type HappyInput = {
+  ctx: Record<string, unknown>;
+};
+
+const draftPlan = async ({ ctx }: HappyInput) => ({
   status: "done",
   data: { ...ctx, happy_step: "plan-created" },
 });

@@ -1,4 +1,9 @@
-const step = async ({ stateId, ctx }) => ({
+type ResumeBudgetInput = {
+  stateId: string;
+  ctx: Record<string, unknown>;
+};
+
+const step = async ({ stateId, ctx }: ResumeBudgetInput) => ({
   status: "done",
   data: { ...ctx, last_completed_state: String(stateId) },
 });

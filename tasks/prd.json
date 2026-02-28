@@ -1,0 +1,194 @@
+{
+  "project": "NotionFlow",
+  "branchName": "ralph/local-project-library-first",
+  "description": "Hard switch NotionFlow from global CLI state to project-local config, factories, runtime artifacts, and typed library-first authoring APIs.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add E2E temp project fixture and global-write guard",
+      "description": "As a maintainer, I want a reusable temporary project fixture and assertion helper so local-project tests can verify no writes occur under ~/.config/notionflow.",
+      "acceptanceCriteria": [
+        "Create E2E helper to create and clean temporary project directories",
+        "Create assertion helper that fails when files are written under ~/.config/notionflow during test execution",
+        "Helper is used by at least one E2E test file",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Typecheck gate now passes after adding explicit parameter types to e2e factory fixtures and fixing tick.test resolver typing; helper coverage remains in e2e/local-project-helpers.test.ts."
+    },
+    {
+      "id": "US-002",
+      "title": "E2E validate init scaffolds local project structure",
+      "description": "As a new user, I want init to scaffold the required local project files so I can start in repo-local mode immediately.",
+      "acceptanceCriteria": [
+        "E2E test runs notionflow init in temp directory",
+        "Test asserts notionflow.config.ts, factories/, and .notionflow/ are created",
+        "Test asserts .gitignore contains exactly one .notionflow/ entry after running init twice",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "E2E validate doctor config discovery from nested path",
+      "description": "As a developer, I want doctor to resolve config from nested directories so commands work from anywhere inside a project.",
+      "acceptanceCriteria": [
+        "E2E test runs notionflow doctor from a nested child directory",
+        "Doctor output includes resolved project root path",
+        "Doctor output includes resolved config path",
+        "No writes are made under ~/.config/notionflow in this scenario",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "E2E validate factory create in local project",
+      "description": "As a user, I want factory create to scaffold a local factory file so I can author workflows without global installation.",
+      "acceptanceCriteria": [
+        "E2E test runs notionflow factory create --id smoke in resolved project context",
+        "Test asserts factories/smoke.ts exists after command",
+        "No writes are made under ~/.config/notionflow in this scenario",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement project context resolution with walk-up and --config",
+      "description": "As an operator, I want a consistent project context resolver so all commands locate notionflow.config.ts deterministically.",
+      "acceptanceCriteria": [
+        "Walk-up discovery resolves notionflow.config.ts from current working directory ancestors",
+        "--config <path> overrides walk-up discovery for project-scoped commands",
+        "Missing config exits non-zero with actionable error message",
+        "Resolved project root is always the config file directory",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Support explicit factory declarations in config",
+      "description": "As a factory author, I want explicit factory file declarations in config so loading is deterministic and reviewable.",
+      "acceptanceCriteria": [
+        "Config schema supports explicit factory file path list",
+        "Relative factory paths are resolved from project root",
+        "Factory loader does not use implicit glob or directory scan",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Fail fast on invalid factory paths and duplicate IDs",
+      "description": "As a maintainer, I want deterministic startup failures for invalid factory definitions so runtime execution is safe and debuggable.",
+      "acceptanceCriteria": [
+        "Missing declared factory path exits non-zero and includes offending path in error",
+        "Duplicate factory IDs across declared files exit non-zero and include conflicting id and file paths",
+        "Failures occur before task execution starts",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Write runtime artifacts under project-local .notionflow",
+      "description": "As a developer, I want runtime DB and logs stored in project-local directories so projects are isolated and version-control safe.",
+      "acceptanceCriteria": [
+        "Default database path is <project-root>/.notionflow/notionflow.db",
+        "Runtime creates .notionflow automatically when missing and does not fail when it already exists",
+        "Operational logs are written under <project-root>/.notionflow/",
+        "No runtime artifacts are written under ~/.config/notionflow",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Run and tick execute local factories without install step",
+      "description": "As a user, I want run/tick to load factories directly from project files so edits take effect immediately without copy/install workflows.",
+      "acceptanceCriteria": [
+        "Remove factory install from CLI command surface and help output",
+        "run and tick resolve factories from config-declared local files",
+        "Editing a factory file changes subsequent run behavior without install",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Add continuous tick loop with fixed defaults and graceful shutdown",
+      "description": "As an operator, I want an explicit loop mode for tick so processing can run continuously with safe API behavior and clean shutdown.",
+      "acceptanceCriteria": [
+        "tick is one-shot by default and supports explicit --loop mode",
+        "Successful loop cadence defaults to 2000ms",
+        "429 and transient 5xx responses trigger exponential backoff with jitter and 15000ms cap",
+        "SIGINT and SIGTERM stop scheduling new cycles and exit cleanly after current cycle",
+        "runtime.log and errors.log are written under .notionflow",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Export stable typed library APIs",
+      "description": "As a developer, I want typed config/factory APIs and helper exports so factory authoring is programmatic and reusable.",
+      "acceptanceCriteria": [
+        "Package root exports typed defineConfig and defineFactory",
+        "Approved helper utilities are exported for shared factory modules",
+        "Add API contract tests for explicit export surface",
+        "A helper import example compiles",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Refresh docs and examples for local-only architecture",
+      "description": "As a user, I want docs and example projects to reflect only local-project behavior so onboarding is unambiguous.",
+      "acceptanceCriteria": [
+        "README and docs remove instructions that rely on ~/.config/notionflow factory editing/install",
+        "Docs include full quickstart sequence: init -> factory create -> doctor -> tick",
+        "Converted examples include notionflow.config.ts, factories/, setup steps, and required env vars",
+        "At least one example demonstrates shared helper imports",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

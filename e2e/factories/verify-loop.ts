@@ -1,9 +1,13 @@
-const iterate = async ({ ctx }) => ({
+type LoopInput = {
+  ctx: Record<string, unknown>;
+};
+
+const iterate = async ({ ctx }: LoopInput) => ({
   status: "done",
   data: { loop_iterations_seen: Number(ctx.loop_iterations_seen ?? 0) + 1 },
 });
 
-const loopDone = ({ ctx }) => Number(ctx.loop_iterations_seen ?? 0) >= 2;
+const loopDone = ({ ctx }: LoopInput) => Number(ctx.loop_iterations_seen ?? 0) >= 2;
 
 export default {
   id: "verify-loop",

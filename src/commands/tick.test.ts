@@ -99,7 +99,7 @@ describe("tick command loop execution", () => {
     const logger = createMemoryLogger();
     const signalSource = new EventEmitter();
     let runCalls = 0;
-    let resolveCycle: (() => void) | null = null;
+    let resolveCycle: () => void = () => {};
     const cycleInFlight = new Promise<void>((resolve) => {
       resolveCycle = resolve;
     });
@@ -131,7 +131,7 @@ describe("tick command loop execution", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     signalSource.emit("SIGINT", "SIGINT");
-    resolveCycle?.();
+    resolveCycle();
     await execution;
 
     expect(runCalls).toBe(1);

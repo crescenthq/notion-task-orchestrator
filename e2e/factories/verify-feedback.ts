@@ -1,4 +1,8 @@
-const askForFeedback = async ({ ctx }) => {
+type FeedbackInput = {
+  ctx: Record<string, unknown>;
+};
+
+const askForFeedback = async ({ ctx }: FeedbackInput) => {
   const attempts = Number(ctx.feedback_attempts ?? 0) + 1;
   if (!ctx.human_feedback) {
     return {

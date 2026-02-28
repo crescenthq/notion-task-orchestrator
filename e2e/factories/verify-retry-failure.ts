@@ -1,4 +1,9 @@
-const alwaysFail = async ({ tickId, attempt }) => ({
+type RetryFailureInput = {
+  tickId: string;
+  attempt: number;
+};
+
+const alwaysFail = async ({ tickId, attempt }: RetryFailureInput) => ({
   status: "failed",
   message: `forced failure on tick ${String(tickId)} attempt ${Number(attempt)}`,
 });
