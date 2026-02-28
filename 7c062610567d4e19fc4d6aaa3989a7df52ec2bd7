@@ -1,0 +1,157 @@
+src/factory/expressive.contracts.test.ts
+  4622006f90b7584d 1-158
+src/index.test.ts
+  ead04d837d9add93 16,18-20,24
+  4622006f90b7584d 17,23,25-28,30
+src/index.ts
+  ead04d837d9add93 16-36
+  4622006f90b7584d 15
+.gitignore
+  f5bc726f413c6600 33-35
+src/factory/expressive.ts
+  4622006f90b7584d 1-42,47,52-56,59-80,87-99,101-209,237-241,246-324,355-356,363-364,402-412,421-514
+  163a6390ab3e9ed0 48-51,396-399,419-420
+  07bbfe560294b2ed 81-86,100,210-236
+  fb268d515dfa569f 43-46,57-58,242-245,325-354,357-362,413-414
+  d2b3abeceade1e2e 365-379,415-416
+  49bb39e81ea6ddc2 380-395,400-401,417-418
+src/factory/expressive.step.test.ts
+  4622006f90b7584d 1-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "7c062610567d4e19fc4d6aaa3989a7df52ec2bd7",
+  "prompts": {
+    "07bbfe560294b2ed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca36e-a82c-73c3-811b-74248b7b3836",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 38,
+      "total_deletions": 7,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    },
+    "163a6390ab3e9ed0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca37c-343f-7b52-9638-cb26e87a5455",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 0,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    },
+    "4622006f90b7584d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca357-9abe-7041-a426-ac75ebfca143",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 735,
+      "total_deletions": 2,
+      "accepted_lines": 732,
+      "overriden_lines": 0
+    },
+    "49bb39e81ea6ddc2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca378-60b1-72a2-a0df-af8ec30a291e",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 0,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "519d2fefc519b526": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca334-6897-7873-b5a7-34b39ddacf45",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 2,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 50,
+      "total_deletions": 1,
+      "accepted_lines": 49,
+      "overriden_lines": 0
+    },
+    "d2b3abeceade1e2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca36a-78a9-7d63-9f90-2de3212e745b",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 0,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    },
+    "ead04d837d9add93": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca37e-11d7-76e3-95a0-76d24eab36c7",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 0,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    },
+    "f5bc726f413c6600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca336-91c9-7363-916b-70c66137736d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "fb268d515dfa569f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca363-4896-7523-8149-8eb05f3468d3",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 48,
+      "total_deletions": 0,
+      "accepted_lines": 48,
+      "overriden_lines": 0
+    }
+  }
+}
