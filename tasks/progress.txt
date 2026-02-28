@@ -42,3 +42,17 @@ Hard-Reset Library-First Cleanup Progress:
   - Rewrote example-factories/README.md with full setup steps, env vars, and script table from a clean checkout.
   - Fixed example-factories/factories/shared/runtime-helpers.ts to use proper generic types for agent/select/until.
   - Verification passed: `npm run check` (root), `npm run check` (example-factories), `npm run test`.
+- Completed: US-006 Add legacy-pattern guardrail checks for docs and skills
+  US-006:
+  - Created src/guardrails.test.ts with two test cases wired into vitest (CI-visible via npm run test).
+  - Test 1 scans docs/ and skills/ (plus README.md) for forbidden patterns: ~/.config/notionflow global paths and `factory install` command references. Reports file:line and offending snippet on failure.
+  - Test 2 asserts canonical files (README.md, docs/cli-reference.md, skills/setup/SKILL.md, skills/add-factory/SKILL.md) contain required local-project terms: notionflow.config.ts and --config.
+  - Fixed two pre-existing violations caught by the new guardrail: docs/architecture.md (~/ path mention) and README.md (factory install phrasing).
+  - Verification passed: `npm run check` and `npm run test` (47 tests passing).
+- Completed: US-007 Publish hard-reset cleanup release checklist
+  US-007:
+  - Created tasks/hard-reset-release-checklist.md covering all 7 audit areas.
+  - Checklist includes CLI help audit, docs audit, skills audit, examples audit, and no-global-write verification.
+  - Each item maps a verification command, expected outcome, and captured pass/fail result.
+  - All 9 checklist items passed: CLI, README, cli-reference, skills/setup, skills/add-factory, example-factories, no global writes, guardrails tests, typecheck.
+  - Verification passed: `npm run check`.
