@@ -55,3 +55,14 @@ US-007 completed (fail-fast invalid declarations and duplicate IDs):
 - Added unit coverage for missing declared path errors and duplicate factory-id failures across declared files: `src/project/projectConfig.test.ts`
 - Verified: `npm run test -- src/project/projectConfig.test.ts` passes
 - Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
+
+US-008 completed (project-local runtime artifacts under `.notionflow`):
+- Refactored runtime path resolution to be project-root based via `resolveRuntimePaths(projectRoot)` and updated default runtime constants (`db`, `runtime.log`, `errors.log`) under `<project>/.notionflow`: `src/config/paths.ts`
+- Updated `openApp()` to resolve project context (walk-up config discovery or `NOTIONFLOW_PROJECT_ROOT` override), create runtime directories idempotently, and ensure DB/log files are created inside project-local `.notionflow`: `src/app/context.ts`
+- Updated runtime factory module lookup to use `openApp()` resolved runtime paths instead of static global path imports: `src/core/factoryRuntime.ts`
+- Updated factory install path usage to source workflow install target from resolved app runtime paths: `src/commands/factory.ts`
+- Updated runtime unit test harness to use isolated per-test project roots through `NOTIONFLOW_PROJECT_ROOT`: `src/core/factoryRuntime.test.ts`
+- Added E2E coverage validating local runtime artifacts and global-write guard (`init` + repeated runtime command): `e2e/local-project-runtime-artifacts.test.ts`
+- Verified: `npm run test -- src/core/factoryRuntime.test.ts` passes
+- Verified: `npm run test:e2e -- e2e/local-project-runtime-artifacts.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task

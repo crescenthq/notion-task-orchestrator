@@ -4,7 +4,6 @@ import { defineCommand } from "citty";
 import { eq } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
 import { notionToken, notionWorkspacePageId } from "../config/env";
-import { paths } from "../config/paths";
 import { loadFactoryFromPath, serializeFactoryDefinition } from "../core/factory";
 import { boards, workflows } from "../db/schema";
 import { ProjectConfigResolutionError, resolveProjectConfig } from "../project/discoverConfig";
@@ -88,7 +87,7 @@ async function saveFactoryDefinition(inputPath: string): Promise<{ id: string; s
 }
 
 async function installFactoryFromPath(inputPath: string): Promise<{ id: string; targetPath: string }> {
-  await openApp();
+  const { paths } = await openApp();
   const loaded = await loadFactoryFromPath(inputPath);
   const sourcePath = loaded.sourcePath;
   const extension = path.extname(sourcePath) || ".ts";

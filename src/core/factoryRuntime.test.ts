@@ -7,11 +7,14 @@ import { replayTransitionEvents } from "./transitionEvents";
 
 const homes: string[] = [];
 const originalHome = process.env.HOME;
+const originalProjectRoot = process.env.NOTIONFLOW_PROJECT_ROOT;
 
 async function setupRuntime() {
   const home = await mkdtemp(path.join(tmpdir(), "notionflow-runtime-test-"));
   homes.push(home);
   process.env.HOME = home;
+  process.env.NOTIONFLOW_PROJECT_ROOT = home;
+  await writeFile(path.join(home, "notionflow.config.ts"), "export default { factories: [] };\n", "utf8");
   vi.resetModules();
 
   const [{ nowIso, openApp }, { paths }, runtime, schema] = await Promise.all([
@@ -29,6 +32,7 @@ async function setupRuntime() {
 describe("factoryRuntime", () => {
   afterEach(async () => {
     process.env.HOME = originalHome;
+    process.env.NOTIONFLOW_PROJECT_ROOT = originalProjectRoot;
     for (const home of homes.splice(0, homes.length)) {
       await rm(home, { recursive: true, force: true });
     }

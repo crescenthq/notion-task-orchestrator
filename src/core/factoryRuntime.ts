@@ -3,7 +3,6 @@ import path from "node:path";
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
 import { notionToken } from "../config/env";
-import { paths } from "../config/paths";
 import { loadFactoryFromPath } from "./factory";
 import { boards, runs, tasks, transitionEvents, workflows } from "../db/schema";
 import { parseTransitionEvent, TransitionEventReasonCode } from "./transitionEvents";
@@ -219,9 +218,9 @@ function leaseExpiryIso(leaseMs: number): string {
   return new Date(Date.now() + leaseMs).toISOString();
 }
 
-async function resolveInstalledFactoryPath(factoryId: string): Promise<string> {
+async function resolveInstalledFactoryPath(factoryId: string, workflowsDir: string): Promise<string> {
   const candidates = [".ts", ".mts", ".js", ".mjs", ".cts", ".cjs"].map((ext) =>
-    path.join(paths.workflowsDir, `${factoryId}${ext}`),
+    path.join(workflowsDir, `${factoryId}${ext}`),
   );
   for (const candidate of candidates) {
     try {
@@ -255,7 +254,7 @@ export async function runFactoryTaskByExternalId(
   options: RuntimeRunOptions = {},
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options);
-  const { db } = await openApp();
+  const { db, paths } = await openApp();
   const [task] = await db.select().from(tasks).where(eq(tasks.externalTaskId, taskExternalId));
   if (!task) throw new Error(`Task not found: ${taskExternalId}`);
 
@@ -289,7 +288,7 @@ export async function runFactoryTaskByExternalId(
     }
   };
 
-  const factoryPath = await resolveInstalledFactoryPath(task.workflowId);
+  const factoryPath = await resolveInstalledFactoryPath(task.workflowId, paths.workflowsDir);
   const { definition } = await loadFactoryFromPath(factoryPath);
 
   let taskTitle = task.externalTaskId;
