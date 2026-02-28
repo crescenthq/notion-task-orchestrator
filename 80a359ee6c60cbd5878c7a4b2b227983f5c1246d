@@ -1,0 +1,38 @@
+src/cli.ts
+  97ebf7a6ac1c8592 2,4-13,21-27
+src/config/envBootstrap.ts
+  97ebf7a6ac1c8592 1-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "80a359ee6c60cbd5878c7a4b2b227983f5c1246d",
+  "prompts": {
+    "97ebf7a6ac1c8592": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca547-d631-7ff1-b042-bebea9dd5dd9",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 142,
+      "total_deletions": 31,
+      "accepted_lines": 119,
+      "overriden_lines": 0
+    },
+    "c3a551ca642ec620": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ca303-1d3d-7ae3-af69-bfea593ef36e",
+        "model": "gpt-5.3-codex-spark"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    }
+  }
+}
