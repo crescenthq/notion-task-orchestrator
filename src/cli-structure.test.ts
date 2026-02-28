@@ -19,14 +19,14 @@ function descriptionOf(command: unknown): string {
 
 describe("CLI command categorization", () => {
   it("marks top-level commands as common, advanced, or integration", () => {
-    expect(descriptionOf(setupCmd)).toContain("[common]");
+    expect(descriptionOf(setupCmd)).toContain("[legacy]");
     expect(descriptionOf(doctorCmd)).toContain("[common]");
     expect(descriptionOf(tickCmd)).toContain("[common]");
     expect(descriptionOf(runCmd)).toContain("[common]");
     expect(descriptionOf(statusCmd)).toContain("[common]");
 
-    expect(descriptionOf(configCmd)).toContain("[advanced]");
-    expect(descriptionOf(boardCmd)).toContain("[advanced]");
+    expect(descriptionOf(configCmd)).toContain("[legacy]");
+    expect(descriptionOf(boardCmd)).toContain("[legacy]");
     expect(descriptionOf(factoryCmd)).toContain("[advanced]");
 
     expect(descriptionOf(integrationsCmd)).toContain("[integration]");

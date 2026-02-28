@@ -14,7 +14,7 @@ import { tickCmd } from "./commands/tick";
 const main = defineCommand({
   meta: {
     name: "notionflow",
-    description: "Orchestration-first CLI (common + advanced + integration commands)",
+    description: "Library-first, project-local orchestration CLI",
     version: "0.1.0",
   },
   subCommands: {
