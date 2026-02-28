@@ -1,13 +1,22 @@
 import { defineCommand } from "citty";
-import { openApp } from "../app/context";
 import { notionToken } from "../config/env";
+import { discoverProjectConfig } from "../project/discoverConfig";
 import { notionWhoAmI } from "../services/notion";
 
 export const doctorCmd = defineCommand({
   meta: { name: "doctor", description: "[common] Validate NotionFlow setup and integration auth" },
   async run() {
-    await openApp();
-    console.log("[ok] Local workspace ready");
+    const resolvedProject = await discoverProjectConfig(process.cwd());
+    if (!resolvedProject) {
+      console.error("[error] Could not find notionflow.config.ts from current directory.");
+      console.error(`Start directory: ${process.cwd()}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log("[ok] Local project config resolved");
+    console.log(`Project root: ${resolvedProject.projectRoot}`);
+    console.log(`Config path: ${resolvedProject.configPath}`);
 
     const token = notionToken();
     if (!token) {

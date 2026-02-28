@@ -13,3 +13,13 @@ US-002 completed (E2E init scaffold validation):
 - Test validates `.gitignore` contains exactly one `.notionflow/` entry after running `init` twice
 - Test validates no writes under `~/.config/notionflow` during init flow
 - Verified: `npm run test:e2e -- e2e/local-project-init.test.ts` passes
+
+US-003 completed (E2E doctor nested config discovery):
+- Added project config walk-up helper: `src/project/discoverConfig.ts`
+- Updated `doctor` command to resolve nearest `notionflow.config.ts` and print resolved `Project root` and `Config path`: `src/commands/doctor.ts`
+- Removed `doctor` dependency on `openApp()` to avoid global runtime writes for this flow
+- Added E2E test: `e2e/local-project-doctor.test.ts`
+- Test validates `doctor` run from nested directory resolves ancestor project root/config path
+- Test validates no writes under `~/.config/notionflow` during init + doctor scenario
+- Verified: `npm run test:e2e -- e2e/local-project-doctor.test.ts` passes
+- Note: `npm run check` still fails due pre-existing implicit-any issues in `e2e/factories/*.ts` files not touched in this task
