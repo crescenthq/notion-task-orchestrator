@@ -3,16 +3,23 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nowIso, openApp } from "../src/app/context";
 import { notionToken } from "../src/config/env";
 import { replayTransitionEvents } from "../src/core/transitionEvents";
-import { runs, tasks, transitionEvents } from "../src/db/schema";
+import { runs, tasks, transitionEvents, workflows } from "../src/db/schema";
 import {
 	notionAppendTaskPageLog,
 	notionPostComment,
 	notionUpdateTaskPageState,
 } from "../src/services/notion";
+import {
+	assertNoNewGlobalNotionflowWrites,
+	createTempProjectFixture,
+	snapshotGlobalNotionflowWrites,
+	type FilesystemSnapshot,
+	type TempProjectFixture,
+} from "./helpers/projectFixture";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,8 +80,8 @@ function isoStamp(input = new Date()): string {
 
 async function execCli(args: string[]): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
-		const child = spawn("npx", ["tsx", "src/cli.ts", ...args], {
-			cwd: path.resolve(process.cwd()),
+		const child = spawn("npx", ["tsx", cliPath, ...args], {
+			cwd: requireProjectRoot(),
 			stdio: "inherit",
 			env: process.env,
 		});
@@ -103,7 +110,7 @@ async function createTaskAndReadNewExternalId(
 	factoryId: string,
 	title: string,
 ): Promise<string> {
-	const { db } = await openApp();
+	const { db } = await openApp({ projectRoot: requireProjectRoot() });
 	const before = await db
 		.select({ id: tasks.id })
 		.from(tasks)
@@ -150,7 +157,7 @@ async function fetchTaskWithArtifacts(taskExternalId: string): Promise<{
 	run: RunRow | null;
 	events: TransitionEventRow[];
 }> {
-	const { db } = await openApp();
+	const { db } = await openApp({ projectRoot: requireProjectRoot() });
 	const [task] = await db
 		.select()
 		.from(tasks)
@@ -232,13 +239,68 @@ async function runUntilState(
 	);
 }
 
-async function installFactory(
-	factoryFilePath: string,
-	parentPage?: string,
+async function provisionNotionBoard(
+	boardId: string,
+	title: string,
 ): Promise<void> {
-	const args = ["factory", "install", "--path", factoryFilePath];
-	if (parentPage) args.push("--parent-page", parentPage);
-	await execCli(args);
+	const args = [
+                "integrations",
+                "notion",
+                "provision-board",
+                "--board",
+                boardId,
+                "--title",
+                title,
+        ];
+        if (parentPage) {
+                args.push("--parent-page", parentPage);
+        }
+        await execCli(args);
+}
+
+async function writeVerificationProjectConfig(projectRoot: string): Promise<void> {
+        const factoryEntries = verificationFactories
+                .map((fileName) => path.join(repositoryRoot, "e2e", "factories", fileName))
+                .map((absolutePath) => `    ${JSON.stringify(absolutePath)},`)
+                .join("\n");
+
+        const configContent = [
+                "export default {",
+                "  factories: [",
+                factoryEntries,
+                "  ],",
+                "};",
+                "",
+        ].join("\n");
+
+        await writeFile(path.join(projectRoot, "notionflow.config.ts"), configContent, "utf8");
+}
+
+async function seedVerificationWorkflows(projectRoot: string): Promise<void> {
+        const { db } = await openApp({ projectRoot });
+        const timestamp = nowIso();
+
+        for (const fileName of verificationFactories) {
+                const workflowId = fileName.replace(/\.ts$/, "");
+                await db
+                        .insert(workflows)
+                        .values({
+                                id: workflowId,
+                                version: 1,
+                                definitionYaml: "{}",
+                                createdAt: timestamp,
+                                updatedAt: timestamp,
+                        })
+                        .onConflictDoNothing();
+        }
+}
+
+function requireProjectRoot(): string {
+        if (!fixture) {
+                throw new Error("Verification project fixture is not initialized");
+        }
+
+        return fixture.projectDir;
 }
 
 function summarizeScenario(
@@ -289,47 +351,81 @@ const parentPage =
 	process.env.NOTIONFLOW_VERIFY_PARENT_PAGE_ID;
 const artifacts: ScenarioArtifact[] = [];
 const runStartedAt = new Date();
+const repositoryRoot = path.resolve(process.cwd());
+const cliPath = path.resolve(repositoryRoot, "src/cli.ts");
+const verificationFactories = [
+	"verify-happy.ts",
+	"verify-feedback.ts",
+	"verify-retry-failure.ts",
+	"verify-loop.ts",
+	"verify-resume-budget.ts",
+];
+
+let fixture: TempProjectFixture | null = null;
+let globalWritesBefore: FilesystemSnapshot | null = null;
 
 describe("Live factory verification", () => {
-	afterAll(async () => {
-		if (artifacts.length === 0) return;
+	beforeAll(async () => {
+		if (!hasToken) {
+                        return;
+		}
 
-		const summary = {
-			generatedAt: new Date().toISOString(),
-			durationSeconds: Math.floor((Date.now() - runStartedAt.getTime()) / 1000),
-			passedScenarios: artifacts.length,
-			artifacts,
-		};
+                globalWritesBefore = await snapshotGlobalNotionflowWrites();
+                fixture = await createTempProjectFixture("notionflow-live-verify-");
+                await execCli(["init"]);
+		await writeVerificationProjectConfig(requireProjectRoot());
+                await seedVerificationWorkflows(requireProjectRoot());
+        });
 
-		const stamp = isoStamp(runStartedAt);
-		const outDir = path.resolve("e2e/artifacts");
-		await mkdir(outDir, { recursive: true });
-		const outputPath = path.join(
-			outDir,
-			`factory-live-verification-${stamp}.json`,
-		);
-		await writeFile(
-			outputPath,
-			JSON.stringify(summary, null, 2) + "\n",
-			"utf8",
-		);
-		console.log(`Artifact: ${outputPath}`);
-	});
+        afterAll(async () => {
+		if (artifacts.length > 0) {
+                        const summary = {
+                                generatedAt: new Date().toISOString(),
+                                durationSeconds: Math.floor((Date.now() - runStartedAt.getTime()) / 1000),
+                                passedScenarios: artifacts.length,
+                                artifacts,
+			};
+
+			const stamp = isoStamp(runStartedAt);
+                        const outDir = path.resolve("e2e/artifacts");
+                        await mkdir(outDir, { recursive: true });
+                        const outputPath = path.join(
+                                outDir,
+                                `factory-live-verification-${stamp}.json`,
+                        );
+                        await writeFile(
+                                outputPath,
+                                JSON.stringify(summary, null, 2) + "\n",
+                                "utf8",
+                        );
+                        console.log(`Artifact: ${outputPath}`);
+                }
+
+                if (globalWritesBefore) {
+                        const globalWritesAfter = await snapshotGlobalNotionflowWrites();
+                        assertNoNewGlobalNotionflowWrites(globalWritesBefore, globalWritesAfter);
+                }
+
+                if (fixture) {
+                        await fixture.cleanup();
+                        fixture = null;
+                }
+        });
 
 	it.skipIf(!hasToken)("A: happy path reaches done", async () => {
 		const scenario = "A_happy";
 		const factoryId = "verify-happy";
-		const factoryPath = path.resolve("e2e/factories/verify-happy.ts");
+		const boardId = `${factoryId}-${isoStamp()}`.toLowerCase();
 		const startedAt = new Date().toISOString();
 
-		await installFactory(factoryPath, parentPage);
+		await provisionNotionBoard(boardId, `NotionFlow ${boardId}`);
 		const taskExternalId = await createTaskAndReadNewExternalId(
-			factoryId,
+			boardId,
 			factoryId,
 			`A happy path ${isoStamp()}`,
 		);
 		const task = await runUntilState(
-			factoryId,
+			boardId,
 			factoryId,
 			taskExternalId,
 			["done"],
@@ -359,18 +455,18 @@ describe("Live factory verification", () => {
 		async () => {
 			const scenario = "B_feedback";
 			const factoryId = "verify-feedback";
-			const factoryPath = path.resolve("e2e/factories/verify-feedback.ts");
+			const boardId = `${factoryId}-${isoStamp()}`.toLowerCase();
 			const startedAt = new Date().toISOString();
 
-			await installFactory(factoryPath, parentPage);
+			await provisionNotionBoard(boardId, `NotionFlow ${boardId}`);
 			const taskExternalId = await createTaskAndReadNewExternalId(
-				factoryId,
+				boardId,
 				factoryId,
 				`B feedback path ${isoStamp()}`,
 			);
 
 			const paused = await runUntilState(
-				factoryId,
+				boardId,
 				factoryId,
 				taskExternalId,
 				["feedback"],
@@ -388,7 +484,7 @@ describe("Live factory verification", () => {
 				);
 				await sleep(1500);
 			} else if (feedbackMode === "local") {
-				const { db } = await openApp();
+				const { db } = await openApp({ projectRoot: requireProjectRoot() });
 				const existingCtx = paused.stepVarsJson
 					? (JSON.parse(paused.stepVarsJson) as Record<string, unknown>)
 					: {};
@@ -419,7 +515,7 @@ describe("Live factory verification", () => {
 			}
 
 			const task = await runUntilState(
-				factoryId,
+				boardId,
 				factoryId,
 				taskExternalId,
 				["done"],
@@ -451,17 +547,17 @@ describe("Live factory verification", () => {
 	it.skipIf(!hasToken)("C: retry exhaustion reaches failed", async () => {
 		const scenario = "C_retry_failure";
 		const factoryId = "verify-retry-failure";
-		const factoryPath = path.resolve("e2e/factories/verify-retry-failure.ts");
+		const boardId = `${factoryId}-${isoStamp()}`.toLowerCase();
 		const startedAt = new Date().toISOString();
 
-		await installFactory(factoryPath, parentPage);
+		await provisionNotionBoard(boardId, `NotionFlow ${boardId}`);
 		const taskExternalId = await createTaskAndReadNewExternalId(
-			factoryId,
+			boardId,
 			factoryId,
 			`C retry failure ${isoStamp()}`,
 		);
 		const task = await runUntilState(
-			factoryId,
+			boardId,
 			factoryId,
 			taskExternalId,
 			["failed"],
@@ -495,17 +591,17 @@ describe("Live factory verification", () => {
 		async () => {
 			const scenario = "D_bounded_loop";
 			const factoryId = "verify-loop";
-			const factoryPath = path.resolve("e2e/factories/verify-loop.ts");
+			const boardId = `${factoryId}-${isoStamp()}`.toLowerCase();
 			const startedAt = new Date().toISOString();
 
-			await installFactory(factoryPath, parentPage);
+			await provisionNotionBoard(boardId, `NotionFlow ${boardId}`);
 			const taskExternalId = await createTaskAndReadNewExternalId(
-				factoryId,
+				boardId,
 				factoryId,
 				`D bounded loop ${isoStamp()}`,
 			);
 			const task = await runUntilState(
-				factoryId,
+				boardId,
 				factoryId,
 				taskExternalId,
 				["done", "failed"],
@@ -536,12 +632,12 @@ describe("Live factory verification", () => {
 		async () => {
 			const scenario = "E_resume_replay";
 			const factoryId = "verify-resume-budget";
-			const factoryPath = path.resolve("e2e/factories/verify-resume-budget.ts");
+			const boardId = `${factoryId}-${isoStamp()}`.toLowerCase();
 			const startedAt = new Date().toISOString();
 
-			await installFactory(factoryPath, parentPage);
+			await provisionNotionBoard(boardId, `NotionFlow ${boardId}`);
 			const taskExternalId = await createTaskAndReadNewExternalId(
-				factoryId,
+				boardId,
 				factoryId,
 				`E resume replay ${isoStamp()}`,
 			);

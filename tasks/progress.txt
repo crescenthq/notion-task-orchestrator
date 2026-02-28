@@ -114,3 +114,12 @@ US-001 acceptance gate finalized (typecheck remediation):
 - Verified: `npm run check` passes
 - Verified: `npm run test -- src/commands/tick.test.ts` passes
 - Note: `npm run test:e2e -- e2e/factory-verification.test.ts` currently fails because it still invokes removed `factory install` command (outside this single-task scope)
+
+US-009 acceptance gate finalized (live verification suite aligned to local-project architecture):
+- Migrated `e2e/factory-verification.test.ts` off removed `factory install` to a temp local-project flow (`init` + generated `notionflow.config.ts` with explicit factory declarations).
+- Added live-suite setup/teardown fixtures with global write guard assertions to ensure no writes occur under `~/.config/notionflow`.
+- Replaced install behavior with per-scenario Notion board provisioning and unique board IDs while preserving all five existing live verification scenarios.
+- Seeded required workflow rows in the local runtime DB for verification factories so `integrations notion create-task` satisfies FK constraints in project-local mode.
+- Updated command execution paths to run from the temp project root while still invoking the repository CLI entrypoint.
+- Verified: `npm run check` passes
+- Verified: `npm run test:e2e -- e2e/factory-verification.test.ts` passes (live Notion API)
