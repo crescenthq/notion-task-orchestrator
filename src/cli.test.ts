@@ -44,48 +44,16 @@ describe("CLI bootstrap flow", () => {
     expect(listFactories.stdout).toContain("No factories configured");
   });
 
-  it("shows deprecation guidance for the setup command", () => {
+  it("rejects removed legacy commands", () => {
     const home = mkdtempSync(path.join(tmpdir(), "notionflow-cli-test-"));
-    const project = mkdtempSync(path.join(tmpdir(), "notionflow-project-test-"));
     createdHomes.push(home);
-    createdProjects.push(project);
 
-    const init = runCli(["init"], home, {}, project);
-    expect(init.status).toBe(0);
-
-    const setup = runCli(["setup"], home, {}, project);
-    const output = `${setup.stdout}\n${setup.stderr}`;
-    expect(setup.status).toBe(0);
-    expect(output).toContain("[deprecated]");
-    expect(output).toContain("notionflow init");
-    expect(output).toContain("notionflow factory create --id <name>");
-    expect(output).toContain("notionflow doctor");
-    expect(output).toContain("notionflow tick");
-  });
-
-  it("shows deprecation guidance for legacy config and board commands", () => {
-    const home = mkdtempSync(path.join(tmpdir(), "notionflow-cli-test-"));
-    const project = mkdtempSync(path.join(tmpdir(), "notionflow-project-test-"));
-    createdHomes.push(home);
-    createdProjects.push(project);
-
-    const init = runCli(["init"], home, {}, project);
-    expect(init.status).toBe(0);
-
-    const configSet = runCli(
-      ["config", "set", "--key", "NOTION_API_TOKEN", "--value", "test-token"],
-      home,
-      {},
-      project,
-    );
-    expect(configSet.status).toBe(0);
-    expect(configSet.stdout).toContain("[deprecated]");
-    expect(configSet.stdout).toContain("notionflow init");
-
-    const boardList = runCli(["board", "list"], home, {}, project);
-    expect(boardList.status).toBe(0);
-    expect(boardList.stdout).toContain("[deprecated]");
-    expect(boardList.stdout).toContain("notionflow tick");
+    for (const args of [["setup"], ["config", "set"], ["board", "list"]]) {
+      const run = runCli(args, home);
+      const output = `${run.stdout}\n${run.stderr}`.toLowerCase();
+      expect(run.status).not.toBe(0);
+      expect(output).toContain("unknown command");
+    }
   });
 
   it("routes Notion commands through integrations and rejects top-level notion", () => {

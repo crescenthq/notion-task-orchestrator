@@ -2,10 +2,9 @@ import { defineCommand } from "citty";
 import { eq, inArray } from "drizzle-orm";
 import { nowIso, openApp } from "../app/context";
 import { boards, boardCursors, inboxEvents, runs, tasks, transitionEvents } from "../db/schema";
-import { printLegacyCommandGuidance } from "./legacyGuidance";
 
 export const boardCmd = defineCommand({
-  meta: { name: "board", description: "[legacy] Deprecated board registry commands" },
+  meta: { name: "board", description: "[advanced] Manage board registrations" },
   subCommands: {
     add: defineCommand({
       meta: { name: "add", description: "Add a Notion board" },
@@ -15,7 +14,6 @@ export const boardCmd = defineCommand({
         name: { type: "string", required: false },
       },
       async run({ args }) {
-        printLegacyCommandGuidance("board add");
         const { db } = await openApp();
         const timestamp = nowIso();
         await db
@@ -43,7 +41,6 @@ export const boardCmd = defineCommand({
     list: defineCommand({
       meta: { name: "list", description: "List configured boards" },
       async run() {
-        printLegacyCommandGuidance("board list");
         const { db } = await openApp();
         const rows = await db.select().from(boards);
         if (rows.length === 0) {
@@ -62,7 +59,6 @@ export const boardCmd = defineCommand({
         id: { type: "string", required: true },
       },
       async run({ args }) {
-        printLegacyCommandGuidance("board remove");
         const { db } = await openApp();
         const boardId = String(args.id);
 

@@ -5,7 +5,8 @@ Hard-Reset Library-First Cleanup Progress:
 - Completed: US-001 Clean up CLI surface for hard-reset onboarding
 - Notes:
   - Updated CLI description to library-first project-local positioning.
-  - Reclassified `setup`, `config`, and `board` commands as legacy in help text.
-  - Added explicit deprecation guidance toward `init -> factory create -> doctor -> tick` when legacy commands run.
-  - Updated CLI integration tests and command categorization tests for new onboarding/deprecation behavior.
+  - Removed `setup`, `config`, and `board` from top-level CLI command registration.
+  - Removed legacy deprecation/migration-guidance helper and associated command messaging.
+  - Updated CLI integration tests to assert removed commands return unknown-command errors.
+  - Updated `tasks/prd-hard-reset-library-first-cleanup.md` and `tasks/prd.json` to require hard removal (no migration/deprecation path).
   - Verification passed: `npm run check` and `npm run test`.
