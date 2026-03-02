@@ -3,6 +3,7 @@ import path from 'node:path'
 import {and, eq, isNull, lte, or} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
 import {notionToken} from '../config/env'
+import {createNotionTaskBoardAdapter} from '../adapters/notion'
 import {loadFactoryFromPath, type PipeFactoryDefinition} from './factory'
 import {boards, runTraces, runs, tasks} from '../db/schema'
 import {
@@ -12,14 +13,11 @@ import {
 import {loadDeclaredFactories} from '../project/projectConfig'
 import {parseRunTrace, RunTraceReasonCode} from './runTraces'
 import {
-  notionAppendMarkdownToPage,
-  notionAppendTaskPageLog,
-  notionGetPage,
-  notionGetPageBodyText,
-  notionPostComment,
-  notionUpdateTaskPageState,
-  pageTitle,
-} from '../services/notion'
+  nullTaskBoardAdapter,
+  type BoardTaskRef,
+  type TaskBoardAdapter,
+  type TaskBoardState,
+} from './taskBoardAdapter'
 import {formatStatusLabel} from '../services/statusIcons'
 
 type JsonObject = Record<string, unknown>
@@ -35,6 +33,7 @@ export type RuntimeRunOptions = {
   workerId?: string
   configPath?: string
   startDir?: string
+  taskBoardAdapter?: TaskBoardAdapter
 }
 
 type NormalizedRuntimeRunOptions = {
@@ -239,41 +238,46 @@ export async function runFactoryTaskByExternalId(
     .from(boards)
     .where(eq(boards.id, task.boardId))
   const token = notionToken()
+  const taskRef: BoardTaskRef = {
+    boardId: task.boardId,
+    externalTaskId: task.externalTaskId,
+  }
 
-  const syncNotionState = async (
-    state: string,
+  if (!options.taskBoardAdapter && board?.adapter === 'notion' && !token) {
+    console.log('[warn] NOTION_API_TOKEN missing; using null task board adapter')
+  }
+
+  const boardAdapter =
+    options.taskBoardAdapter ??
+    (board?.adapter === 'notion' && token
+      ? createNotionTaskBoardAdapter(token)
+      : nullTaskBoardAdapter)
+
+  const syncBoardState = async (
+    state: TaskBoardState,
     stateLabel?: string,
   ): Promise<void> => {
-    if (!board || board.adapter !== 'notion') return
-    if (!token) {
-      console.log(
-        '[warn] skipping Notion task state update (NOTION_API_TOKEN missing)',
-      )
-      return
-    }
     try {
-      await notionUpdateTaskPageState(
-        token,
-        task.externalTaskId,
-        state,
-        stateLabel,
-      )
+      await boardAdapter.updateState(taskRef, {state, label: stateLabel})
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.log(`[warn] failed to sync Notion task state: ${message}`)
+      console.log(
+        `[warn] failed to sync board task state (${boardAdapter.kind}): ${message}`,
+      )
     }
   }
 
-  const syncNotionLog = async (
+  const syncBoardLog = async (
     title: string,
     detail?: string,
   ): Promise<void> => {
-    if (!board || board.adapter !== 'notion' || !token) return
     try {
-      await notionAppendTaskPageLog(token, task.externalTaskId, title, detail)
+      await boardAdapter.appendLog(taskRef, title, detail)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.log(`[warn] failed to append Notion page log: ${message}`)
+      console.log(
+        `[warn] failed to append board task log (${boardAdapter.kind}): ${message}`,
+      )
     }
   }
 
@@ -287,17 +291,17 @@ export async function runFactoryTaskByExternalId(
 
   let taskTitle = task.externalTaskId
   let taskContext = ''
-  if (board?.adapter === 'notion' && token) {
-    try {
-      const notionPage = await notionGetPage(token, task.externalTaskId)
-      taskTitle = pageTitle(notionPage)
-      taskContext = await notionGetPageBodyText(token, task.externalTaskId)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(
-        `[warn] failed to load Notion page content for context: ${message}`,
-      )
+  try {
+    const snapshot = await boardAdapter.getTask(taskRef)
+    if (snapshot.title.trim().length > 0) {
+      taskTitle = snapshot.title
     }
+    taskContext = snapshot.bodyText
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.log(
+      `[warn] failed to load board task snapshot (${boardAdapter.kind}): ${message}`,
+    )
   }
 
   const promptLine = taskContext
@@ -506,7 +510,7 @@ export async function runFactoryTaskByExternalId(
     if (!stepLabel || stepLabel === activeStepLabel) return
 
     activeStepLabel = stepLabel
-    await syncNotionState('running', stepLabel)
+    await syncBoardState('running', stepLabel)
   }
 
   const finalizeRun = async (
@@ -549,8 +553,8 @@ export async function runFactoryTaskByExternalId(
           ? 'Factory reached terminal done state.'
           : String(ctx.last_error ?? 'no detail'),
     })
-    await syncNotionState(status)
-    await syncNotionLog(
+    await syncBoardState(status)
+    await syncBoardLog(
       status === 'done' ? 'Task complete' : `Task ${status}`,
       status === 'done'
         ? 'Factory reached terminal done state.'
@@ -596,8 +600,8 @@ export async function runFactoryTaskByExternalId(
       status: 'failed',
       message,
     })
-    await syncNotionState('failed')
-    await syncNotionLog('Task failed', message)
+    await syncBoardState('failed')
+    await syncBoardLog('Task failed', message)
     throw new Error(message)
   }
 
@@ -684,8 +688,8 @@ export async function runFactoryTaskByExternalId(
       updatedAt: nowIso(),
     })
     .where(eq(runs.id, runId))
-  await syncNotionState('running')
-  await syncNotionLog(
+  await syncBoardState('running')
+  await syncBoardLog(
     resumed ? `Resuming from state ${currentStateId}` : 'Run started',
     `Factory: ${definition.id}`,
   )
@@ -715,12 +719,13 @@ export async function runFactoryTaskByExternalId(
         format: typeof output === 'string' ? 'string' : 'markdown',
       },
     })
-    if (!board || board.adapter !== 'notion' || !token) return
     try {
-      await notionAppendMarkdownToPage(token, task.externalTaskId, markdown)
+      await boardAdapter.appendPageContent(taskRef, markdown)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.log(`[warn] failed to append page content to Notion: ${message}`)
+      console.log(
+        `[warn] failed to append board page content (${boardAdapter.kind}): ${message}`,
+      )
     }
   }
 
@@ -783,13 +788,13 @@ export async function runFactoryTaskByExternalId(
         message: result.prompt,
       })
 
-      if (token && board?.adapter === 'notion') {
-        try {
-          await notionPostComment(token, task.externalTaskId, result.prompt)
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          console.log(`[warn] failed to post Notion comment: ${message}`)
-        }
+      try {
+        await boardAdapter.postComment(taskRef, result.prompt)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to post board comment (${boardAdapter.kind}): ${message}`,
+        )
       }
 
       await db
@@ -815,8 +820,8 @@ export async function runFactoryTaskByExternalId(
           updatedAt: nowIso(),
         })
         .where(eq(runs.id, runId))
-      await syncNotionState('feedback')
-      await syncNotionLog(`Feedback needed: ${currentStateId}`, result.prompt)
+      await syncBoardState('feedback')
+      await syncBoardLog(`Feedback needed: ${currentStateId}`, result.prompt)
       return
     }
 

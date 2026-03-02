@@ -151,6 +151,64 @@ describe('factoryRuntime (definePipe only)', () => {
     expect(traceTypes.has('completed')).toBe(true)
   })
 
+  it('uses an injected task board adapter for board operations', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-injected-task-board-adapter'
+    const externalTaskId = 'task-injected-task-board-adapter-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: { visits: 0 },
+  run: async ({ ctx, writePage }) => {
+    await writePage({ markdown: "# Adapter Output" });
+    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1 };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+
+    const adapter = {
+      kind: 'mock',
+      getTask: vi.fn(async (ref: {externalTaskId: string}) => ({
+        id: ref.externalTaskId,
+        title: 'Injected task title',
+        bodyText: 'Injected task body',
+      })),
+      updateState: vi.fn(async () => undefined),
+      appendLog: vi.fn(async () => undefined),
+      appendPageContent: vi.fn(async () => undefined),
+      postComment: vi.fn(async () => undefined),
+    }
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId, {
+      taskBoardAdapter: adapter,
+    })
+
+    expect(adapter.getTask).toHaveBeenCalledWith({
+      boardId: factoryId,
+      externalTaskId,
+    })
+    expect(adapter.updateState).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({state: 'running'}),
+    )
+    expect(adapter.updateState).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({state: 'done'}),
+    )
+    expect(adapter.appendPageContent).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      '# Adapter Output',
+    )
+    expect(adapter.appendLog).toHaveBeenCalled()
+  })
+
   it('persists direct pipe feedback state and resumes from persisted context', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-direct-pipe-feedback'
