@@ -19,6 +19,11 @@ import {
   type TaskBoardState,
 } from './taskBoardAdapter'
 import {formatStatusLabel} from '../services/statusIcons'
+import {
+  CheckpointMismatchError,
+  parseCheckpoint,
+  type Checkpoint,
+} from '../factory/checkpoint'
 
 type JsonObject = Record<string, unknown>
 
@@ -52,15 +57,31 @@ const PIPE_DONE_STATE_ID = '__pipe_done__'
 const PIPE_BLOCKED_STATE_ID = '__pipe_blocked__'
 const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
+const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function omitCheckpointContextKey(ctx: JsonObject): JsonObject {
+  if (!(PIPE_CHECKPOINT_KEY in ctx)) return ctx
+  const next = {...ctx}
+  delete next[PIPE_CHECKPOINT_KEY]
+  return next
+}
+
+function isCheckpointMismatchError(error: unknown): boolean {
+  return (
+    error instanceof CheckpointMismatchError ||
+    (isRecord(error) && error.code === 'checkpoint_mismatch')
+  )
 }
 
 type PipeAwaitFeedbackSignal = {
   type: 'await_feedback'
   prompt: string
   ctx: unknown
+  checkpoint?: unknown
 }
 
 type PipeEndSignal = {
@@ -338,6 +359,20 @@ export async function runFactoryTaskByExternalId(
       )
     }
   }
+
+  const persistedCheckpointValue = ctx[PIPE_CHECKPOINT_KEY]
+  const persistedCheckpoint = parseCheckpoint(persistedCheckpointValue, {
+    location: 'persisted context',
+    onInvalid: 'return-undefined',
+  })
+  if (
+    persistedCheckpointValue !== undefined &&
+    persistedCheckpointValue !== null &&
+    !persistedCheckpoint
+  ) {
+    console.log('[warn] invalid persisted checkpoint; falling back to full replay')
+  }
+  ctx = omitCheckpointContextKey(ctx)
 
   let currentStateId = task.currentStepId ? task.currentStepId : initialStateId
   const resumed = task.currentStepId !== null || task.stepVarsJson !== null
@@ -749,20 +784,37 @@ export async function runFactoryTaskByExternalId(
 
     let result: unknown
     try {
-      result = await pipeDefinition.run({
-        ctx,
-        feedback,
-        task: {
-          id: task.externalTaskId,
-          title: taskTitle,
-          prompt: taskPrompt,
-          context: taskContext,
-        },
-        writePage,
-        onStepStart: onPipeStepStart,
-        runId,
-        tickId,
-      })
+      const runPipe = async (checkpoint: Checkpoint | undefined): Promise<unknown> =>
+        pipeDefinition.run({
+          ctx,
+          feedback,
+          checkpoint,
+          task: {
+            id: task.externalTaskId,
+            title: taskTitle,
+            prompt: taskPrompt,
+            context: taskContext,
+          },
+          writePage,
+          onStepStart: onPipeStepStart,
+          runId,
+          tickId,
+        })
+
+      let activeCheckpoint = persistedCheckpoint
+      try {
+        result = await runPipe(activeCheckpoint)
+      } catch (error) {
+        if (activeCheckpoint && isCheckpointMismatchError(error)) {
+          console.log(
+            '[warn] checkpoint mismatch during resume; retrying with full replay',
+          )
+          activeCheckpoint = undefined
+          result = await runPipe(undefined)
+        } else {
+          throw error
+        }
+      }
     } finally {
       await stopLeaseHeartbeat()
     }
@@ -770,8 +822,12 @@ export async function runFactoryTaskByExternalId(
     await ensureActiveLease()
 
     if (isPipeAwaitFeedbackSignal(result)) {
-      ctx = mergeContext(parsePipeContext(result.ctx, 'await_feedback'), {
+      const signalCheckpoint = parseCheckpoint(result.checkpoint, {
+        location: 'await_feedback signal',
+      })
+      ctx = mergeContext(omitCheckpointContextKey(parsePipeContext(result.ctx, 'await_feedback')), {
         [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
+        [PIPE_CHECKPOINT_KEY]: signalCheckpoint ?? null,
       })
       await persistStepTrace(
         currentStateId,
@@ -826,7 +882,7 @@ export async function runFactoryTaskByExternalId(
     }
 
     if (isPipeEndSignal(result)) {
-      ctx = parsePipeContext(result.ctx, `end.${result.status}`)
+      ctx = omitCheckpointContextKey(parsePipeContext(result.ctx, `end.${result.status}`))
       if (result.message) {
         ctx = mergeContext(ctx, {last_error: result.message})
       }
@@ -874,7 +930,7 @@ export async function runFactoryTaskByExternalId(
       )
     }
 
-    ctx = parsePipeContext(result, 'run')
+    ctx = omitCheckpointContextKey(parsePipeContext(result, 'run'))
     await persistStepTrace(
       currentStateId,
       PIPE_DONE_STATE_ID,

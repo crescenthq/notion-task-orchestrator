@@ -163,6 +163,10 @@ describe('local project run command', () => {
     >
     expect(pausedCtx.attempts).toBe(1)
     expect(pausedCtx.__nf_feedback_prompt).toBe('Approve this task to continue.')
+    expect(pausedCtx.__nf_checkpoint).toEqual({
+      v: 1,
+      path: [{k: 'flow', at: 1}],
+    })
 
     await queueTaskWithContext(fixture.projectDir, externalTaskId, {
       ...pausedCtx,
@@ -179,7 +183,7 @@ describe('local project run command', () => {
     >
     expect(doneCtx.approved).toBe(true)
     expect(doneCtx.feedback_value).toBe('approved-by-direct-pipe')
-    expect(doneCtx.attempts).toBe(2)
+    expect(doneCtx.attempts).toBe(1)
     expect(doneCtx.human_feedback).toBeUndefined()
     const traces = await readTaskRunTraces(fixture.projectDir, externalTaskId)
     const traceTypes = new Set(traces.map(trace => trace.type))

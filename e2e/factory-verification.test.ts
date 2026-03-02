@@ -222,17 +222,6 @@ async function runTick(
   await execCli(args)
 }
 
-async function runSingleTask(
-  taskExternalId: string,
-  maxTransitionsPerTick?: number,
-): Promise<void> {
-  const args = ['run', '--task', taskExternalId]
-  if (typeof maxTransitionsPerTick === 'number') {
-    args.push('--max-transitions-per-tick', String(maxTransitionsPerTick))
-  }
-  await execCli(args)
-}
-
 async function runUntilState(
   boardId: string,
   factoryId: string,
@@ -685,32 +674,110 @@ describe('Live factory verification', () => {
   )
 
   it(
-    'E: resume replay matches exact transition path across ticks',
+    'E: checkpointed resume avoids replay across feedback ticks',
     async () => {
-      const scenario = 'E_resume_replay'
+      const scenario = 'E_checkpoint_resume'
       const factoryId = 'verify-resume-budget'
       const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
       const startedAt = new Date().toISOString()
+      const token = notionToken()!
+
+      const queueWithFeedback = async (
+        taskRow: TaskRow,
+        feedback: string,
+      ): Promise<void> => {
+        const {db} = await openApp({projectRoot: requireProjectRoot()})
+        const existingCtx = taskRow.stepVarsJson
+          ? (JSON.parse(taskRow.stepVarsJson) as Record<string, unknown>)
+          : {}
+        await db
+          .update(tasks)
+          .set({
+            state: 'queued',
+            stepVarsJson: JSON.stringify({
+              ...existingCtx,
+              human_feedback: feedback,
+            }),
+            waitingSince: null,
+            updatedAt: nowIso(),
+          })
+          .where(eq(tasks.id, taskRow.id))
+        await notionUpdateTaskPageState(token, taskRow.externalTaskId, 'queued')
+      }
 
       await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
       const taskExternalId = await createTaskAndReadNewExternalId(
         boardId,
         factoryId,
-        `E resume replay ${isoStamp()}`,
+        `E checkpoint resume ${isoStamp()}`,
       )
 
-      for (let i = 0; i < 8; i += 1) {
-        await runSingleTask(taskExternalId, 1)
-        const {task} = await fetchTaskWithArtifacts(taskExternalId)
-        if (task.state === 'done') break
-      }
+      const firstPause = await runUntilState(
+        boardId,
+        factoryId,
+        taskExternalId,
+        ['feedback'],
+        {
+          maxTicks: 6,
+        },
+      )
 
-      const {task, run, events} = await fetchTaskWithArtifacts(taskExternalId)
+      const firstPauseCtx = firstPause.stepVarsJson
+        ? (JSON.parse(firstPause.stepVarsJson) as Record<string, unknown>)
+        : {}
+      expect(firstPauseCtx.__nf_checkpoint).toEqual({
+        v: 1,
+        path: [{k: 'flow', at: 1}],
+      })
+
+      await queueWithFeedback(firstPause, 'checkpoint-feedback-1')
+
+      const secondPause = await runUntilState(
+        boardId,
+        factoryId,
+        taskExternalId,
+        ['feedback'],
+        {
+          maxTicks: 6,
+        },
+      )
+
+      const secondPauseCtx = secondPause.stepVarsJson
+        ? (JSON.parse(secondPause.stepVarsJson) as Record<string, unknown>)
+        : {}
+      expect(secondPauseCtx.step_a_runs).toBe(1)
+      expect(secondPauseCtx.step_b_runs).toBe(1)
+      expect(secondPauseCtx.__nf_checkpoint).toEqual({
+        v: 1,
+        path: [{k: 'flow', at: 3}],
+      })
+
+      await queueWithFeedback(secondPause, 'checkpoint-feedback-2')
+
+      const task = await runUntilState(
+        boardId,
+        factoryId,
+        taskExternalId,
+        ['done'],
+        {maxTicks: 6},
+      )
+
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
       expect(task.state).toBe('done')
 
+      const doneCtx = task.stepVarsJson
+        ? (JSON.parse(task.stepVarsJson) as Record<string, unknown>)
+        : {}
+      expect(doneCtx.step_a_runs).toBe(1)
+      expect(doneCtx.step_b_runs).toBe(1)
+      expect(doneCtx.first_feedback).toBe('checkpoint-feedback-1')
+      expect(doneCtx.second_feedback).toBe('checkpoint-feedback-2')
+
       const expectedPath = [
-        '__pipe_run__->__pipe_done__',
+        '__pipe_run__->__pipe_feedback__',
+        '__pipe_feedback__->__pipe_feedback__',
+        '__pipe_feedback__->__pipe_done__',
       ]
       const actualPath = transitionLike(events).map(
         e => `${e.fromStateId}->${e.toStateId}`,
@@ -718,7 +785,7 @@ describe('Live factory verification', () => {
       expect(actualPath).toEqual(expectedPath)
 
       const distinctTicks = new Set(transitionLike(events).map(e => e.tickId))
-      expect(distinctTicks.size).toBeGreaterThanOrEqual(1)
+      expect(distinctTicks.size).toBeGreaterThanOrEqual(3)
 
       artifacts.push(
         summarizeScenario(
@@ -729,7 +796,7 @@ describe('Live factory verification', () => {
           task,
           run,
           events,
-          ['maxTransitionsPerTick=1', 'replay path exact-match'],
+          ['checkpoint path exact-match', 'no pre-ask replay across ticks'],
         ),
       )
     },

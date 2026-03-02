@@ -300,6 +300,179 @@ describe('factoryRuntime (definePipe only)', () => {
     expect(traceTypes.has('resumed')).toBe(true)
   })
 
+  it('resumes from checkpoints without replaying pre-ask steps', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-checkpointed-resume'
+    const externalTaskId = 'task-runtime-checkpointed-resume-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+
+    await writeFile(
+      factoryPath,
+      `import {ask, definePipe, end, flow, step} from ${JSON.stringify(canonicalPath)};
+export default definePipe({
+  id: ${JSON.stringify(factoryId)},
+  initial: {step_a_runs: 0, step_b_runs: 0, approved_1: false, approved_2: false},
+  run: flow(
+    step('step-a', ctx => ({...ctx, step_a_runs: Number(ctx.step_a_runs ?? 0) + 1})),
+    ask('approval-1', (ctx, reply) => ({...ctx, approved_1: reply.trim().length > 0})),
+    step('step-b', ctx => ({...ctx, step_b_runs: Number(ctx.step_b_runs ?? 0) + 1})),
+    ask('approval-2', (ctx, reply) => ({...ctx, approved_2: reply.trim().length > 0})),
+    end.done(),
+  ),
+});
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [firstPause] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(firstPause?.state).toBe('feedback')
+
+    const firstCtx = JSON.parse(firstPause?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(firstCtx.step_a_runs).toBe(1)
+    expect(firstCtx.step_b_runs).toBe(0)
+    expect(firstCtx.__nf_checkpoint).toEqual({
+      v: 1,
+      path: [{k: 'flow', at: 1}],
+    })
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({...firstCtx, human_feedback: 'yes-1'}),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [secondPause] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(secondPause?.state).toBe('feedback')
+
+    const secondCtx = JSON.parse(secondPause?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(secondCtx.step_a_runs).toBe(1)
+    expect(secondCtx.step_b_runs).toBe(1)
+    expect(secondCtx.__nf_checkpoint).toEqual({
+      v: 1,
+      path: [{k: 'flow', at: 3}],
+    })
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({...secondCtx, human_feedback: 'yes-2'}),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [doneTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    expect(doneTask?.state).toBe('done')
+    const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(doneCtx.step_a_runs).toBe(1)
+    expect(doneCtx.step_b_runs).toBe(1)
+    expect(doneCtx.approved_1).toBe(true)
+    expect(doneCtx.approved_2).toBe(true)
+    expect(doneCtx.__nf_checkpoint).toBeUndefined()
+  })
+
+  it('retries with full replay when persisted checkpoint mismatches', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-checkpoint-mismatch-fallback'
+    const externalTaskId = 'task-runtime-checkpoint-mismatch-fallback-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+
+    await writeFile(
+      factoryPath,
+      `import {ask, definePipe, end, flow} from ${JSON.stringify(canonicalPath)};
+export default definePipe({
+  id: ${JSON.stringify(factoryId)},
+  initial: {approved: false, parsed_count: 0},
+  run: flow(
+    ask('approve', (ctx, reply) => ({
+      ...ctx,
+      approved: reply.trim().length > 0,
+      parsed_count: Number(ctx.parsed_count ?? 0) + 1,
+    })),
+    end.done(),
+  ),
+});
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [paused] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(paused?.state).toBe('feedback')
+
+    const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'yes',
+          __nf_checkpoint: {
+            v: 1,
+            path: [{k: 'flow', at: 99}],
+          },
+        }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [doneTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(doneTask?.state).toBe('done')
+
+    const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(doneCtx.approved).toBe(true)
+    expect(doneCtx.parsed_count).toBe(1)
+  })
+
   it('maps terminal end signals to persisted task and run statuses', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const terminalStates = ['done', 'blocked', 'failed'] as const

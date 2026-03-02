@@ -1,5 +1,15 @@
 import {describe, expect, it, vi} from 'vitest'
-import {ask, decide, end, flow, loop, step, write, type PipeInput} from './canonical'
+import {
+  CheckpointMismatchError,
+  ask,
+  decide,
+  end,
+  flow,
+  loop,
+  step,
+  write,
+  type PipeInput,
+} from './canonical'
 
 type TestCtx = {
   score: number
@@ -80,6 +90,10 @@ describe('canonical flow helper', () => {
       type: 'await_feedback',
       prompt: 'Please reply',
       ctx: {score: 1, trail: ['first']},
+      checkpoint: {
+        v: 1,
+        path: [{k: 'flow', at: 1}],
+      },
     })
     expect(first).toHaveBeenCalledTimes(1)
     expect(awaitFeedback).toHaveBeenCalledTimes(1)
@@ -116,6 +130,227 @@ describe('canonical flow helper', () => {
     expect(first).toHaveBeenCalledTimes(1)
     expect(endNow).toHaveBeenCalledTimes(1)
     expect(skipped).not.toHaveBeenCalled()
+  })
+})
+
+describe('checkpoint-aware resume behavior', () => {
+  it('resumes through multiple asks without replaying prior side-effectful steps', async () => {
+    type CheckpointCtx = {
+      aRuns: number
+      bRuns: number
+      cRuns: number
+      firstReply?: string
+      secondReply?: string
+      human_feedback?: string
+    }
+
+    const input: PipeInput<CheckpointCtx> = {
+      ctx: {aRuns: 0, bRuns: 0, cRuns: 0},
+      runId: 'run-checkpoint-flow',
+      tickId: 'tick-checkpoint-flow',
+    }
+
+    const stepA = vi.fn((ctx: CheckpointCtx) => ({
+      ...ctx,
+      aRuns: ctx.aRuns + 1,
+    }))
+    const stepB = vi.fn((ctx: CheckpointCtx) => ({
+      ...ctx,
+      bRuns: ctx.bRuns + 1,
+    }))
+    const stepC = vi.fn((ctx: CheckpointCtx) => ({
+      ...ctx,
+      cRuns: ctx.cRuns + 1,
+    }))
+
+    const run = flow(
+      step('step-a', stepA),
+      ask<CheckpointCtx>('ask-1', (ctx, reply) => ({
+        ...ctx,
+        firstReply: reply,
+      })),
+      step('step-b', stepB),
+      ask<CheckpointCtx>('ask-2', (ctx, reply) => ({
+        ...ctx,
+        secondReply: reply,
+      })),
+      step('step-c', stepC),
+    )
+
+    const first = await run(input)
+    expect(first).toEqual({
+      type: 'await_feedback',
+      prompt: 'ask-1',
+      ctx: {aRuns: 1, bRuns: 0, cRuns: 0},
+      checkpoint: {
+        v: 1,
+        path: [{k: 'flow', at: 1}],
+      },
+    })
+
+    if (!('type' in first) || first.type !== 'await_feedback') {
+      throw new Error('Expected first run to suspend')
+    }
+
+    const second = await run({
+      ...input,
+      ctx: {
+        ...first.ctx,
+        human_feedback: 'first-ok',
+      },
+      checkpoint: first.checkpoint,
+    })
+
+    expect(second).toEqual(
+      expect.objectContaining({
+        type: 'await_feedback',
+        prompt: 'ask-2',
+        checkpoint: {
+          v: 1,
+          path: [{k: 'flow', at: 3}],
+        },
+      }),
+    )
+
+    if (!('type' in second) || second.type !== 'await_feedback') {
+      throw new Error('Expected second run to suspend')
+    }
+
+    const third = await run({
+      ...input,
+      ctx: {
+        ...second.ctx,
+        human_feedback: 'second-ok',
+      },
+      checkpoint: second.checkpoint,
+    })
+
+    expect(third).toEqual(
+      expect.objectContaining({
+        aRuns: 1,
+        bRuns: 1,
+        cRuns: 1,
+        firstReply: 'first-ok',
+        secondReply: 'second-ok',
+      }),
+    )
+    expect(stepA).toHaveBeenCalledTimes(1)
+    expect(stepB).toHaveBeenCalledTimes(1)
+    expect(stepC).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips decide select when resuming from a decide checkpoint', async () => {
+    type DecideCheckpointCtx = {
+      route: 'approve'
+      approved?: boolean
+    }
+
+    const select = vi.fn((ctx: DecideCheckpointCtx) => ctx.route)
+    const run = decide<DecideCheckpointCtx, 'approve'>(
+      select,
+      {
+        approve: ask<DecideCheckpointCtx>('approve-now', (ctx, reply) => ({
+          ...ctx,
+          approved: reply === 'yes',
+        })),
+      },
+    )
+
+    const first = await run({
+      ctx: {route: 'approve'},
+      runId: 'run-checkpoint-decide',
+      tickId: 'tick-checkpoint-decide',
+    })
+
+    if (!('type' in first) || first.type !== 'await_feedback') {
+      throw new Error('Expected decide branch to suspend')
+    }
+
+    const second = await run({
+      ctx: first.ctx,
+      feedback: 'yes',
+      checkpoint: first.checkpoint,
+      runId: 'run-checkpoint-decide',
+      tickId: 'tick-checkpoint-decide-2',
+    })
+
+    expect(second).toEqual({route: 'approve', approved: true})
+    expect(select).toHaveBeenCalledTimes(1)
+  })
+
+  it('resumes loop iteration from checkpoint and skips pre-loop until check', async () => {
+    type LoopCheckpointCtx = {
+      iterations: number
+      human_feedback?: string
+    }
+
+    const until = vi.fn((ctx: LoopCheckpointCtx) => ctx.iterations >= 2)
+    const run = loop<LoopCheckpointCtx>({
+      body: ask<LoopCheckpointCtx>('loop-ask', (ctx, _reply) => ({
+        ...ctx,
+        iterations: ctx.iterations + 1,
+      })),
+      until,
+      max: 3,
+    })
+
+    const first = await run({
+      ctx: {iterations: 0},
+      runId: 'run-checkpoint-loop',
+      tickId: 'tick-checkpoint-loop',
+    })
+    expect(until).toHaveBeenCalledTimes(1)
+
+    if (!('type' in first) || first.type !== 'await_feedback') {
+      throw new Error('Expected first loop run to suspend')
+    }
+
+    const second = await run({
+      ctx: {
+        ...first.ctx,
+        human_feedback: 'next',
+      },
+      checkpoint: first.checkpoint,
+      runId: 'run-checkpoint-loop',
+      tickId: 'tick-checkpoint-loop-2',
+    })
+    expect(until).toHaveBeenCalledTimes(2)
+
+    if (!('type' in second) || second.type !== 'await_feedback') {
+      throw new Error('Expected second loop run to suspend')
+    }
+
+    const third = await run({
+      ctx: {
+        ...second.ctx,
+        human_feedback: 'done',
+      },
+      checkpoint: second.checkpoint,
+      runId: 'run-checkpoint-loop',
+      tickId: 'tick-checkpoint-loop-3',
+    })
+    expect(until).toHaveBeenCalledTimes(3)
+    expect(third).toEqual({iterations: 2})
+  })
+
+  it('throws checkpoint mismatch for out-of-range flow checkpoints', async () => {
+    const run = flow(
+      step('one', (ctx: TestCtx) => ({
+        ...ctx,
+        score: ctx.score + 1,
+      })),
+      end.done<TestCtx>(),
+    )
+
+    await expect(
+      run({
+        ...baseInput,
+        checkpoint: {
+          v: 1,
+          path: [{k: 'flow', at: 99}],
+        },
+      }),
+    ).rejects.toBeInstanceOf(CheckpointMismatchError)
   })
 })
 
