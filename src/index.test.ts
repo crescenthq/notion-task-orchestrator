@@ -12,26 +12,15 @@ const repoRoot = path.resolve(
 describe('public library API', () => {
   it('exports an explicit stable runtime surface', () => {
     expect(Object.keys(api).sort()).toEqual([
-      'agentSandbox',
-      'agentSandboxEffect',
       'ask',
       'askForRepo',
-      'askForRepoEffect',
-      'createOrchestrationLayer',
-      'createOrchestrationTestLayer',
-      'createOrchestrationUtilities',
-      'createOrchestrationUtilitiesFromLayer',
+      'createOrchestration',
       'decide',
-      'defaultOrchestrationAdapters',
-      'defaultOrchestrationLayer',
       'defineConfig',
       'definePipe',
       'end',
       'flow',
-      'invokeAgent',
-      'invokeAgentEffect',
       'loop',
-      'runOrchestrationEffect',
       'step',
       'write',
     ])

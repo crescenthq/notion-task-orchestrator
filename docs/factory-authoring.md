@@ -138,45 +138,45 @@ Typical Notion loop:
 4. `notionflow integrations notion sync-factories --config <path>` provisions
    all declared factory boards in a new environment before running the first tick.
 
-## Service Layer Setup (Layer-Based)
+## Service Layer Setup (Provider-Based)
 
-Orchestration utilities are Layer-backed services:
+Orchestration utilities are provider-backed services:
 
-- `askForRepo`
 - `invokeAgent`
-- `agentSandbox`
+- `runCommand`
+- `askForRepo` (helper built on `invokeAgent`)
 
 ### Production Wiring
 
 ```ts
 import {
-  createOrchestrationLayer,
-  createOrchestrationUtilitiesFromLayer,
+  askForRepo,
+  createOrchestration,
   definePipe,
   end,
   flow,
   step,
 } from 'notionflow'
 
-const layer = createOrchestrationLayer({
-  askForRepo: {
-    request: async () => ({
-      repo: 'https://github.com/acme/demo',
-      branch: 'main',
-    }),
+const utils = createOrchestration({
+  invokeAgent: async ({prompt}) => {
+    if (prompt.includes('Select repository')) {
+      return {
+        text: 'repo selected',
+        structured: {
+          repo: 'https://github.com/acme/demo',
+          branch: 'main',
+        },
+      }
+    }
+
+    return {text: `processed: ${prompt}`}
   },
-  invokeAgent: {
-    invoke: async ({prompt}) => ({text: `processed: ${prompt}`}),
-  },
-  agentSandbox: {
-    run: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
-  },
+  runCommand: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
 })
 
-const utils = createOrchestrationUtilitiesFromLayer(layer)
-
 const runPlanning = step('run-planning', async ctx => {
-  const repo = await utils.askForRepo({prompt: 'Select repository'})
+  const repo = await askForRepo(utils, 'Select repository')
   if (!repo.ok) return {...ctx, failure: repo.error.message}
 
   const plan = await utils.invokeAgent({
@@ -184,34 +184,33 @@ const runPlanning = step('run-planning', async ctx => {
   })
   if (!plan.ok) return {...ctx, failure: plan.error.message}
 
-  return {...ctx, plan: plan.value.text}
+  const command = await utils.runCommand({command: 'git', args: ['status']})
+  if (!command.ok) return {...ctx, failure: command.error.message}
+
+  return {...ctx, plan: plan.value.text, status: command.value.stdout}
 })
 
 export default definePipe({
   id: 'service-layer-demo',
-  initial: {plan: '', failure: ''},
+  initial: {plan: '', status: '', failure: ''},
   run: flow(runPlanning, end.done()),
 })
 ```
 
-### Test Overrides
+### Test Provider Swaps
 
 ```ts
-import {
-  createOrchestrationLayer,
-  createOrchestrationTestLayer,
-  createOrchestrationUtilitiesFromLayer,
-} from 'notionflow'
+import {createOrchestration} from 'notionflow'
 
-const baseLayer = createOrchestrationLayer()
-const testLayer = createOrchestrationTestLayer(
-  {
-    invokeAgent: async () => ({text: 'stubbed-plan'}),
-  },
-  baseLayer,
-)
+const alpha = createOrchestration({
+  invokeAgent: async () => ({text: 'alpha-plan'}),
+  runCommand: async () => ({exitCode: 0, stdout: '', stderr: ''}),
+})
 
-const utils = createOrchestrationUtilitiesFromLayer(testLayer)
+const beta = createOrchestration({
+  invokeAgent: async () => ({text: 'beta-plan'}),
+  runCommand: async () => ({exitCode: 0, stdout: '', stderr: ''}),
+})
 ```
 
 ## Local Project Workflow

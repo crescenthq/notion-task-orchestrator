@@ -189,40 +189,41 @@ Common live loop:
 4. `notionflow integrations notion sync-factories --config notionflow.config.ts`
    provisions boards for every declared factory before starting tick loops.
 
-## Orchestration Service Layer
+## Orchestration Utilities
 
-Use layer-backed orchestration utilities (`askForRepo`, `invokeAgent`,
-`agentSandbox`) for provider-agnostic integration.
+Use provider-backed orchestration utilities (`invokeAgent`, `runCommand`) for
+provider-agnostic integration. Domain helpers like `askForRepo` compose on top
+of `invokeAgent`.
 
 ```ts
 import {
-  createOrchestrationLayer,
-  createOrchestrationUtilitiesFromLayer,
+  askForRepo,
+  createOrchestration,
   definePipe,
   end,
   flow,
   step,
 } from 'notionflow'
 
-const layer = createOrchestrationLayer({
-  askForRepo: {
-    request: async () => ({
-      repo: 'https://github.com/acme/demo',
-      branch: 'main',
-    }),
+const utils = createOrchestration({
+  invokeAgent: async ({prompt}) => {
+    if (prompt.includes('Choose repo')) {
+      return {
+        text: 'repo selected',
+        structured: {
+          repo: 'https://github.com/acme/demo',
+          branch: 'main',
+        },
+      }
+    }
+
+    return {text: `planned: ${prompt}`}
   },
-  invokeAgent: {
-    invoke: async ({prompt}) => ({text: `planned: ${prompt}`}),
-  },
-  agentSandbox: {
-    run: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
-  },
+  runCommand: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
 })
 
-const utils = createOrchestrationUtilitiesFromLayer(layer)
-
 const plan = step('plan', async ctx => {
-  const repo = await utils.askForRepo({prompt: 'Choose repo'})
+  const repo = await askForRepo(utils, 'Choose repo')
   if (!repo.ok) return {...ctx, failure: repo.error.message}
 
   const result = await utils.invokeAgent({
@@ -230,12 +231,18 @@ const plan = step('plan', async ctx => {
   })
   if (!result.ok) return {...ctx, failure: result.error.message}
 
-  return {...ctx, plan: result.value.text}
+  const command = await utils.runCommand({
+    command: 'git',
+    args: ['status', '--short'],
+  })
+  if (!command.ok) return {...ctx, failure: command.error.message}
+
+  return {...ctx, plan: result.value.text, status: command.value.stdout}
 })
 
 export default definePipe({
   id: 'service-layer-demo',
-  initial: {plan: '', failure: ''},
+  initial: {plan: '', status: '', failure: ''},
   run: flow(plan, end.done()),
 })
 ```
