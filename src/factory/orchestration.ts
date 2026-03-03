@@ -1,65 +1,94 @@
-type UtilityMetadata = Record<string, unknown>
+export type KnownAgentErrorCode = 'timeout' | 'aborted' | 'call_error'
 
-export type UtilityErrorCode = 'adapter_error' | 'timeout'
+export type AgentErrorCode = KnownAgentErrorCode | (string & {})
 
-export type UtilityError = {
-  code: UtilityErrorCode
+export type AgentError<TCode extends string = AgentErrorCode> = {
+  code: TCode
   message: string
   cause?: unknown
 }
 
-export type UtilityResult<TValue> =
+export type AgentResult<TValue, TCode extends string = AgentErrorCode> =
   | {
       ok: true
       value: TValue
     }
   | {
       ok: false
-      error: UtilityError
+      error: AgentError<TCode>
     }
 
-type TimeoutConfig = {
+export type RetryPolicy = {
+  attempts: number
+  backoffMs: number
+}
+
+export type AgentCallContext = {
+  signal: AbortSignal
+  attempt: number
+}
+
+export type AgentErrorMapContext<TInput> = {
+  id: string
+  input: TInput
+  attempt: number
+}
+
+export type AgentErrorMapper<TInput, TCode extends string = AgentErrorCode> = (
+  error: unknown,
+  ctx: AgentErrorMapContext<TInput>,
+) => AgentError<TCode>
+
+export type DefineAgentOptions<
+  TInput,
+  TOutput,
+  TCode extends string = AgentErrorCode,
+> = {
+  id: string
   timeoutMs?: number
+  retry?: RetryPolicy
+  call: (input: TInput, ctx: AgentCallContext) => Promise<TOutput>
+  mapError?: AgentErrorMapper<TInput, TCode>
 }
 
-export type InvokeAgentInput = TimeoutConfig & {
-  prompt: string
-  schema?: Record<string, string>
-  model?: string
-  metadata?: UtilityMetadata
+export type AgentInvokeOptions = {
+  timeoutMs?: number
+  signal?: AbortSignal
 }
 
-export type InvokeAgentOutput = {
-  text: string
-  structured?: Record<string, unknown>
-  metadata?: UtilityMetadata
+export type Agent<TInput, TOutput, TCode extends string = AgentErrorCode> = {
+  id: string
+  invoke: (
+    input: TInput,
+    options?: AgentInvokeOptions,
+  ) => Promise<AgentResult<TOutput, TCode>>
 }
 
-export type RunCommandInput = TimeoutConfig & {
-  command: string
-  args?: string[]
-  cwd?: string
-  env?: Record<string, string>
-  metadata?: UtilityMetadata
-}
-
-export type RunCommandOutput = {
-  exitCode: number
-  stdout: string
-  stderr: string
-  metadata?: UtilityMetadata
-}
-
-export type OrchestrationProvider = {
-  invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentOutput>
-  runCommand(input: RunCommandInput): Promise<RunCommandOutput>
-}
-
-class UtilityTimeoutError extends Error {
-  constructor(operationName: string, timeoutMs: number) {
-    super(`${operationName} timed out after ${timeoutMs}ms`)
-    this.name = 'UtilityTimeoutError'
+class AgentTimeoutError extends Error {
+  constructor(agentId: string, attempt: number, timeoutMs: number) {
+    super(`${agentId} timed out on attempt ${attempt} after ${timeoutMs}ms`)
+    this.name = 'AgentTimeoutError'
   }
+}
+
+class AgentAbortedError extends Error {
+  constructor(agentId: string, attempt: number, reason?: unknown) {
+    const reasonMessage =
+      reason === undefined
+        ? ''
+        : `: ${reason instanceof Error ? reason.message : String(reason)}`
+    super(`${agentId} aborted on attempt ${attempt}${reasonMessage}`)
+    this.name = 'AgentAbortedError'
+  }
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return (
+    (error instanceof Error && error.name === 'AbortError') ||
+    (typeof DOMException !== 'undefined' &&
+      error instanceof DOMException &&
+      error.name === 'AbortError')
+  )
 }
 
 function normalizeTimeoutMs(timeoutMs: number | undefined): number | undefined {
@@ -68,99 +97,267 @@ function normalizeTimeoutMs(timeoutMs: number | undefined): number | undefined {
   return Math.floor(timeoutMs)
 }
 
-function resolveTimeoutMs(
-  inputTimeoutMs: number | undefined,
-  optionsTimeoutMs: number | undefined,
-): number | undefined {
-  return normalizeTimeoutMs(optionsTimeoutMs ?? inputTimeoutMs)
-}
-
-function withTimeout<TValue>(
-  operationName: string,
-  operation: Promise<TValue>,
-  timeoutMs: number | undefined,
-): Promise<TValue> {
-  if (timeoutMs === undefined) return operation
-
-  return new Promise<TValue>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new UtilityTimeoutError(operationName, timeoutMs))
-    }, timeoutMs)
-
-    operation
-      .then(value => {
-        clearTimeout(timeoutId)
-        resolve(value)
-      })
-      .catch(error => {
-        clearTimeout(timeoutId)
-        reject(error)
-      })
-  })
-}
-
-async function runUtilityOperation<TValue>(
-  operationName: string,
-  timeoutMs: number | undefined,
-  operation: () => Promise<TValue>,
-): Promise<UtilityResult<TValue>> {
-  try {
-    const value = await withTimeout(operationName, operation(), timeoutMs)
-    return {ok: true, value}
-  } catch (error) {
-    if (error instanceof UtilityTimeoutError) {
-      return {
-        ok: false,
-        error: {
-          code: 'timeout',
-          message: error.message,
-          cause: error,
-        },
-      }
-    }
-
-    const message = error instanceof Error ? error.message : String(error)
+function normalizeRetryPolicy(retry: RetryPolicy | undefined): RetryPolicy {
+  if (!retry) {
     return {
-      ok: false,
-      error: {
-        code: 'adapter_error',
-        message: `${operationName} adapter failed: ${message}`,
-        cause: error,
-      },
+      attempts: 1,
+      backoffMs: 0,
     }
+  }
+
+  const attempts =
+    Number.isFinite(retry.attempts) && retry.attempts > 0
+      ? Math.floor(retry.attempts)
+      : 1
+
+  const backoffMs =
+    Number.isFinite(retry.backoffMs) && retry.backoffMs >= 0
+      ? Math.floor(retry.backoffMs)
+      : 0
+
+  return {
+    attempts,
+    backoffMs,
   }
 }
 
-type BoundUtilityOptions = {
-  timeoutMs?: number
+function resolveTimeoutMs(
+  invokeTimeoutMs: number | undefined,
+  defaultTimeoutMs: number | undefined,
+): number | undefined {
+  return normalizeTimeoutMs(invokeTimeoutMs ?? defaultTimeoutMs)
 }
 
-export type OrchestrationUtilities = {
-  invokeAgent: (
-    input: InvokeAgentInput,
-    options?: BoundUtilityOptions,
-  ) => Promise<UtilityResult<InvokeAgentOutput>>
-  runCommand: (
-    input: RunCommandInput,
-    options?: BoundUtilityOptions,
-  ) => Promise<UtilityResult<RunCommandOutput>>
+function attachAbort(signal: AbortSignal, onAbort: () => void): () => void {
+  if (signal.aborted) {
+    onAbort()
+    return () => {}
+  }
+
+  signal.addEventListener('abort', onAbort, {once: true})
+  return () => {
+    signal.removeEventListener('abort', onAbort)
+  }
 }
 
-export function createOrchestration(
-  provider: OrchestrationProvider,
-): OrchestrationUtilities {
+function mapErrorWithDefault<TInput, TCode extends string>(
+  options: DefineAgentOptions<TInput, unknown, TCode>,
+  error: unknown,
+  ctx: AgentErrorMapContext<TInput>,
+): AgentError<TCode> {
+  if (!options.mapError) {
+    return defaultMapAgentError(error, ctx) as AgentError<TCode>
+  }
+
+  try {
+    return options.mapError(error, ctx)
+  } catch (mapErrorFailure) {
+    return defaultMapAgentError(mapErrorFailure, ctx) as AgentError<TCode>
+  }
+}
+
+async function runAttempt<TInput, TOutput, TCode extends string>(
+  options: DefineAgentOptions<TInput, TOutput, TCode>,
+  input: TInput,
+  attempt: number,
+  timeoutMs: number | undefined,
+  externalSignal: AbortSignal | undefined,
+): Promise<TOutput> {
+  const controller = new AbortController()
+  let timeoutTriggered = false
+
+  const cleanupExternalAbort = externalSignal
+    ? attachAbort(externalSignal, () => {
+        controller.abort(externalSignal.reason)
+      })
+    : () => {}
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  const timeoutPromise =
+    timeoutMs === undefined
+      ? undefined
+      : new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(() => {
+            const timeoutError = new AgentTimeoutError(
+              options.id,
+              attempt,
+              timeoutMs,
+            )
+            timeoutTriggered = true
+            reject(timeoutError)
+            controller.abort(timeoutError)
+          }, timeoutMs)
+        })
+
+  let rejectAbort: ((reason?: unknown) => void) | undefined
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject
+  })
+
+  const cleanupAttemptAbort = attachAbort(controller.signal, () => {
+    if (timeoutTriggered) return
+    rejectAbort?.(
+      new AgentAbortedError(options.id, attempt, controller.signal.reason),
+    )
+  })
+
+  const operation = options.call(input, {
+    signal: controller.signal,
+    attempt,
+  })
+
+  try {
+    if (!timeoutPromise) {
+      return await Promise.race([operation, abortPromise])
+    }
+
+    return await Promise.race([operation, timeoutPromise, abortPromise])
+  } finally {
+    cleanupAttemptAbort()
+    cleanupExternalAbort()
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
+async function waitBackoff(
+  agentId: string,
+  backoffMs: number,
+  attempt: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (backoffMs <= 0) return
+
+  if (signal?.aborted) {
+    throw new AgentAbortedError(agentId, attempt, signal.reason)
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, backoffMs)
+
+    let cleanupAbort = () => {}
+    const cleanup = () => {
+      cleanupAbort()
+    }
+
+    cleanupAbort = signal
+      ? attachAbort(signal, () => {
+          clearTimeout(timeoutId)
+          cleanup()
+          reject(new AgentAbortedError(agentId, attempt, signal.reason))
+        })
+      : () => {}
+  })
+}
+
+export function defaultMapAgentError<TInput>(
+  error: unknown,
+  ctx: AgentErrorMapContext<TInput>,
+): AgentError<KnownAgentErrorCode> {
+  if (error instanceof AgentTimeoutError) {
+    return {
+      code: 'timeout',
+      message: error.message,
+      cause: error,
+    }
+  }
+
+  if (error instanceof AgentAbortedError || isAbortLikeError(error)) {
+    return {
+      code: 'aborted',
+      message: error instanceof Error ? error.message : `${ctx.id} aborted`,
+      cause: error,
+    }
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
   return {
-    invokeAgent: (input, options = {}) =>
-      runUtilityOperation(
-        'invokeAgent',
-        resolveTimeoutMs(input.timeoutMs, options.timeoutMs),
-        () => provider.invokeAgent(input),
-      ),
-    runCommand: (input, options = {}) =>
-      runUtilityOperation(
-        'runCommand',
-        resolveTimeoutMs(input.timeoutMs, options.timeoutMs),
-        () => provider.runCommand(input),
-      ),
+    code: 'call_error',
+    message: `${ctx.id} call failed on attempt ${ctx.attempt}: ${message}`,
+    cause: error,
+  }
+}
+
+export function defineAgent<
+  TInput,
+  TOutput,
+  TCode extends string = AgentErrorCode,
+>(
+  options: DefineAgentOptions<TInput, TOutput, TCode>,
+): Agent<TInput, TOutput, TCode> {
+  const retryPolicy = normalizeRetryPolicy(options.retry)
+  const defaultTimeoutMs = normalizeTimeoutMs(options.timeoutMs)
+
+  return {
+    id: options.id,
+    async invoke(input, invokeOptions = {}) {
+      const timeoutMs = resolveTimeoutMs(
+        invokeOptions.timeoutMs,
+        defaultTimeoutMs,
+      )
+
+      for (let attempt = 1; attempt <= retryPolicy.attempts; attempt += 1) {
+        try {
+          const value = await runAttempt(
+            options,
+            input,
+            attempt,
+            timeoutMs,
+            invokeOptions.signal,
+          )
+          return {
+            ok: true,
+            value,
+          }
+        } catch (error) {
+          const mappedError = mapErrorWithDefault(options, error, {
+            id: options.id,
+            input,
+            attempt,
+          })
+
+          if (attempt === retryPolicy.attempts) {
+            return {
+              ok: false,
+              error: mappedError,
+            }
+          }
+
+          try {
+            await waitBackoff(
+              options.id,
+              retryPolicy.backoffMs,
+              attempt,
+              invokeOptions.signal,
+            )
+          } catch (backoffError) {
+            return {
+              ok: false,
+              error: mapErrorWithDefault(options, backoffError, {
+                id: options.id,
+                input,
+                attempt,
+              }),
+            }
+          }
+        }
+      }
+
+      return {
+        ok: false,
+        error: mapErrorWithDefault(
+          options,
+          new Error('unreachable retry state'),
+          {
+            id: options.id,
+            input,
+            attempt: retryPolicy.attempts,
+          },
+        ),
+      }
+    },
   }
 }

@@ -1,4 +1,4 @@
-import type {OrchestrationUtilities, UtilityResult} from '../orchestration'
+import type {Agent, AgentResult} from '../orchestration'
 
 export type AskForRepoResult = {
   repo: string
@@ -10,11 +10,20 @@ type StructuredAskForRepo = {
   branch?: unknown
 }
 
+type AskForRepoInput = {
+  prompt: string
+  schema?: Record<string, string>
+}
+
+type AskForRepoOutput = {
+  structured?: Record<string, unknown>
+}
+
 export async function askForRepo(
-  utilities: OrchestrationUtilities,
+  agent: Agent<AskForRepoInput, AskForRepoOutput>,
   prompt: string,
-): Promise<UtilityResult<AskForRepoResult>> {
-  const result = await utilities.invokeAgent({
+): Promise<AgentResult<AskForRepoResult>> {
+  const result = await agent.invoke({
     prompt,
     schema: {
       repo: 'string',
@@ -27,7 +36,10 @@ export async function askForRepo(
   }
 
   const structured = (result.value.structured ?? {}) as StructuredAskForRepo
-  if (typeof structured.repo !== 'string' || structured.repo.trim().length === 0) {
+  if (
+    typeof structured.repo !== 'string' ||
+    structured.repo.trim().length === 0
+  ) {
     return {
       ok: false,
       error: {
@@ -41,7 +53,8 @@ export async function askForRepo(
     ok: true,
     value: {
       repo: structured.repo,
-      branch: typeof structured.branch === 'string' ? structured.branch : undefined,
+      branch:
+        typeof structured.branch === 'string' ? structured.branch : undefined,
     },
   }
 }

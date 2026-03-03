@@ -14,8 +14,9 @@ describe('public library API', () => {
     expect(Object.keys(api).sort()).toEqual([
       'ask',
       'askForRepo',
-      'createOrchestration',
       'decide',
+      'defaultMapAgentError',
+      'defineAgent',
       'defineConfig',
       'definePipe',
       'end',

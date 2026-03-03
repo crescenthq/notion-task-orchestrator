@@ -19,18 +19,18 @@ export {
   type StepLifecycleObserver,
 } from './factory/canonical'
 export {
-  createOrchestration,
-  type InvokeAgentInput,
-  type InvokeAgentOutput,
-  type OrchestrationProvider,
-  type OrchestrationUtilities,
-  type RunCommandInput,
-  type RunCommandOutput,
-  type UtilityError,
-  type UtilityErrorCode,
-  type UtilityResult,
+  defineAgent,
+  defaultMapAgentError,
+  type Agent,
+  type AgentCallContext,
+  type AgentError,
+  type AgentErrorCode,
+  type AgentErrorMapContext,
+  type AgentErrorMapper,
+  type AgentInvokeOptions,
+  type AgentResult,
+  type DefineAgentOptions,
+  type KnownAgentErrorCode,
+  type RetryPolicy,
 } from './factory/orchestration'
-export {
-  askForRepo,
-  type AskForRepoResult,
-} from './factory/helpers/askForRepo'
+export {askForRepo, type AskForRepoResult} from './factory/helpers/askForRepo'
