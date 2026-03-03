@@ -24,7 +24,7 @@ import {
   parseCheckpoint,
   type Checkpoint,
 } from '../factory/checkpoint'
-import {hasControlSignalBrand} from '../factory/controlSignal'
+import {brandControlSignal, hasControlSignalBrand} from '../factory/controlSignal'
 
 type JsonObject = Record<string, unknown>
 
@@ -62,6 +62,22 @@ const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPipeControlSignalType(
+  value: unknown,
+): value is JsonObject & {type: 'await_feedback' | 'end'} {
+  return (
+    isRecord(value) &&
+    (value.type === 'await_feedback' || value.type === 'end')
+  )
+}
+
+function coercePipeControlSignal(value: unknown): unknown {
+  if (!isPipeControlSignalType(value) || hasControlSignalBrand(value)) {
+    return value
+  }
+  return brandControlSignal({...value})
 }
 
 function omitCheckpointContextKey(ctx: JsonObject): JsonObject {
@@ -125,8 +141,9 @@ function isPipeEndSignal(value: unknown): value is PipeEndSignal {
 }
 
 function isMalformedPipeControlSignal(value: unknown): value is JsonObject {
-  if (!isRecord(value) || !hasControlSignalBrand(value)) return false
-  if (value.type !== 'await_feedback' && value.type !== 'end') return false
+  if (!isPipeControlSignalType(value) || !hasControlSignalBrand(value)) {
+    return false
+  }
   return !isPipeAwaitFeedbackSignal(value) && !isPipeEndSignal(value)
 }
 
@@ -816,6 +833,7 @@ export async function runFactoryTaskByExternalId(
     }
 
     await ensureActiveLease()
+    result = coercePipeControlSignal(result)
 
     if (isPipeAwaitFeedbackSignal(result)) {
       const signalCheckpoint = parseCheckpoint(result.checkpoint, {

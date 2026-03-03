@@ -303,6 +303,79 @@ describe('factoryRuntime (definePipe only)', () => {
     expect(traceTypes.has('resumed')).toBe(true)
   })
 
+  it('coerces unbranded control signals emitted by direct pipe factories', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-unbranded-control-signals'
+    const externalTaskId = 'task-unbranded-control-signals-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: { attempts: 0, approved: false },
+  run: async ({ ctx }) => {
+    const attempts = Number(ctx.attempts ?? 0) + 1;
+    if (!ctx.human_feedback) {
+      return {
+        type: "await_feedback",
+        prompt: "Please approve",
+        ctx: { ...ctx, attempts },
+      };
+    }
+    const { human_feedback: _ignored, ...rest } = ctx;
+    return {
+      type: "end",
+      status: "done",
+      ctx: { ...rest, attempts, approved: true },
+    };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [paused] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(paused?.state).toBe('feedback')
+    expect(paused?.currentStepId).toBe('__pipe_feedback__')
+    const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(pausedCtx.attempts).toBe(1)
+    expect(pausedCtx.__nf_feedback_prompt).toBe('Please approve')
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({...pausedCtx, human_feedback: 'approved'}),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runFactoryTaskByExternalId(externalTaskId)
+
+    const [doneTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(doneTask?.state).toBe('done')
+    const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(doneCtx.attempts).toBe(2)
+    expect(doneCtx.approved).toBe(true)
+    expect(doneCtx.human_feedback).toBeUndefined()
+  })
+
   it('resumes from checkpoints without replaying pre-ask steps', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-checkpointed-resume'
