@@ -32,5 +32,4 @@ export {
   type DefineAgentOptions,
   type KnownAgentErrorCode,
   type RetryPolicy,
-} from './factory/orchestration'
-export {askForRepo, type AskForRepoResult} from './factory/helpers/askForRepo'
+} from './factory/defineAgent'

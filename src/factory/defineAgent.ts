@@ -20,7 +20,7 @@ export type AgentResult<TValue, TCode extends string = AgentErrorCode> =
 
 export type RetryPolicy = {
   attempts: number
-  backoffMs: number
+  delay?: number | ((attempt: number, error: AgentError) => number)
 }
 
 export type AgentCallContext = {
@@ -97,11 +97,16 @@ function normalizeTimeoutMs(timeoutMs: number | undefined): number | undefined {
   return Math.floor(timeoutMs)
 }
 
+function normalizeDelayMs(delayMs: number): number {
+  if (!Number.isFinite(delayMs) || delayMs < 0) return 0
+  return Math.floor(delayMs)
+}
+
 function normalizeRetryPolicy(retry: RetryPolicy | undefined): RetryPolicy {
   if (!retry) {
     return {
       attempts: 1,
-      backoffMs: 0,
+      delay: 0,
     }
   }
 
@@ -110,14 +115,16 @@ function normalizeRetryPolicy(retry: RetryPolicy | undefined): RetryPolicy {
       ? Math.floor(retry.attempts)
       : 1
 
-  const backoffMs =
-    Number.isFinite(retry.backoffMs) && retry.backoffMs >= 0
-      ? Math.floor(retry.backoffMs)
-      : 0
+  const delay =
+    typeof retry.delay === 'function'
+      ? retry.delay
+      : normalizeDelayMs(
+          typeof retry.delay === 'number' ? retry.delay : Number.NaN,
+        )
 
   return {
     attempts,
-    backoffMs,
+    delay,
   }
 }
 
@@ -220,13 +227,29 @@ async function runAttempt<TInput, TOutput, TCode extends string>(
   }
 }
 
-async function waitBackoff(
+function resolveRetryDelayMs(
+  delay: RetryPolicy['delay'],
+  attempt: number,
+  error: AgentError,
+): number {
+  if (typeof delay === 'function') {
+    try {
+      return normalizeDelayMs(delay(attempt, error))
+    } catch {
+      return 0
+    }
+  }
+
+  return normalizeDelayMs(typeof delay === 'number' ? delay : Number.NaN)
+}
+
+async function waitDelay(
   agentId: string,
-  backoffMs: number,
+  delayMs: number,
   attempt: number,
   signal: AbortSignal | undefined,
 ): Promise<void> {
-  if (backoffMs <= 0) return
+  if (delayMs <= 0) return
 
   if (signal?.aborted) {
     throw new AgentAbortedError(agentId, attempt, signal.reason)
@@ -236,7 +259,7 @@ async function waitBackoff(
     const timeoutId = setTimeout(() => {
       cleanup()
       resolve()
-    }, backoffMs)
+    }, delayMs)
 
     let cleanupAbort = () => {}
     const cleanup = () => {
@@ -326,17 +349,18 @@ export function defineAgent<
             }
           }
 
+          const delayMs = resolveRetryDelayMs(
+            retryPolicy.delay,
+            attempt,
+            mappedError,
+          )
+
           try {
-            await waitBackoff(
-              options.id,
-              retryPolicy.backoffMs,
-              attempt,
-              invokeOptions.signal,
-            )
-          } catch (backoffError) {
+            await waitDelay(options.id, delayMs, attempt, invokeOptions.signal)
+          } catch (delayError) {
             return {
               ok: false,
-              error: mapErrorWithDefault(options, backoffError, {
+              error: mapErrorWithDefault(options, delayError, {
                 id: options.id,
                 input,
                 attempt,

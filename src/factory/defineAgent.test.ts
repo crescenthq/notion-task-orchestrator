@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {defineAgent} from './orchestration'
+import {defineAgent} from './defineAgent'
 
 describe('defineAgent core contract', () => {
   afterEach(() => {
@@ -124,7 +124,7 @@ describe('defineAgent core contract', () => {
     const agent = defineAgent<{prompt: string}, {text: string}>({
       id: 'coder',
       timeoutMs: 50,
-      retry: {attempts: 2, backoffMs: 0},
+      retry: {attempts: 2, delay: 0},
       call,
     })
 
@@ -140,7 +140,7 @@ describe('defineAgent core contract', () => {
     })
   })
 
-  it('applies retry backoff deterministically between attempts', async () => {
+  it('applies retry delay deterministically between attempts', async () => {
     vi.useFakeTimers()
 
     const call = vi.fn(
@@ -158,7 +158,7 @@ describe('defineAgent core contract', () => {
 
     const agent = defineAgent<{prompt: string}, {text: string}>({
       id: 'coder',
-      retry: {attempts: 3, backoffMs: 25},
+      retry: {attempts: 3, delay: 25},
       call,
     })
 
@@ -177,6 +177,85 @@ describe('defineAgent core contract', () => {
     const result = await resultPromise
 
     expect(call).toHaveBeenCalledTimes(3)
+    expect(result).toEqual({
+      ok: true,
+      value: {text: 'done'},
+    })
+  })
+
+  it('computes retry delay from a callback after each failure', async () => {
+    vi.useFakeTimers()
+
+    const call = vi.fn(
+      async (
+        _input: {prompt: string},
+        ctx: {attempt: number; signal: AbortSignal},
+      ) => {
+        if (ctx.attempt < 3) {
+          throw new Error(`failure-${ctx.attempt}`)
+        }
+
+        return {text: 'done'}
+      },
+    )
+
+    const delay = vi.fn((attempt: number) => (attempt === 1 ? 10 : 20))
+
+    const agent = defineAgent<{prompt: string}, {text: string}>({
+      id: 'coder',
+      retry: {attempts: 3, delay},
+      call,
+    })
+
+    const resultPromise = agent.invoke({prompt: 'retry me'})
+
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(call).toHaveBeenCalledTimes(3)
+    expect(delay).toHaveBeenCalledTimes(2)
+    expect(delay).toHaveBeenNthCalledWith(
+      1,
+      1,
+      expect.objectContaining({code: 'call_error'}),
+    )
+    expect(delay).toHaveBeenNthCalledWith(
+      2,
+      2,
+      expect.objectContaining({code: 'call_error'}),
+    )
+    expect(result).toEqual({
+      ok: true,
+      value: {text: 'done'},
+    })
+  })
+
+  it('normalizes invalid retry delay callback values to zero', async () => {
+    const call = vi.fn(
+      async (
+        _input: {prompt: string},
+        ctx: {attempt: number; signal: AbortSignal},
+      ) => {
+        if (ctx.attempt < 3) {
+          throw new Error(`failure-${ctx.attempt}`)
+        }
+
+        return {text: 'done'}
+      },
+    )
+
+    const delay = vi.fn((attempt: number) => (attempt === 1 ? Number.NaN : -1))
+
+    const agent = defineAgent<{prompt: string}, {text: string}>({
+      id: 'coder',
+      retry: {attempts: 3, delay},
+      call,
+    })
+
+    const result = await agent.invoke({prompt: 'retry me'})
+
+    expect(call).toHaveBeenCalledTimes(3)
+    expect(delay).toHaveBeenCalledTimes(2)
     expect(result).toEqual({
       ok: true,
       value: {text: 'done'},

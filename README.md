@@ -60,14 +60,14 @@ export default defineConfig({
 })
 ```
 
-Board provisioning for `tick --factory <id>` now derives the board title from the
-factory definition:
+Board provisioning for `tick --factory <id>` now derives the board title from
+the factory definition:
 
 - `name` in the exported `definePipe(...)` (if present)
 - otherwise an automatic title from the factory id (`demo` -> `Demo`)
 
-The board id remains the factory id, so renaming the Notion board in-place does not
-break runtime mapping.
+The board id remains the factory id, so renaming the Notion board in-place does
+not break runtime mapping.
 
 Factory declarations are explicit and deterministic:
 
@@ -189,63 +189,77 @@ Common live loop:
 4. `notionflow integrations notion sync-factories --config notionflow.config.ts`
    provisions boards for every declared factory before starting tick loops.
 
-## Orchestration Utilities
+## Agent Wrappers (`defineAgent`)
 
-Use provider-backed orchestration utilities (`invokeAgent`, `runCommand`) for
-provider-agnostic integration. Domain helpers like `askForRepo` compose on top
-of `invokeAgent`.
+`createOrchestration` and utility contracts (`invokeAgent`, `runCommand`,
+`askForRepo`) were removed from the public API.
+
+Authoring now has two explicit layers:
+
+- orchestration primitives (`definePipe`, `flow`, `step`, `ask`, `decide`,
+  `loop`, `write`, `end`)
+- callable capability wrappers (`defineAgent`) for remote services or CLI tools
 
 ```ts
-import {
-  askForRepo,
-  createOrchestration,
-  definePipe,
-  end,
-  flow,
-  step,
-} from 'notionflow'
+import {execFile} from 'node:child_process'
+import {promisify} from 'node:util'
+import {defineAgent, definePipe, end, flow, step} from 'notionflow'
 
-const utils = createOrchestration({
-  invokeAgent: async ({prompt}) => {
-    if (prompt.includes('Choose repo')) {
-      return {
-        text: 'repo selected',
-        structured: {
-          repo: 'https://github.com/acme/demo',
-          branch: 'main',
-        },
-      }
+const execFileAsync = promisify(execFile)
+
+const planner = defineAgent<{prompt: string}, {text: string; repo: string}>({
+  id: 'planner.remote',
+  timeoutMs: 20_000,
+  retry: {attempts: 3, delay: 250},
+  call: async ({prompt}) => {
+    // Replace with your provider SDK/HTTP client.
+    return {
+      text: `planned: ${prompt}`,
+      repo: 'https://github.com/acme/demo',
     }
-
-    return {text: `planned: ${prompt}`}
   },
-  runCommand: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
+})
+
+const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
+  id: 'git.status',
+  retry: {attempts: 2, delay: 100},
+  call: async ({cwd}) => {
+    const {stdout} = await execFileAsync('git', ['status', '--short'], {cwd})
+    return {stdout}
+  },
 })
 
 const plan = step('plan', async ctx => {
-  const repo = await askForRepo(utils, 'Choose repo')
-  if (!repo.ok) return {...ctx, failure: repo.error.message}
+  const planned = await planner.invoke({prompt: 'Draft plan and choose repo'})
+  if (!planned.ok) return {...ctx, failure: planned.error.message}
 
-  const result = await utils.invokeAgent({
-    prompt: `Draft plan for ${repo.value.repo}`,
-  })
-  if (!result.ok) return {...ctx, failure: result.error.message}
+  const status = await gitStatus.invoke({cwd: process.cwd()})
+  if (!status.ok) return {...ctx, failure: status.error.message}
 
-  const command = await utils.runCommand({
-    command: 'git',
-    args: ['status', '--short'],
-  })
-  if (!command.ok) return {...ctx, failure: command.error.message}
-
-  return {...ctx, plan: result.value.text, status: command.value.stdout}
+  return {
+    ...ctx,
+    plan: planned.value.text,
+    repo: planned.value.repo,
+    status: status.value.stdout,
+  }
 })
 
 export default definePipe({
   id: 'service-layer-demo',
-  initial: {plan: '', status: '', failure: ''},
+  initial: {plan: '', repo: '', status: '', failure: ''},
   run: flow(plan, end.done()),
 })
 ```
+
+`defineAgent` error defaults when `mapError` is omitted:
+
+- timeout errors map to `code: 'timeout'`
+- abort/cancel errors map to `code: 'aborted'`
+- all other failures map to `code: 'call_error'` with attempt context
+
+Customize `mapError` when your provider exposes stable domain codes that you
+want to branch on in workflow logic. If custom `mapError` throws, runtime falls
+back to the same default mapping above.
 
 ## Examples
 
@@ -268,7 +282,8 @@ npm run test:e2e
 
 Live Notion API e2e gate (explicit):
 
-1. Set required env vars (if omitted, live-only e2e will fail fast with a clear error).
+1. Set required env vars (if omitted, live-only e2e will fail fast with a clear
+   error).
 
 ```bash
 export NOTION_API_TOKEN="<integration-token>"

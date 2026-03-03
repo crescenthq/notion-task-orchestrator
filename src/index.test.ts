@@ -13,7 +13,6 @@ describe('public library API', () => {
   it('exports an explicit stable runtime surface', () => {
     expect(Object.keys(api).sort()).toEqual([
       'ask',
-      'askForRepo',
       'decide',
       'defaultMapAgentError',
       'defineAgent',
