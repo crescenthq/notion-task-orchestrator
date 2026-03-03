@@ -227,11 +227,13 @@ async function runAttempt<TInput, TOutput, TCode extends string>(
   }
 }
 
-function resolveRetryDelayMs(
-  delay: RetryPolicy['delay'],
-  attempt: number,
-  error: AgentError,
-): number {
+function resolveRetryDelayMs(options: {
+  delay: RetryPolicy['delay']
+  attempt: number
+  error: AgentError
+}): number {
+  const {delay, attempt, error} = options
+
   if (typeof delay === 'function') {
     try {
       return normalizeDelayMs(delay(attempt, error))
@@ -243,12 +245,14 @@ function resolveRetryDelayMs(
   return normalizeDelayMs(typeof delay === 'number' ? delay : Number.NaN)
 }
 
-async function waitDelay(
-  agentId: string,
-  delayMs: number,
-  attempt: number,
-  signal: AbortSignal | undefined,
-): Promise<void> {
+async function waitDelay(options: {
+  agentId: string
+  delayMs: number
+  attempt: number
+  signal: AbortSignal | undefined
+}): Promise<void> {
+  const {agentId, delayMs, attempt, signal} = options
+
   if (delayMs <= 0) return
 
   if (signal?.aborted) {
@@ -349,14 +353,19 @@ export function defineAgent<
             }
           }
 
-          const delayMs = resolveRetryDelayMs(
-            retryPolicy.delay,
+          const delayMs = resolveRetryDelayMs({
+            delay: retryPolicy.delay,
             attempt,
-            mappedError,
-          )
+            error: mappedError,
+          })
 
           try {
-            await waitDelay(options.id, delayMs, attempt, invokeOptions.signal)
+            await waitDelay({
+              agentId: options.id,
+              delayMs,
+              attempt,
+              signal: invokeOptions.signal,
+            })
           } catch (delayError) {
             return {
               ok: false,
