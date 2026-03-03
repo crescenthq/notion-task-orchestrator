@@ -202,12 +202,12 @@ async function runAttempt<TInput, TOutput, TCode extends string>(
     )
   })
 
-  const operation = options.call(input, {
-    signal: controller.signal,
-    attempt,
-  })
-
   try {
+    const operation = options.call(input, {
+      signal: controller.signal,
+      attempt,
+    })
+
     if (!timeoutPromise) {
       return await Promise.race([operation, abortPromise])
     }

@@ -52,6 +52,30 @@ describe('defineAgent core contract', () => {
     )
   })
 
+  it('cleans up timeout when call throws synchronously', async () => {
+    vi.useFakeTimers()
+
+    const agent = defineAgent<{prompt: string}, {text: string}>({
+      id: 'coder',
+      timeoutMs: 5,
+      call: () => {
+        throw new Error('sync')
+      },
+    })
+
+    const result = await agent.invoke({prompt: 'draft'})
+
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected defineAgent to fail')
+    }
+
+    expect(result.error.code).toBe('call_error')
+    expect(result.error.message).toBe('coder call failed on attempt 1: sync')
+
+    await vi.advanceTimersByTimeAsync(25)
+  })
+
   it('supports custom mapError codes with extensible string typing', async () => {
     type CustomCode = 'http_error' | (string & {})
 
