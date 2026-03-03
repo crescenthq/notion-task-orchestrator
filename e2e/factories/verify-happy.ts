@@ -1,23 +1,10 @@
-type HappyInput = {
-  ctx: Record<string, unknown>
-}
+import {definePipe, end, flow, step} from '../../src/factory/canonical'
 
-const draftPlan = async ({ctx}: HappyInput) => ({
-  status: 'done',
-  data: {...ctx, happy_step: 'plan-created'},
-})
-
-export default {
+export default definePipe({
   id: 'verify-happy',
-  start: 'plan',
-  context: {},
-  states: {
-    plan: {
-      type: 'action',
-      agent: draftPlan,
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
-}
+  initial: {},
+  run: flow(
+    step('plan', ctx => ({...ctx, happy_step: 'plan-created'})),
+    end.done(),
+  ),
+})

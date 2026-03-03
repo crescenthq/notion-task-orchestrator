@@ -1,11 +1,11 @@
 import {spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
+import {mkdir, symlink} from 'node:fs/promises'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
-import {afterEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
-import {notionToken} from '../src/config/env'
 import {tasks, workflows} from '../src/db/schema'
 import {
   assertNoNewGlobalNotionflowWrites,
@@ -13,13 +13,16 @@ import {
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
+import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
 
 loadDotEnv()
 
-const hasLiveNotionEnv = Boolean(notionToken())
-
 describe('docs quickstart live smoke', () => {
   let fixture: TempProjectFixture | null = null
+
+  beforeAll(() => {
+    assertLiveNotionEnv()
+  })
 
   afterEach(async () => {
     if (fixture) {
@@ -28,13 +31,14 @@ describe('docs quickstart live smoke', () => {
     }
   })
 
-  it.skipIf(!hasLiveNotionEnv)(
+  it(
     'runs init -> factory create -> doctor -> tick in local project mode',
     async () => {
       const before = await snapshotGlobalNotionflowWrites()
       fixture = await createTempProjectFixture('notionflow-docs-live-')
 
       await execCli(['init'], fixture.projectDir)
+      await ensureNotionflowDependencyAvailable(fixture.projectDir)
       await execCli(
         ['factory', 'create', '--id', 'docs-live', '--skip-notion-board'],
         fixture.projectDir,
@@ -115,13 +119,24 @@ async function execCli(
   cwd: string,
 ): Promise<{stdout: string; stderr: string}> {
   const cliPath = path.resolve(process.cwd(), 'src/cli.ts')
+  const tsxLoaderPath = path.resolve(
+    process.cwd(),
+    'node_modules',
+    'tsx',
+    'dist',
+    'loader.mjs',
+  )
 
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['tsx', cliPath, ...args], {
-      cwd,
-      stdio: 'pipe',
-      env: process.env,
-    })
+    const child = spawn(
+      process.execPath,
+      ['--import', tsxLoaderPath, cliPath, ...args],
+      {
+        cwd,
+        stdio: 'pipe',
+        env: process.env,
+      },
+    )
 
     let stdout = ''
     let stderr = ''
@@ -148,6 +163,17 @@ async function execCli(
       )
     })
   })
+}
+
+async function ensureNotionflowDependencyAvailable(
+  projectDir: string,
+): Promise<void> {
+  const nodeModules = path.join(projectDir, 'node_modules')
+  const linkedPackage = path.join(nodeModules, 'notionflow')
+  const target = process.cwd()
+
+  await mkdir(nodeModules, {recursive: true})
+  await symlink(target, linkedPackage, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
 function extractTaskExternalId(stdout: string): string {
@@ -187,25 +213,16 @@ function docsConfigSource(): string {
 
 function docsFactorySource(): string {
   return [
-    'const complete = async ({ ctx }) => ({',
-    '  status: "done",',
-    '  data: { ...ctx, completedBy: "docs-live" },',
-    '});',
+    'import {definePipe, end, flow, step} from "notionflow";',
     '',
-    'export default {',
+    'export default definePipe({',
     '  id: "docs-live",',
-    '  start: "start",',
-    '  context: {},',
-    '  states: {',
-    '    start: {',
-    '      type: "action",',
-    '      agent: complete,',
-    '      on: { done: "done", failed: "failed" },',
-    '    },',
-    '    done: { type: "done" },',
-    '    failed: { type: "failed" },',
-    '  },',
-    '};',
+    '  initial: {},',
+    '  run: flow(',
+    '    step("complete", ctx => ({ ...ctx, completedBy: "docs-live" })),',
+    '    end.done(),',
+    '  ),',
+    '});',
     '',
   ].join('\n')
 }

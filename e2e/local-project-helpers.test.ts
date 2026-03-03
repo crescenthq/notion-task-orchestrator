@@ -35,13 +35,24 @@ describe('E2E helper infrastructure', () => {
 
 async function execCli(args: string[], cwd: string): Promise<void> {
   const cliPath = path.resolve(process.cwd(), 'src/cli.ts')
+  const tsxLoaderPath = path.resolve(
+    process.cwd(),
+    'node_modules',
+    'tsx',
+    'dist',
+    'loader.mjs',
+  )
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('npx', ['tsx', cliPath, ...args], {
+    const child = spawn(
+      process.execPath,
+      ['--import', tsxLoaderPath, cliPath, ...args],
+      {
       cwd,
       stdio: 'pipe',
       env: process.env,
-    })
+      },
+    )
 
     let stderr = ''
     child.stderr.on('data', chunk => {

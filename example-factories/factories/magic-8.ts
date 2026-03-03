@@ -1,187 +1,131 @@
-import {spawnSync} from 'node:child_process'
+import {
+  ask,
+  decide,
+  definePipe,
+  end,
+  flow,
+  step,
+  write,
+} from '../../src/factory/canonical'
 
-const promptQuestion = async () => {
-  console.log('Prompting for a Magic 8-Ball question...')
-
-  return {
-    status: 'feedback',
-    message: 'Magic 8-Ball: Ask the Magic 8-Ball a yes/no question.',
-    data: {phase: 'await_question'},
-  }
+type RoundSummary = {
+  question: string
+  answer: string
 }
 
-const captureFeedback = async ({ctx}) => {
-  const phase = String(ctx.phase ?? '')
-  const reply = String(ctx.human_feedback ?? '').trim()
+type Magic8Phase = 'await_question' | 'await_replay' | 'complete'
 
-  if (!reply) {
-    if (phase === 'await_replay') {
+type Magic8Context = {
+  phase: Magic8Phase
+  round: number
+  question: string
+  last_answer: string
+  history: RoundSummary[]
+}
+
+const RESPONSES = [
+  'Signs point to yes.',
+  'Outlook not so good.',
+  'Ask again later.',
+  'Without a doubt.',
+  'Better not tell you now.',
+]
+
+const chooseAnswer = (question: string, round: number): string => {
+  const seed = question.length + round
+  return RESPONSES[Math.abs(seed) % RESPONSES.length] ?? 'Reply hazy, try again.'
+}
+
+const conversationStep = ask<Magic8Context>(
+  ctx => {
+    if (ctx.phase === 'await_replay') {
+      return `Magic 8-Ball: ${ctx.last_answer}\n\nAsk another? (yes/no)`
+    }
+
+    return `Magic 8-Ball round ${ctx.round + 1}: Ask a yes/no question.`
+  },
+  (ctx, reply) => {
+    if (ctx.phase === 'await_question') {
+      const question = reply.trim()
+      const round = Number(ctx.round ?? 0) + 1
+      const answer = chooseAnswer(question, round)
       return {
-        status: 'feedback',
-        message: 'Please reply with yes or no.',
+        type: 'await_feedback',
+        prompt: `Magic 8-Ball: ${answer}\n\nAsk another? (yes/no)`,
+        ctx: {
+          ...ctx,
+          phase: 'await_replay',
+          round,
+          question,
+          last_answer: answer,
+          history: [...ctx.history, {question, answer}],
+        },
       }
     }
 
-    return {
-      status: 'feedback',
-      message: 'I did not catch that. Ask a yes/no question.',
+    if (ctx.phase === 'await_replay') {
+      const normalized = reply.trim().toLowerCase()
+      if (normalized.startsWith('y')) {
+        return {
+          type: 'await_feedback',
+          prompt: `Magic 8-Ball round ${ctx.round + 1}: Ask a yes/no question.`,
+          ctx: {
+            ...ctx,
+            phase: 'await_question',
+            question: '',
+            last_answer: '',
+          },
+        }
+      }
+
+      if (normalized.startsWith('n')) {
+        return {
+          ...ctx,
+          phase: 'complete',
+        }
+      }
+
+      return {
+        type: 'await_feedback',
+        prompt: 'Please reply with yes or no. Ask another question?',
+        ctx,
+      }
     }
-  }
 
-  if (phase === 'await_question') {
-    return {
-      status: 'done',
-      data: {
-        question: reply,
-        human_feedback: null,
-        phase: 'have_question',
-      },
-    }
-  }
-
-  if (phase === 'await_replay') {
-    return {
-      status: 'done',
-      data: {
-        again_reply: reply,
-        human_feedback: null,
-        phase: 'have_replay_decision',
-      },
-    }
-  }
-
-  return {
-    status: 'failed',
-    message: `Unexpected phase: ${phase}`,
-  }
-}
-
-const routeAfterFeedback = ({ctx}) => {
-  const phase = String(ctx.phase ?? '')
-
-  if (phase === 'have_question') return 'answer'
-
-  if (phase === 'have_replay_decision') {
-    const reply = String(ctx.again_reply ?? '')
-      .trim()
-      .toLowerCase()
-    if (reply.startsWith('y')) return 'again'
-    if (reply.startsWith('n')) return 'finish'
-    return 'clarify'
-  }
-
-  return 'invalid'
-}
-
-const answerQuestion = async ({ctx}) => {
-  const question = String(ctx.question ?? '').trim()
-  const prompt = `You are a Magic 8-Ball.\nQuestion: "${question || 'Will this work?'}"\nReturn exactly one short, playful answer line.\nNo quotes. No prefixes.`
-
-  const result = spawnSync(
-    'opencode',
-    ['run', prompt, '--agent', 'build', '--model', 'opencode/kimi-k2.5'],
-    {encoding: 'utf-8'},
-  )
-
-  const answer = result.stdout.trim() || 'Reply hazy, try again.'
-
-  return {
-    status: 'feedback',
-    message: `Magic 8-Ball: ${answer}\n\nAsk another? (yes/no)`,
-    data: {
-      last_answer: answer,
-      phase: 'await_replay',
-    },
-  }
-}
-
-const clarifyReplay = async () => {
-  return {
-    status: 'feedback',
-    message: 'Please reply with yes or no. Ask another question?',
-    data: {phase: 'await_replay'},
-  }
-}
-
-const finalizeRun = async ({ctx}) => {
-  const question = String(ctx.question ?? '(no question)')
-  const answer = String(ctx.last_answer ?? '(no answer)')
-
-  return {
-    status: 'done',
-    page: {
-      markdown: [
-        'Magic 8-Ball',
-        `Question: ${question}`,
-        `Answer: ${answer}`,
-      ].join('\n'),
-    },
-    data: {phase: 'done'},
-  }
-}
-
-export default {
-  id: 'magic-8-ball',
-  start: 'prompt_question',
-  context: {phase: 'await_question'},
-  states: {
-    prompt_question: {
-      type: 'action',
-      agent: promptQuestion,
-      on: {
-        done: 'capture_feedback',
-        feedback: 'wait_feedback',
-        failed: 'failed',
-      },
-    },
-    wait_feedback: {
-      type: 'feedback',
-      resume: 'capture_feedback',
-    },
-    capture_feedback: {
-      type: 'action',
-      agent: captureFeedback,
-      on: {
-        done: 'route_after_feedback',
-        feedback: 'wait_feedback',
-        failed: 'failed',
-      },
-    },
-    route_after_feedback: {
-      type: 'orchestrate',
-      select: routeAfterFeedback,
-      on: {
-        answer: 'answer_question',
-        again: 'prompt_question',
-        finish: 'finalize_run',
-        clarify: 'clarify_replay',
-        invalid: 'failed',
-      },
-    },
-    answer_question: {
-      type: 'action',
-      agent: answerQuestion,
-      on: {
-        done: 'route_after_feedback',
-        feedback: 'wait_feedback',
-        failed: 'failed',
-      },
-    },
-    clarify_replay: {
-      type: 'action',
-      agent: clarifyReplay,
-      on: {
-        done: 'route_after_feedback',
-        feedback: 'wait_feedback',
-        failed: 'failed',
-      },
-    },
-    finalize_run: {
-      type: 'action',
-      agent: finalizeRun,
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
+    return ctx
   },
-}
+)
+
+const ensureCompletion = decide<Magic8Context, 'complete' | 'incomplete'>(
+  ctx => (ctx.phase === 'complete' ? 'complete' : 'incomplete'),
+  {
+    complete: flow(
+      write(ctx => ({
+        markdown: [
+          '# Magic 8-Ball',
+          ...ctx.history.map(
+            (entry, index) =>
+              `${index + 1}. Q: ${entry.question}\n   A: ${entry.answer}`,
+          ),
+        ].join('\n'),
+      })),
+      end.done(),
+    ),
+    incomplete: flow(
+      step('mark-incomplete', ctx => ctx),
+      end.failed('Magic 8-Ball conversation is not complete yet.'),
+    ),
+  },
+)
+
+export default definePipe({
+  id: 'magic-8',
+  initial: {
+    phase: 'await_question',
+    round: 0,
+    question: '',
+    last_answer: '',
+    history: [],
+  } satisfies Magic8Context,
+  run: flow(conversationStep, ensureCompletion),
+})

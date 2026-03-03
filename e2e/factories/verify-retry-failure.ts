@@ -1,25 +1,10 @@
-type RetryFailureInput = {
-  tickId: string
-  attempt: number
-}
+import {definePipe, end, flow, step} from '../../src/factory/canonical'
 
-const alwaysFail = async ({tickId, attempt}: RetryFailureInput) => ({
-  status: 'failed',
-  message: `forced failure on tick ${String(tickId)} attempt ${Number(attempt)}`,
-})
-
-export default {
+export default definePipe({
   id: 'verify-retry-failure',
-  start: 'fragile',
-  context: {},
-  states: {
-    fragile: {
-      type: 'action',
-      agent: alwaysFail,
-      retries: {max: 2},
-      on: {done: 'done', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
-}
+  initial: {attempts: 0},
+  run: flow(
+    step('fragile', ctx => ({...ctx, attempts: Number(ctx.attempts ?? 0) + 1})),
+    end.failed('forced failure from definePipe verification fixture'),
+  ),
+})

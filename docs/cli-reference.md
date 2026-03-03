@@ -24,6 +24,8 @@ Supported `--config <path>` override:
 - `run`
 - `tick`
 - `integrations notion sync`
+- `integrations notion sync-factories`
+- `integrations notion create-task`
 
 When `--config` is provided, NotionFlow resolves project root from that config
 file's directory.
@@ -144,7 +146,7 @@ notionflow integrations notion <subcommand>
 Create and register a Notion board.
 
 ```bash
-notionflow integrations notion provision-board --board <board-id> [--title <name>] [--parent-page <notion_page_id>]
+notionflow integrations notion provision-board --board <board-id> [--title <name>] [--parent-page <notion_page_id>] [--config <path>]
 ```
 
 ### `integrations notion create-task`
@@ -152,7 +154,7 @@ notionflow integrations notion provision-board --board <board-id> [--title <name
 Create a Notion task and upsert local state.
 
 ```bash
-notionflow integrations notion create-task --board <board-id> --title "Task" [--factory <factory-id>] [--status <state>]
+notionflow integrations notion create-task [--board <board-id> | --factory <factory-id>] --title "Task" [--status <state>] [--config <path>]
 ```
 
 ### `integrations notion sync`
@@ -161,6 +163,14 @@ Sync tasks from registered Notion boards.
 
 ```bash
 notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
+```
+
+### `integrations notion sync-factories`
+
+Provision (or refresh) Notion boards for declared factories.
+
+```bash
+notionflow integrations notion sync-factories [--config <path>] [--factory <factory-id>] [--parent-page <notion_page_id>]
 ```
 
 ## Runtime Paths
@@ -177,5 +187,6 @@ All runtime artifacts are project-local:
 notionflow init
 notionflow factory create --id demo --skip-notion-board
 notionflow doctor
+notionflow integrations notion sync-factories --factory demo
 notionflow tick --factory demo
 ```

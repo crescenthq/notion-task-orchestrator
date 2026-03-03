@@ -1,4 +1,31 @@
-const QUESTIONS = [
+import {
+  ask,
+  decide,
+  definePipe,
+  end,
+  flow,
+  loop,
+  step,
+  write,
+} from '../../src/factory/canonical'
+
+type RatherQuestion = {
+  prompt: string
+  optionA: string
+  optionB: string
+}
+
+type RatherContext = {
+  question_index: number
+  current_prompt: string
+  option_a: string
+  option_b: string
+  choice: 'A' | 'B' | ''
+  selected_option: string
+  complete: boolean
+}
+
+const QUESTIONS: RatherQuestion[] = [
   {
     prompt: 'Would you rather have a pet dragon or a pet dinosaur?',
     optionA: 'Pet dragon',
@@ -16,193 +43,104 @@ const QUESTIONS = [
   },
 ]
 
-const pick = items => items[Math.floor(Math.random() * items.length)]
-
-const selectionDone = ({ctx}) => String(ctx.phase ?? '') === 'done'
-
-const agentTurn = async ({ctx}) => {
-  const phase = String(ctx.phase ?? 'ask')
-  console.log('Would-you-rather agent phase:', phase)
-
-  if (phase === 'ask') {
-    const question = pick(QUESTIONS)
-    return {
-      status: 'feedback',
-      message: [
-        question.prompt,
-        '',
-        `A) ${question.optionA}`,
-        `B) ${question.optionB}`,
-        '',
-        'Reply with A or B.',
-      ].join('\n'),
-      data: {
-        current_prompt: question.prompt,
-        option_a: question.optionA,
-        option_b: question.optionB,
-        phase: 'await_choice',
-        human_feedback: null,
-      },
-    }
+const selectQuestion = step<RatherContext>('select-question', ctx => {
+  if (ctx.current_prompt && !ctx.complete) {
+    return ctx
   }
 
-  if (phase === 'reveal') {
-    const chosen = String(ctx.choice ?? '').toUpperCase()
-    const winner =
-      chosen === 'A' ? String(ctx.option_a ?? 'A') : String(ctx.option_b ?? 'B')
-
-    return {
-      status: 'done',
-      page: {
-        markdown: [
-          '# Would You Rather',
-          String(ctx.current_prompt ?? ''),
-          '',
-          `Choice: ${chosen}) ${winner}`,
-          'Outcome: Bold choice. No take-backs.',
-        ].join('\n'),
-      },
-      data: {phase: 'done'},
-    }
-  }
-
-  if (phase === 'done') {
-    return {status: 'done'}
-  }
+  const index = Number(ctx.question_index ?? 0)
+  const selected = QUESTIONS[index % QUESTIONS.length]
 
   return {
-    status: 'failed',
-    message: `Unknown phase: ${phase}`,
+    ...ctx,
+    question_index: index + 1,
+    current_prompt: selected?.prompt ?? 'Would you rather pick option A or B?',
+    option_a: selected?.optionA ?? 'Option A',
+    option_b: selected?.optionB ?? 'Option B',
+    choice: '',
+    selected_option: '',
+    complete: false,
   }
-}
+})
 
-const userTurn = async ({ctx}) => {
-  const phase = String(ctx.phase ?? '')
-  const reply = String(ctx.human_feedback ?? '').trim()
+const captureChoice = ask<RatherContext>(
+  ctx =>
+    [
+      ctx.current_prompt,
+      '',
+      `A) ${ctx.option_a}`,
+      `B) ${ctx.option_b}`,
+      '',
+      'Reply with A or B.',
+    ].join('\n'),
+  (ctx, reply) => {
+    const normalized = reply.trim().toUpperCase()
 
-  if (phase !== 'await_choice') {
-    return {
-      status: 'failed',
-      message: `Unexpected phase for user input: ${phase}`,
+    if (normalized.startsWith('A')) {
+      return {
+        ...ctx,
+        choice: 'A',
+      }
     }
-  }
 
-  if (!reply) {
-    return {
-      status: 'feedback',
-      message: 'Please reply with A or B.',
+    if (normalized.startsWith('B')) {
+      return {
+        ...ctx,
+        choice: 'B',
+      }
     }
-  }
 
-  return {
-    status: 'done',
-    data: {
-      choice_reply: reply,
-      human_feedback: null,
-      phase: 'route_choice',
-    },
-  }
-}
-
-const routeChoice = ({ctx}) => {
-  const phase = String(ctx.phase ?? '')
-  if (phase !== 'route_choice') return 'invalid'
-
-  const reply = String(ctx.choice_reply ?? '')
-    .trim()
-    .toUpperCase()
-  if (reply.startsWith('A')) return 'choose_a'
-  if (reply.startsWith('B')) return 'choose_b'
-  return 'retry'
-}
-
-const chooseA = async () => ({
-  status: 'done',
-  data: {
-    choice: 'A',
-    phase: 'reveal',
+    return {
+      type: 'await_feedback',
+      prompt: 'Please reply with only A or B.',
+      ctx,
+    }
   },
-})
+)
 
-const chooseB = async () => ({
-  status: 'done',
-  data: {
-    choice: 'B',
-    phase: 'reveal',
+const applyChoice = decide<RatherContext, 'choose_a' | 'choose_b'>(
+  ctx => (ctx.choice === 'A' ? 'choose_a' : 'choose_b'),
+  {
+    choose_a: step('choose-a', ctx => ({
+      ...ctx,
+      selected_option: ctx.option_a,
+      complete: true,
+    })),
+    choose_b: step('choose-b', ctx => ({
+      ...ctx,
+      selected_option: ctx.option_b,
+      complete: true,
+    })),
   },
-})
+)
 
-const retryChoice = async () => ({
-  status: 'feedback',
-  message: 'Please reply with only A or B.',
-  data: {phase: 'await_choice'},
-})
-
-export default {
+export default definePipe({
   id: 'would-you-rather',
-  start: 'conversation_loop',
-  context: {phase: 'ask'},
-  guards: {selectionDone},
-  states: {
-    conversation_loop: {
-      type: 'loop',
-      body: 'agent_turn',
-      maxIterations: 6,
-      until: 'selectionDone',
-      on: {
-        continue: 'agent_turn',
-        done: 'done',
-        exhausted: 'failed',
-      },
-    },
-    agent_turn: {
-      type: 'action',
-      agent: agentTurn,
-      on: {
-        done: 'conversation_loop',
-        feedback: 'wait_for_user',
-        failed: 'failed',
-      },
-    },
-    wait_for_user: {
-      type: 'feedback',
-      resume: 'user_turn',
-    },
-    user_turn: {
-      type: 'action',
-      agent: userTurn,
-      on: {
-        done: 'route_choice',
-        feedback: 'wait_for_user',
-        failed: 'failed',
-      },
-    },
-    route_choice: {
-      type: 'orchestrate',
-      select: routeChoice,
-      on: {
-        choose_a: 'choose_a',
-        choose_b: 'choose_b',
-        retry: 'retry_choice',
-        invalid: 'failed',
-      },
-    },
-    choose_a: {
-      type: 'action',
-      agent: chooseA,
-      on: {done: 'conversation_loop', failed: 'failed'},
-    },
-    choose_b: {
-      type: 'action',
-      agent: chooseB,
-      on: {done: 'conversation_loop', failed: 'failed'},
-    },
-    retry_choice: {
-      type: 'action',
-      agent: retryChoice,
-      on: {done: 'route_choice', feedback: 'wait_for_user', failed: 'failed'},
-    },
-    done: {type: 'done'},
-    failed: {type: 'failed'},
-  },
-}
+  initial: {
+    question_index: 0,
+    current_prompt: '',
+    option_a: '',
+    option_b: '',
+    choice: '',
+    selected_option: '',
+    complete: false,
+  } as RatherContext,
+  run: flow(
+    loop({
+      body: flow(selectQuestion, captureChoice, applyChoice),
+      until: ctx => Boolean(ctx.complete),
+      max: 3,
+      onExhausted: end.failed('No valid A/B choice received before loop exhaustion.'),
+    }),
+    write(ctx => ({
+      markdown: [
+        '# Would You Rather',
+        ctx.current_prompt,
+        '',
+        `Choice: ${ctx.choice}) ${ctx.selected_option}`,
+        'Outcome: Bold choice. No take-backs.',
+      ].join('\n'),
+    })),
+    end.done(),
+  ),
+})

@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS board_cursors (
   FOREIGN KEY(board_id) REFERENCES boards(id)
 );
 
+CREATE TABLE IF NOT EXISTS run_traces (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  tick_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  state_id TEXT,
+  from_state_id TEXT,
+  to_state_id TEXT,
+  event TEXT,
+  reason TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  loop_iteration INTEGER NOT NULL DEFAULT 0,
+  status TEXT,
+  message TEXT,
+  payload_json TEXT,
+  timestamp TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(id),
+  FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+
 CREATE TABLE IF NOT EXISTS transition_events (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,

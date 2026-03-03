@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "npx tsx src/cli.ts",
     "notionflow": "npx tsx src/cli.ts",
+    "playground": "node --import tsx playground/server.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "fmt": "oxfmt",

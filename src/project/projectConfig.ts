@@ -3,7 +3,7 @@ import {pathToFileURL} from 'node:url'
 import {access, constants} from 'node:fs/promises'
 import {z} from 'zod'
 import {loadFactoryFromPath} from '../core/factory'
-import type {FactoryDefinition} from '../core/factorySchema'
+import type {LoadedFactoryDefinition} from '../core/factory'
 
 const projectConfigSchema = z.object({
   factories: z.array(z.string().min(1)).default([]),
@@ -14,7 +14,7 @@ export type ProjectConfig = z.infer<typeof projectConfigSchema>
 export type LoadedDeclaredFactory = {
   declaredPath: string
   resolvedPath: string
-  definition: FactoryDefinition
+  definition: LoadedFactoryDefinition
 }
 
 export class ProjectConfigLoadError extends Error {

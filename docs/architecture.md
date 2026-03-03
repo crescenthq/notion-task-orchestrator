@@ -76,7 +76,7 @@ Operational states:
 Package root exports typed authoring primitives:
 
 - `defineConfig`
-- `defineFactory`
-- helper utilities (`agent`, `select`, `until`)
+- `definePipe`
+- canonical primitives (`flow`, `step`, `ask`, `decide`, `loop`, `write`, `end`)
 
 This allows reusable shared modules and deterministic factory authoring.

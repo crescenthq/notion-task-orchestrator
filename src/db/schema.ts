@@ -65,6 +65,25 @@ export const boardCursors = sqliteTable('board_cursors', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export const runTraces = sqliteTable('run_traces', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull(),
+  tickId: text('tick_id').notNull(),
+  taskId: text('task_id').notNull(),
+  type: text('type').notNull(),
+  stateId: text('state_id'),
+  fromStateId: text('from_state_id'),
+  toStateId: text('to_state_id'),
+  event: text('event'),
+  reason: text('reason'),
+  attempt: integer('attempt').notNull().default(0),
+  loopIteration: integer('loop_iteration').notNull().default(0),
+  status: text('status'),
+  message: text('message'),
+  payloadJson: text('payload_json'),
+  timestamp: text('timestamp').notNull(),
+})
+
 export const transitionEvents = sqliteTable('transition_events', {
   id: text('id').primaryKey(),
   runId: text('run_id').notNull(),
