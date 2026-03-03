@@ -221,9 +221,11 @@ describe('factoryRuntime (definePipe only)', () => {
         `  id: "${factoryId}",\n` +
         `  initial: { attempts: 0, approved: false },\n` +
         `  run: async ({ ctx }) => {\n` +
+        `    const controlBrand = Symbol.for("notionflow.control");\n` +
         `    const attempts = Number(ctx.attempts ?? 0) + 1;\n` +
         `    if (!ctx.human_feedback) {\n` +
         `      return {\n` +
+        `        [controlBrand]: true,\n` +
         `        type: "await_feedback",\n` +
         `        prompt: "Please approve",\n` +
         `        ctx: { ...ctx, attempts },\n` +
@@ -231,6 +233,7 @@ describe('factoryRuntime (definePipe only)', () => {
         `    }\n` +
         `    const { human_feedback: _ignored, ...rest } = ctx;\n` +
         `    return {\n` +
+        `      [controlBrand]: true,\n` +
         `      type: "end",\n` +
         `      status: "done",\n` +
         `      ctx: { ...rest, attempts, approved: true },\n` +
@@ -487,7 +490,16 @@ export default definePipe({
         `export default {\n` +
           `  id: "${factoryId}",\n` +
           `  initial: {},\n` +
-          `  run: async ({ ctx }) => ({ type: "end", status: "${terminalState}", ctx, message: "terminal ${terminalState}" }),\n` +
+          `  run: async ({ ctx }) => {\n` +
+          `    const controlBrand = Symbol.for("notionflow.control");\n` +
+          `    return {\n` +
+          `      [controlBrand]: true,\n` +
+          `      type: "end",\n` +
+          `      status: "${terminalState}",\n` +
+          `      ctx,\n` +
+          `      message: "terminal ${terminalState}",\n` +
+          `    };\n` +
+          `  },\n` +
           `};\n`,
         'utf8',
       )
@@ -562,7 +574,15 @@ export default definePipe({
         `export default definePipe({\n` +
         `  id: "${factoryId}",\n` +
         `  initial: {},\n` +
-        `  run: async ({ctx}) => ({type: "await_feedback", prompt: "   ", ctx}),\n` +
+        `  run: async ({ctx}) => {\n` +
+        `    const controlBrand = Symbol.for("notionflow.control");\n` +
+        `    return {\n` +
+        `      [controlBrand]: true,\n` +
+        `      type: "await_feedback",\n` +
+        `      prompt: "   ",\n` +
+        `      ctx,\n` +
+        `    };\n` +
+        `  },\n` +
         `});\n`,
       'utf8',
     )

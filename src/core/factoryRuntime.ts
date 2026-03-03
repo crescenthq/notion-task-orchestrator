@@ -24,6 +24,7 @@ import {
   parseCheckpoint,
   type Checkpoint,
 } from '../factory/checkpoint'
+import {hasControlSignalBrand} from '../factory/controlSignal'
 
 type JsonObject = Record<string, unknown>
 
@@ -102,6 +103,7 @@ function isPipeAwaitFeedbackSignal(
 ): value is PipeAwaitFeedbackSignal {
   return (
     isRecord(value) &&
+    hasControlSignalBrand(value) &&
     value.type === 'await_feedback' &&
     typeof value.prompt === 'string' &&
     value.prompt.trim().length > 0 &&
@@ -112,6 +114,7 @@ function isPipeAwaitFeedbackSignal(
 function isPipeEndSignal(value: unknown): value is PipeEndSignal {
   return (
     isRecord(value) &&
+    hasControlSignalBrand(value) &&
     value.type === 'end' &&
     (value.status === 'done' ||
       value.status === 'blocked' ||
@@ -122,16 +125,9 @@ function isPipeEndSignal(value: unknown): value is PipeEndSignal {
 }
 
 function isMalformedPipeControlSignal(value: unknown): value is JsonObject {
-  if (!isRecord(value)) return false
+  if (!isRecord(value) || !hasControlSignalBrand(value)) return false
   if (value.type !== 'await_feedback' && value.type !== 'end') return false
-  if (isPipeAwaitFeedbackSignal(value) || isPipeEndSignal(value)) return false
-
-  return (
-    'ctx' in value ||
-    'prompt' in value ||
-    'status' in value ||
-    'message' in value
-  )
+  return !isPipeAwaitFeedbackSignal(value) && !isPipeEndSignal(value)
 }
 
 function normalizeStepLabel(stepName: string): string {

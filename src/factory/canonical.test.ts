@@ -72,10 +72,9 @@ describe('canonical flow helper', () => {
       score: input.ctx.score + 1,
       trail: [...input.ctx.trail, 'first'],
     }))
-    const awaitFeedback = vi.fn(async (input: PipeInput<TestCtx>) => ({
-      type: 'await_feedback' as const,
-      prompt: 'Please reply',
-      ctx: input.ctx,
+    const parse = vi.fn(async (ctx: TestCtx, reply: string) => ({
+      ...ctx,
+      trail: [...ctx.trail, reply],
     }))
     const skipped = vi.fn(async (input: PipeInput<TestCtx>) => ({
       ...input.ctx,
@@ -83,7 +82,7 @@ describe('canonical flow helper', () => {
       trail: [...input.ctx.trail, 'skipped'],
     }))
 
-    const run = flow(first, awaitFeedback, skipped)
+    const run = flow(first, ask<TestCtx>('Please reply', parse), skipped)
     const result = await run(baseInput)
 
     expect(result).toEqual({
@@ -96,7 +95,7 @@ describe('canonical flow helper', () => {
       },
     })
     expect(first).toHaveBeenCalledTimes(1)
-    expect(awaitFeedback).toHaveBeenCalledTimes(1)
+    expect(parse).not.toHaveBeenCalled()
     expect(skipped).not.toHaveBeenCalled()
   })
 
@@ -106,12 +105,7 @@ describe('canonical flow helper', () => {
       score: input.ctx.score + 2,
       trail: [...input.ctx.trail, 'first'],
     }))
-    const endNow = vi.fn(async (input: PipeInput<TestCtx>) => ({
-      type: 'end' as const,
-      status: 'blocked' as const,
-      message: 'Need manual review',
-      ctx: input.ctx,
-    }))
+    const endNow = vi.fn(end.blocked<TestCtx>('Need manual review'))
     const skipped = vi.fn(async (input: PipeInput<TestCtx>) => ({
       ...input.ctx,
       score: input.ctx.score + 10,
@@ -130,6 +124,33 @@ describe('canonical flow helper', () => {
     expect(first).toHaveBeenCalledTimes(1)
     expect(endNow).toHaveBeenCalledTimes(1)
     expect(skipped).not.toHaveBeenCalled()
+  })
+
+  it('does not treat plain context with type/status fields as a control signal', async () => {
+    type CollisionCtx = {
+      type: 'end'
+      status: 'done'
+      data: string
+    }
+
+    const run = flow(
+      step<CollisionCtx>('mutate', ctx => ({
+        ...ctx,
+        data: 'updated',
+      })),
+      step<CollisionCtx>('finish', ctx => ({
+        ...ctx,
+        data: `${ctx.data}!`,
+      })),
+    )
+
+    const result = await run({
+      ctx: {type: 'end', status: 'done', data: 'original'},
+      runId: 'run-collision-1',
+      tickId: 'tick-collision-1',
+    })
+
+    expect(result).toEqual({type: 'end', status: 'done', data: 'updated!'})
   })
 })
 

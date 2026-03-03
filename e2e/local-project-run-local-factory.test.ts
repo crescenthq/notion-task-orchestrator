@@ -387,10 +387,13 @@ function factorySource(
   return [
     `import {definePipe} from ${JSON.stringify(canonicalModuleUrl)};`,
     '',
+    'const controlBrand = Symbol.for("notionflow.control")',
+    '',
     'export default definePipe({',
     '  id: "smoke",',
     '  initial: {},',
     '  run: async ({ ctx }) => ({',
+    '    [controlBrand]: true,',
     '    type: "end",',
     `    status: ${JSON.stringify(resultState)},`,
     '    ctx,',

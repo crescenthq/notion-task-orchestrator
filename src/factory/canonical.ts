@@ -7,6 +7,10 @@ import {
   type Checkpoint,
   type CheckpointSegment,
 } from './checkpoint'
+import {
+  brandControlSignal,
+  hasControlSignalBrand,
+} from './controlSignal'
 
 export {CheckpointMismatchError}
 export type {Checkpoint, CheckpointSegment} from './checkpoint'
@@ -94,9 +98,59 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null
 }
 
-function isControlSignal(value: unknown): value is Control<unknown> {
+function isControlSignalType(value: unknown): value is JsonRecord & {
+  type: 'await_feedback' | 'end'
+} {
   if (!isRecord(value) || typeof value.type !== 'string') return false
   return value.type === 'await_feedback' || value.type === 'end'
+}
+
+function isControlSignal(value: unknown): value is Control<unknown> {
+  return isControlSignalType(value) && hasControlSignalBrand(value)
+}
+
+function isControlSignalCandidate(value: unknown): value is JsonRecord & {
+  type: 'await_feedback' | 'end'
+} {
+  if (!isControlSignalType(value)) return false
+  if (!('ctx' in value)) return false
+  return value.type === 'await_feedback' ? 'prompt' in value : 'status' in value
+}
+
+function coerceControlSignal(value: unknown): Control<unknown> | undefined {
+  if (isControlSignal(value)) return value
+  if (!isControlSignalCandidate(value)) return undefined
+  return brandControlSignal({...value}) as Control<unknown>
+}
+
+function makeAwaitFeedback<C>(input: {
+  prompt: string
+  ctx: C
+  checkpoint?: Checkpoint
+}): AwaitFeedback<C> {
+  return brandControlSignal(
+    input.checkpoint === undefined
+      ? {
+          type: 'await_feedback',
+          prompt: input.prompt,
+          ctx: input.ctx,
+        }
+      : {
+          type: 'await_feedback',
+          prompt: input.prompt,
+          ctx: input.ctx,
+          checkpoint: input.checkpoint,
+        },
+  ) as AwaitFeedback<C>
+}
+
+function makeEndSignal<C>(status: EndStatus, ctx: C, message?: string): EndSignal<C> {
+  return brandControlSignal<EndSignal<C>>({
+    type: 'end',
+    status,
+    ctx,
+    message,
+  })
 }
 
 function assertNoCheckpointRemainder(
@@ -226,13 +280,13 @@ export function flow<C, R = unknown, E = unknown>(
       const stepResult = await currentStep({...input, ctx, checkpoint: stepCheckpoint})
       if (isControlSignal(stepResult)) {
         if (stepResult.type === 'await_feedback') {
-          return {
+          return brandControlSignal({
             ...stepResult,
             checkpoint: prependCheckpointSegment(
               {k: 'flow', at: index},
               stepResult.checkpoint,
             ),
-          }
+          }) as AwaitFeedback<C>
         }
         return stepResult
       }
@@ -288,27 +342,26 @@ export function ask<C, R = never, E = unknown>(
     const reply = readAskReply(input)
 
     if (!reply) {
-      return {
-        type: 'await_feedback',
-        prompt: resolvedPrompt,
-        ctx,
-      } satisfies AwaitFeedback<C>
+      return makeAwaitFeedback({prompt: resolvedPrompt, ctx})
     }
 
     const parsed = await parse(ctx, reply)
-    if (isControlSignal(parsed)) {
-      if (parsed.type === 'await_feedback') {
-        return {
-          ...parsed,
-          ctx: consumeAskFeedback(parsed.ctx),
-          checkpoint: parseCheckpoint(parsed.checkpoint, {location: 'ask.parse'}),
-        }
+    const parsedSignal = coerceControlSignal(parsed)
+    if (parsedSignal) {
+      if (parsedSignal.type === 'await_feedback') {
+        return brandControlSignal({
+          ...parsedSignal,
+          ctx: consumeAskFeedback(parsedSignal.ctx as C),
+          checkpoint: parseCheckpoint(parsedSignal.checkpoint, {
+            location: 'ask.parse',
+          }),
+        }) as AwaitFeedback<C>
       }
 
-      return {
-        ...parsed,
-        ctx: consumeAskFeedback(parsed.ctx),
-      }
+      return brandControlSignal({
+        ...parsedSignal,
+        ctx: consumeAskFeedback(parsedSignal.ctx as C),
+      }) as EndSignal<C>
     }
 
     return consumeAskFeedback(parsed)
@@ -356,12 +409,11 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
     }
 
     if (!resolvedBranch) {
-      return {
-        type: 'end',
-        status: 'failed',
-        ctx: input.ctx,
-        message: `Unknown branch selected: ${selectedLabel}`,
-      } satisfies EndSignal<C>
+      return makeEndSignal(
+        'failed',
+        input.ctx,
+        `Unknown branch selected: ${selectedLabel}`,
+      )
     }
 
     const branchResult = await resolvedBranch({
@@ -374,13 +426,13 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
         return branchResult
       }
 
-      return {
+      return brandControlSignal<AwaitFeedback<C>>({
         ...branchResult,
         checkpoint: prependCheckpointSegment(
           {k: 'decide', branch: selectedBranch},
           branchResult.checkpoint,
         ),
-      }
+      })
     }
 
     return branchResult
@@ -423,13 +475,13 @@ export function loop<C, R = unknown, E = unknown>(
       })
       if (isControlSignal(stepResult)) {
         if (stepResult.type === 'await_feedback') {
-          return {
+          return brandControlSignal<AwaitFeedback<C>>({
             ...stepResult,
             checkpoint: prependCheckpointSegment(
               {k: 'loop', iter: iteration},
               stepResult.checkpoint,
             ),
-          }
+          })
         }
         return stepResult
       }
@@ -445,12 +497,7 @@ export function loop<C, R = unknown, E = unknown>(
       return config.onExhausted({...input, ctx})
     }
 
-    return {
-      type: 'end',
-      status: 'failed',
-      ctx,
-      message: 'Loop exhausted before completion',
-    } satisfies EndSignal<C>
+    return makeEndSignal('failed', ctx, 'Loop exhausted before completion')
   }
 }
 
@@ -476,12 +523,7 @@ function endSignalStep<C>(status: EndStatus, message?: string): Step<C> {
     })
     assertNoCheckpointRemainder(checkpoint, `end.${status}`)
     await notifyStepStart(input, 'end', `end.${status}`)
-    return {
-      type: 'end',
-      status,
-      ctx: input.ctx,
-      message,
-    }
+    return makeEndSignal(status, input.ctx, message)
   }
 }
 
