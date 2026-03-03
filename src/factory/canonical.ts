@@ -29,9 +29,9 @@ export type StepLifecycle<C> = {
   ctx: C
 }
 
-export type StepLifecycleObserver<C, R = unknown, E = unknown> = (
+export type StepLifecycleObserver<C> = (
   event: StepLifecycle<C>,
-) => PipeResult<void, E, R>
+) => PipeResult<void>
 
 export type AwaitFeedback<C> = {
   type: 'await_feedback'
@@ -49,49 +49,47 @@ export type EndSignal<C> = {
 
 export type Control<C> = AwaitFeedback<C> | EndSignal<C>
 
-export type WritePage<R = unknown, E = unknown> = (
+export type WritePage = (
   output: PageOutput,
-) => PipeResult<void, E, R>
+) => PipeResult<void>
 
-export type PipeInput<C, R = unknown, E = unknown> = {
+export type PipeInput<C> = {
   ctx: C
   feedback?: string
   checkpoint?: Checkpoint
   task?: {id: string; title?: string; prompt?: string; context?: string}
-  writePage?: WritePage<R, E>
-  onStepStart?: StepLifecycleObserver<C, R, E>
+  writePage?: WritePage
+  onStepStart?: StepLifecycleObserver<C>
   runId: string
   tickId: string
 }
 
-type PipeResult<T, _E = unknown, _R = unknown> = T | Promise<T>
+type PipeResult<T> = T | Promise<T>
 
-export type Step<C, R = unknown, E = unknown> = (
-  input: PipeInput<C, R, E>,
-) => PipeResult<C | Control<C>, E, R>
+export type Step<C> = (input: PipeInput<C>) => PipeResult<C | Control<C>>
 
-export type PipeDefinition<C, R = unknown> = {
+export type PipeDefinition<C> = {
   id: string
   initial: C
-  run: Step<C, R>
+  run: Step<C>
 }
 
 export type AskPrompt<C> = string | ((ctx: C) => string)
 
-export type AskParse<C, R = never, E = unknown> = (
+export type AskParse<C> = (
   ctx: C,
   reply: string,
-) => PipeResult<C | Control<C>, E, R>
+) => PipeResult<C | Control<C>>
 
-export type DecideOptions<C, R = unknown, E = unknown> = {
-  otherwise?: Step<C, R, E>
+export type DecideOptions<C> = {
+  otherwise?: Step<C>
 }
 
-export type LoopConfig<C, R = unknown, E = unknown> = {
-  body: Step<C, R, E>
-  until: (ctx: C) => PipeResult<boolean, E, R>
+export type LoopConfig<C> = {
+  body: Step<C>
+  until: (ctx: C) => PipeResult<boolean>
   max?: number
-  onExhausted?: Step<C, R, E>
+  onExhausted?: Step<C>
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -235,8 +233,8 @@ function normalizeStepName(name: string, fallback: string): string {
   return trimmed.length > 0 ? trimmed : fallback
 }
 
-async function notifyStepStart<C, R = unknown, E = unknown>(
-  input: PipeInput<C, R, E>,
+async function notifyStepStart<C>(
+  input: PipeInput<C>,
   kind: StepKind,
   name: string,
   ctx?: C,
@@ -249,15 +247,11 @@ async function notifyStepStart<C, R = unknown, E = unknown>(
   })
 }
 
-export function definePipe<C, R = unknown>(
-  definition: PipeDefinition<C, R>,
-): PipeDefinition<C, R> {
+export function definePipe<C>(definition: PipeDefinition<C>): PipeDefinition<C> {
   return definition
 }
 
-export function flow<C, R = unknown, E = unknown>(
-  ...steps: readonly Step<C, R, E>[]
-): Step<C, R, E> {
+export function flow<C>(...steps: readonly Step<C>[]): Step<C> {
   return async (input: PipeInput<C>) => {
     const {segment, remainder} = consumeCheckpointSegment(
       input.checkpoint,
@@ -297,20 +291,20 @@ export function flow<C, R = unknown, E = unknown>(
   }
 }
 
-export function step<C, R = unknown, E = unknown>(
+export function step<C>(
   name: string,
-  run: (ctx: C, input: PipeInput<C>) => PipeResult<C, E, R>,
-): Step<C, R, E>
-export function step<C, O, R = unknown, E = unknown>(
+  run: (ctx: C, input: PipeInput<C>) => PipeResult<C>,
+): Step<C>
+export function step<C, O>(
   name: string,
-  run: (ctx: C, input: PipeInput<C>) => PipeResult<O, E, R>,
+  run: (ctx: C, input: PipeInput<C>) => PipeResult<O>,
   assign: (ctx: C, out: O) => C,
-): Step<C, R, E>
-export function step<C, O, R = unknown, E = unknown>(
+): Step<C>
+export function step<C, O>(
   name: string,
-  run: (ctx: C, input: PipeInput<C>) => PipeResult<O, E, R>,
+  run: (ctx: C, input: PipeInput<C>) => PipeResult<O>,
   assign?: (ctx: C, out: O) => C,
-): Step<C, R, E> {
+): Step<C> {
   const normalizedName = normalizeStepName(name, 'step')
   return async (input: PipeInput<C>) => {
     const checkpoint = parseCheckpoint(input.checkpoint, {
@@ -323,10 +317,10 @@ export function step<C, O, R = unknown, E = unknown>(
   }
 }
 
-export function ask<C, R = never, E = unknown>(
+export function ask<C>(
   prompt: AskPrompt<C>,
-  parse: AskParse<C, R, E>,
-): Step<C, R, E> {
+  parse: AskParse<C>,
+): Step<C> {
   return async (input: PipeInput<C>) => {
     const checkpoint = parseCheckpoint(input.checkpoint, {location: 'ask'})
     assertNoCheckpointRemainder(checkpoint, 'ask')
@@ -368,11 +362,11 @@ export function ask<C, R = never, E = unknown>(
   }
 }
 
-export function decide<C, K extends string, R = unknown, E = unknown>(
-  select: (ctx: C) => PipeResult<K, E, R>,
-  branches: Record<K, Step<C, R, E>>,
-  options?: DecideOptions<C, R, E>,
-): Step<C, R, E> {
+export function decide<C, K extends string>(
+  select: (ctx: C) => PipeResult<K>,
+  branches: Record<K, Step<C>>,
+  options?: DecideOptions<C>,
+): Step<C> {
   return async (input: PipeInput<C>) => {
     const {segment, remainder} = consumeCheckpointSegment(
       input.checkpoint,
@@ -384,7 +378,7 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
 
     let selectedBranch: string | undefined
     let selectedLabel: string | undefined
-    let resolvedBranch: Step<C, R, E> | undefined
+    let resolvedBranch: Step<C> | undefined
 
     if (segment) {
       if (!Object.prototype.hasOwnProperty.call(branches, segment.branch)) {
@@ -439,9 +433,7 @@ export function decide<C, K extends string, R = unknown, E = unknown>(
   }
 }
 
-export function loop<C, R = unknown, E = unknown>(
-  config: LoopConfig<C, R, E>,
-): Step<C, R, E> {
+export function loop<C>(config: LoopConfig<C>): Step<C> {
   return async (input: PipeInput<C>) => {
     const {segment, remainder} = consumeCheckpointSegment(
       input.checkpoint,
@@ -501,9 +493,7 @@ export function loop<C, R = unknown, E = unknown>(
   }
 }
 
-export function write<C, R = unknown, E = unknown>(
-  render: (ctx: C) => PipeResult<PageOutput, E, R>,
-): Step<C, R, E> {
+export function write<C>(render: (ctx: C) => PipeResult<PageOutput>): Step<C> {
   return async (input: PipeInput<C>) => {
     const checkpoint = parseCheckpoint(input.checkpoint, {location: 'write'})
     assertNoCheckpointRemainder(checkpoint, 'write')
