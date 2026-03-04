@@ -136,80 +136,121 @@ Typical Notion loop:
 3. `notionflow integrations notion sync --board <board-id> --run` detects new
    comments, stores `human_feedback`, re-queues the task, and runs queued work.
 4. `notionflow integrations notion sync-factories --config <path>` provisions
-   all declared factory boards in a new environment before running the first tick.
+   all declared factory boards in a new environment before running the first
+   tick.
 
-## Service Layer Setup (Provider-Based)
+## Agent Wrapper Setup (`defineAgent`)
 
-Orchestration utilities are provider-backed services:
+`createOrchestration` and utility contracts (`invokeAgent`, `runCommand`,
+`askForRepo`) were removed. Use `defineAgent` wrappers for external
+capabilities, and keep orchestration logic in `definePipe` primitives.
 
-- `invokeAgent`
-- `runCommand`
-- `askForRepo` (helper built on `invokeAgent`)
-
-### Production Wiring
+### Production Wiring (Remote + CLI Capabilities)
 
 ```ts
-import {
-  askForRepo,
-  createOrchestration,
-  definePipe,
-  end,
-  flow,
-  step,
-} from 'notionflow'
+import {execFile} from 'node:child_process'
+import {promisify} from 'node:util'
+import {defineAgent, definePipe, end, flow, step} from 'notionflow'
 
-const utils = createOrchestration({
-  invokeAgent: async ({prompt}) => {
-    if (prompt.includes('Select repository')) {
+const execFileAsync = promisify(execFile)
+
+const selectRepo = defineAgent<
+  {prompt: string},
+  {repo: string; branch: string; reason: string},
+  'provider_unavailable' | 'invalid_response' | (string & {})
+>({
+  id: 'repo-selector.remote',
+  timeoutMs: 20_000,
+  retry: {attempts: 3, delay: 300},
+  call: async ({prompt}) => {
+    // Replace with provider SDK/HTTP call.
+    return {
+      repo: 'https://github.com/acme/demo',
+      branch: 'main',
+      reason: `selected for prompt: ${prompt}`,
+    }
+  },
+  mapError: error => {
+    if (error instanceof Error && error.message.includes('HTTP 503')) {
       return {
-        text: 'repo selected',
-        structured: {
-          repo: 'https://github.com/acme/demo',
-          branch: 'main',
-        },
+        code: 'provider_unavailable',
+        message: error.message,
+        cause: error,
       }
     }
 
-    return {text: `processed: ${prompt}`}
+    return {
+      code: 'invalid_response',
+      message: 'repo selector failed',
+      cause: error,
+    }
   },
-  runCommand: async () => ({exitCode: 0, stdout: 'ok', stderr: ''}),
+})
+
+const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
+  id: 'git.status.cli',
+  retry: {attempts: 2, delay: 100},
+  call: async ({cwd}) => {
+    const {stdout} = await execFileAsync('git', ['status', '--short'], {cwd})
+    return {stdout}
+  },
 })
 
 const runPlanning = step('run-planning', async ctx => {
-  const repo = await askForRepo(utils, 'Select repository')
+  const repo = await selectRepo.invoke({
+    prompt: 'Select repository for rollout',
+  })
   if (!repo.ok) return {...ctx, failure: repo.error.message}
 
-  const plan = await utils.invokeAgent({
-    prompt: `Create plan for ${repo.value.repo}`,
-  })
-  if (!plan.ok) return {...ctx, failure: plan.error.message}
+  const status = await gitStatus.invoke({cwd: process.cwd()})
+  if (!status.ok) return {...ctx, failure: status.error.message}
 
-  const command = await utils.runCommand({command: 'git', args: ['status']})
-  if (!command.ok) return {...ctx, failure: command.error.message}
-
-  return {...ctx, plan: plan.value.text, status: command.value.stdout}
+  return {
+    ...ctx,
+    repo: repo.value.repo,
+    branch: repo.value.branch,
+    planReason: repo.value.reason,
+    status: status.value.stdout,
+  }
 })
 
 export default definePipe({
   id: 'service-layer-demo',
-  initial: {plan: '', status: '', failure: ''},
+  initial: {repo: '', branch: '', planReason: '', status: '', failure: ''},
   run: flow(runPlanning, end.done()),
 })
 ```
 
-### Test Provider Swaps
+### Default `mapError` Behavior
+
+If `mapError` is omitted, `defineAgent` maps failures as:
+
+- `timeout` when a call exceeds timeout
+- `aborted` when external or timeout-driven abort is observed
+- `call_error` for all other failures with attempt-aware message text
+
+`timeoutMs` applies per attempt. With `retry.attempts > 1`, each attempt gets
+its own timeout window.
+
+### When To Customize `mapError`
+
+Customize `mapError` when your workflow needs stable, branchable error codes
+from upstream providers or CLI wrappers (for example `provider_unavailable`). If
+custom `mapError` throws, NotionFlow falls back to the default mapping.
+
+### Test Wrapper Swaps
 
 ```ts
-import {createOrchestration} from 'notionflow'
+import {defineAgent} from 'notionflow'
 
-const alpha = createOrchestration({
-  invokeAgent: async () => ({text: 'alpha-plan'}),
-  runCommand: async () => ({exitCode: 0, stdout: '', stderr: ''}),
+const alphaPlanner = defineAgent<{prompt: string}, {text: string}>({
+  id: 'planner.alpha',
+  call: async () => ({text: 'alpha-plan'}),
 })
 
-const beta = createOrchestration({
-  invokeAgent: async () => ({text: 'beta-plan'}),
-  runCommand: async () => ({exitCode: 0, stdout: '', stderr: ''}),
+const betaPlanner = defineAgent<{prompt: string}, {text: string}>({
+  id: 'planner.beta',
+  call: async () => ({text: 'beta-plan'}),
 })
 ```
 
@@ -238,8 +279,8 @@ export default defineConfig({
 ```
 
 If you want board provisioning to use a human-friendly name, add `name` to the
-`definePipe` export (for example `name: 'My Factory'`). NotionFlow still uses the
-factory `id` as the board key, so you can rename the board in Notion later.
+`definePipe` export (for example `name: 'My Factory'`). NotionFlow still uses
+the factory `id` as the board key, so you can rename the board in Notion later.
 
 4. Validate context and auth.
 
@@ -260,7 +301,8 @@ npx notionflow run --task <notion_page_id>
 - Keep factory `id` stable once tasks are in-flight
 - Use `flow(...)` as the default composition style
 - Return explicit `end.*` outcomes for deterministic terminals
-- Treat utility failures (`result.ok === false`) as explicit workflow branches
+- Treat agent invocation failures (`result.ok === false`) as explicit workflow
+  branches
 
 ## Verification Checklist
 
@@ -276,7 +318,8 @@ npm run test:e2e
 
 Live Notion API e2e gate (explicit):
 
-1. Required env vars (if omitted, live-only e2e will fail fast with a clear error).
+1. Required env vars (if omitted, live-only e2e will fail fast with a clear
+   error).
 
 ```bash
 export NOTION_API_TOKEN="<integration-token>"
