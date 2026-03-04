@@ -77,12 +77,6 @@ export type PipeDefinition<C, TAgents extends PipeAgents = PipeAgents> = {
   run: (env: TAgents) => Step<C>
 }
 
-type LegacyPipeDefinition<C> = {
-  id: string
-  initial: C
-  run: Step<C>
-}
-
 export type AskPrompt<C> = string | ((ctx: C) => string)
 
 export type AskParse<C> = (
@@ -259,12 +253,9 @@ async function notifyStepStart<C>(
 export function definePipe<C, TAgents extends PipeAgents>(
   definition: PipeDefinition<C, TAgents>,
 ): PipeDefinition<C, TAgents>
-export function definePipe<C>(
-  definition: LegacyPipeDefinition<C>,
-): LegacyPipeDefinition<C>
 export function definePipe<C, TAgents extends PipeAgents>(
-  definition: PipeDefinition<C, TAgents> | LegacyPipeDefinition<C>,
-): PipeDefinition<C, TAgents> | LegacyPipeDefinition<C> {
+  definition: PipeDefinition<C, TAgents>,
+): PipeDefinition<C, TAgents> {
   return definition
 }
 
