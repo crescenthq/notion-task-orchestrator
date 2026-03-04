@@ -68,7 +68,16 @@ type PipeResult<T> = T | Promise<T>
 
 export type Step<C> = (input: PipeInput<C>) => PipeResult<C | Control<C>>
 
-export type PipeDefinition<C> = {
+export type PipeAgents = Record<string, unknown>
+
+export type PipeDefinition<C, TAgents extends PipeAgents = PipeAgents> = {
+  id: string
+  initial: C
+  agents: TAgents
+  run: (env: TAgents) => Step<C>
+}
+
+type LegacyPipeDefinition<C> = {
   id: string
   initial: C
   run: Step<C>
@@ -247,7 +256,15 @@ async function notifyStepStart<C>(
   })
 }
 
-export function definePipe<C>(definition: PipeDefinition<C>): PipeDefinition<C> {
+export function definePipe<C, TAgents extends PipeAgents>(
+  definition: PipeDefinition<C, TAgents>,
+): PipeDefinition<C, TAgents>
+export function definePipe<C>(
+  definition: LegacyPipeDefinition<C>,
+): LegacyPipeDefinition<C>
+export function definePipe<C, TAgents extends PipeAgents>(
+  definition: PipeDefinition<C, TAgents> | LegacyPipeDefinition<C>,
+): PipeDefinition<C, TAgents> | LegacyPipeDefinition<C> {
   return definition
 }
 
