@@ -123,9 +123,10 @@ export async function loadFactoryFromPath(
       ...validationErrors,
     ])
   }
+  const definition = maybeFactory as PipeFactoryDefinition
 
   return {
-    definition: maybeFactory,
+    definition,
     sourcePath,
     sourceText,
   }
