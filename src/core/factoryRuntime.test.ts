@@ -102,7 +102,8 @@ describe('factoryRuntime (definePipe only)', () => {
       `export default {\n` +
         `  id: "${factoryId}",\n` +
         `  initial: { visits: 0 },\n` +
-        `  run: async ({ ctx, writePage }) => {\n` +
+        `  agents: {},\n` +
+        `  run: () => async ({ ctx, writePage }) => {\n` +
         `    await writePage({ markdown: "# Pipe Output" });\n` +
         `    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1, finishedBy: "pipe" };\n` +
         `  },\n` +
@@ -162,7 +163,8 @@ describe('factoryRuntime (definePipe only)', () => {
       `export default {
   id: "${factoryId}",
   initial: { visits: 0 },
-  run: async ({ ctx, writePage }) => {
+  agents: {},
+  run: () => async ({ ctx, writePage }) => {
     await writePage({ markdown: "# Adapter Output" });
     return { ...ctx, visits: Number(ctx.visits ?? 0) + 1 };
   },
@@ -220,7 +222,8 @@ describe('factoryRuntime (definePipe only)', () => {
       `export default {\n` +
         `  id: "${factoryId}",\n` +
         `  initial: { attempts: 0, approved: false },\n` +
-        `  run: async ({ ctx }) => {\n` +
+        `  agents: {},\n` +
+        `  run: () => async ({ ctx }) => {\n` +
         `    const controlBrand = Symbol.for("notionflow.control");\n` +
         `    const attempts = Number(ctx.attempts ?? 0) + 1;\n` +
         `    if (!ctx.human_feedback) {\n` +
@@ -314,7 +317,8 @@ describe('factoryRuntime (definePipe only)', () => {
       `export default {
   id: "${factoryId}",
   initial: { attempts: 0, approved: false },
-  run: async ({ ctx }) => {
+  agents: {},
+  run: () => async ({ ctx }) => {
     const attempts = Number(ctx.attempts ?? 0) + 1;
     if (!ctx.human_feedback) {
       return {
@@ -389,7 +393,8 @@ describe('factoryRuntime (definePipe only)', () => {
 export default definePipe({
   id: ${JSON.stringify(factoryId)},
   initial: {step_a_runs: 0, step_b_runs: 0, approved_1: false, approved_2: false},
-  run: flow(
+  agents: {},
+  run: () => flow(
     step('step-a', ctx => ({...ctx, step_a_runs: Number(ctx.step_a_runs ?? 0) + 1})),
     ask('approval-1', (ctx, reply) => ({...ctx, approved_1: reply.trim().length > 0})),
     step('step-b', ctx => ({...ctx, step_b_runs: Number(ctx.step_b_runs ?? 0) + 1})),
@@ -490,7 +495,8 @@ export default definePipe({
 export default definePipe({
   id: ${JSON.stringify(factoryId)},
   initial: {approved: false, parsed_count: 0},
-  run: flow(
+  agents: {},
+  run: () => flow(
     ask('approve', (ctx, reply) => ({
       ...ctx,
       approved: reply.trim().length > 0,
@@ -563,7 +569,8 @@ export default definePipe({
         `export default {\n` +
           `  id: "${factoryId}",\n` +
           `  initial: {},\n` +
-          `  run: async ({ ctx }) => {\n` +
+          `  agents: {},\n` +
+          `  run: () => async ({ ctx }) => {\n` +
           `    const controlBrand = Symbol.for("notionflow.control");\n` +
           `    return {\n` +
           `      [controlBrand]: true,\n` +
@@ -608,7 +615,8 @@ export default definePipe({
       `export default {\n` +
         `  id: "${factoryId}",\n` +
         `  initial: {},\n` +
-        `  run: async () => "invalid-context",\n` +
+        `  agents: {},\n` +
+        `  run: () => async () => "invalid-context",\n` +
         `};\n`,
       'utf8',
     )
@@ -634,6 +642,66 @@ export default definePipe({
     expect(traceTypes).toContain('completed')
   })
 
+  it('fails run with explicit diagnostics when agents entries are invalid', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-invalid-agents'
+    const externalTaskId = 'task-invalid-agents-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: {},\n` +
+        `  agents: { writer: {} },\n` +
+        `  run: () => async ({ ctx }) => ctx,\n` +
+        `};\n`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await expect(
+      runtime.runFactoryTaskByExternalId(externalTaskId),
+    ).rejects.toThrow(/invalid `agents` entries: writer/)
+
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(updatedTask?.state).toBe('failed')
+    expect(updatedTask?.lastError).toContain('invalid `agents` entries: writer')
+  })
+
+  it('fails run with explicit diagnostics when run(env) does not return a callable step', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-invalid-run-env-return'
+    const externalTaskId = 'task-invalid-run-env-return-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: {},\n` +
+        `  agents: {},\n` +
+        `  run: () => ({ invalid: true }),\n` +
+        `};\n`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await expect(
+      runtime.runFactoryTaskByExternalId(externalTaskId),
+    ).rejects.toThrow(/run\(env\) must return a callable step/)
+
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(updatedTask?.state).toBe('failed')
+    expect(updatedTask?.lastError).toContain('run(env) must return a callable step')
+  })
+
   it('fails run when pipe emits malformed control signal payload', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-malformed-control-signal'
@@ -647,7 +715,8 @@ export default definePipe({
         `export default definePipe({\n` +
         `  id: "${factoryId}",\n` +
         `  initial: {},\n` +
-        `  run: async ({ctx}) => {\n` +
+        `  agents: {},\n` +
+        `  run: () => async ({ctx}) => {\n` +
         `    const controlBrand = Symbol.for("notionflow.control");\n` +
         `    return {\n` +
         `      [controlBrand]: true,\n` +
@@ -686,7 +755,8 @@ export default definePipe({
         `export default definePipe({\n` +
         `  id: "${factoryId}",\n` +
         `  initial: {count: 0},\n` +
-        `  run: flow(\n` +
+        `  agents: {},\n` +
+        `  run: () => flow(\n` +
         `    step("first", ctx => ({...ctx, count: Number(ctx.count ?? 0) + 1})),\n` +
         `    step("second", ctx => ({...ctx, count: Number(ctx.count ?? 0) + 1})),\n` +
         `    end.done(),\n` +
@@ -726,7 +796,8 @@ export default definePipe({
           `export default definePipe({\n` +
           `  id: "${factoryId}",\n` +
           `  initial: {finished: false},\n` +
-          `  run: flow(\n` +
+          `  agents: {},\n` +
+          `  run: () => flow(\n` +
           `    step("long-step", async ctx => {\n` +
           `      await wait(2200);\n` +
           `      return {...ctx, finished: true};\n` +
