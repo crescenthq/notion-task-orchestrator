@@ -170,6 +170,10 @@ async function runAttempt<TInput, TOutput, TCode extends string>(
   timeoutMs: number | undefined,
   externalSignal: AbortSignal | undefined,
 ): Promise<TOutput> {
+  if (externalSignal?.aborted) {
+    throw new AgentAbortedError(options.id, attempt, externalSignal.reason)
+  }
+
   const controller = new AbortController()
   let timeoutTriggered = false
 
@@ -253,11 +257,11 @@ async function waitDelay(options: {
 }): Promise<void> {
   const {agentId, delayMs, attempt, signal} = options
 
-  if (delayMs <= 0) return
-
   if (signal?.aborted) {
     throw new AgentAbortedError(agentId, attempt, signal.reason)
   }
+
+  if (delayMs <= 0) return
 
   await new Promise<void>((resolve, reject) => {
     const timeoutId = setTimeout(() => {

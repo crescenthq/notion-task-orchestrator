@@ -262,6 +262,70 @@ describe('defineAgent core contract', () => {
     })
   })
 
+  it('returns aborted without invoking call when external signal is already aborted', async () => {
+    const call = vi.fn(async () => ({text: 'should-not-run'}))
+
+    const agent = defineAgent<{prompt: string}, {text: string}>({
+      id: 'coder',
+      retry: {attempts: 3, delay: 0},
+      call,
+    })
+
+    const externalController = new AbortController()
+    externalController.abort(new Error('cancelled-before-start'))
+
+    const result = await agent.invoke(
+      {prompt: 'draft'},
+      {signal: externalController.signal},
+    )
+
+    expect(call).toHaveBeenCalledTimes(0)
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected aborted failure')
+    }
+
+    expect(result.error.code).toBe('aborted')
+  })
+
+  it('surfaces aborted state before zero-delay retry transitions', async () => {
+    const externalController = new AbortController()
+    const delay = vi.fn(() => 0)
+    const call = vi.fn(
+      async (
+        _input: {prompt: string},
+        ctx: {attempt: number; signal: AbortSignal},
+      ) => {
+        if (ctx.attempt === 1) {
+          externalController.abort(new Error('stop-retry'))
+          throw new Error('first-failure')
+        }
+
+        return {text: 'attempt-2'}
+      },
+    )
+
+    const agent = defineAgent<{prompt: string}, {text: string}>({
+      id: 'coder',
+      retry: {attempts: 2, delay},
+      call,
+    })
+
+    const result = await agent.invoke(
+      {prompt: 'retry me'},
+      {signal: externalController.signal},
+    )
+
+    expect(delay).toHaveBeenCalledTimes(1)
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected aborted failure')
+    }
+
+    expect(result.error.code).toBe('aborted')
+  })
+
   it('propagates timeout abort into the call signal', async () => {
     vi.useFakeTimers()
 
