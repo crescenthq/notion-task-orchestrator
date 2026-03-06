@@ -108,15 +108,17 @@ export default definePipe({
     revisions: 0,
     summary: '',
   } satisfies PrimitiveDemoContext,
-  run: flow(
-    startDraft,
-    collectDecision,
-    decide(
-      ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'),
-      {
-        publish: flow(markApproved, publishResult, end.done()),
-        revise: flow(revisionLoop, publishResult, end.done()),
-      },
+  agents: {},
+  run: _env =>
+    flow(
+      startDraft,
+      collectDecision,
+      decide(
+        ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'),
+        {
+          publish: flow(markApproved, publishResult, end.done()),
+          revise: flow(revisionLoop, publishResult, end.done()),
+        },
+      ),
     ),
-  ),
 })

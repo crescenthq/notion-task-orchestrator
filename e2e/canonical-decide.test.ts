@@ -47,23 +47,25 @@ describe('canonical decide e2e scenarios', () => {
     const pipe = definePipe({
       id: 'decide-e2e-success',
       initial: {score: 0, trail: [] as string[]},
-      run: flow(
-        step<DecideE2ECtx>('prepare', ctx => ({
-          ...ctx,
-          score: 2,
-          trail: [...ctx.trail, 'prepared'],
-        })),
-        decide<DecideE2ECtx, 'approve' | 'revise'>(
-          ctx => (ctx.score >= 2 ? 'approve' : 'revise'),
-          {
-            approve: approveBranch,
-            revise: reviseBranch,
-          },
+      agents: {},
+      run: _env =>
+        flow(
+          step<DecideE2ECtx>('prepare', ctx => ({
+            ...ctx,
+            score: 2,
+            trail: [...ctx.trail, 'prepared'],
+          })),
+          decide<DecideE2ECtx, 'approve' | 'revise'>(
+            ctx => (ctx.score >= 2 ? 'approve' : 'revise'),
+            {
+              approve: approveBranch,
+              revise: reviseBranch,
+            },
+          ),
         ),
-      ),
     })
 
-    const result = await pipe.run(createInput({score: 0, trail: []}))
+    const result = await pipe.run(pipe.agents)(createInput({score: 0, trail: []}))
     expect(result).toEqual({
       score: 2,
       decision: 'approved',
@@ -75,21 +77,25 @@ describe('canonical decide e2e scenarios', () => {
     const pipe = definePipe({
       id: 'decide-e2e-unmapped',
       initial: {score: 0, trail: [] as string[]},
-      run: flow(
-        step<DecideE2ECtx>('prepare', ctx => ({
-          ...ctx,
-          trail: [...ctx.trail, 'prepared'],
-        })),
-        decide<DecideE2ECtx, string>(
-          () => 'non-existent-branch',
-          {
-            approve: end.done<DecideE2ECtx>('approved'),
-          },
+      agents: {},
+      run: _env =>
+        flow(
+          step<DecideE2ECtx>('prepare', ctx => ({
+            ...ctx,
+            trail: [...ctx.trail, 'prepared'],
+          })),
+          decide<DecideE2ECtx, string>(
+            () => 'non-existent-branch',
+            {
+              approve: end.done<DecideE2ECtx>('approved'),
+            },
+          ),
         ),
-      ),
     })
 
-    const result = await pipe.run(createInput({score: 0, trail: []}, 'tick-2'))
+    const result = await pipe.run(pipe.agents)(
+      createInput({score: 0, trail: []}, 'tick-2'),
+    )
     expect(result).toEqual({
       type: 'end',
       status: 'failed',

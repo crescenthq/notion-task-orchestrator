@@ -127,5 +127,6 @@ export default definePipe({
     last_answer: '',
     history: [],
   } satisfies Magic8Context,
-  run: flow(conversationStep, ensureCompletion),
+  agents: {},
+  run: _env => flow(conversationStep, ensureCompletion),
 })

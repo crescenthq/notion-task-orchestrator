@@ -16,29 +16,31 @@ export default definePipe({
     finished: false,
     summary: '',
   } satisfies SharedHelperContext,
-  run: flow(
-    loop({
-      body: flow(
-        enrichContext,
-        decide(chooseRoute, {
-          finish: markFinished,
-          retry: prepareRetry,
-        }),
-      ),
-      until: loopComplete,
-      max: 3,
-      onExhausted: end.failed(
-        'Shared helper demo exhausted before reaching the finish route.',
-      ),
-    }),
-    write(ctx => ({
-      markdown: [
-        '# Shared Helper Demo',
-        `Attempts: ${ctx.attempts}`,
-        `Finished: ${ctx.finished}`,
-        `Summary: ${ctx.summary}`,
-      ].join('\n'),
-    })),
-    end.done(),
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      loop({
+        body: flow(
+          enrichContext,
+          decide(chooseRoute, {
+            finish: markFinished,
+            retry: prepareRetry,
+          }),
+        ),
+        until: loopComplete,
+        max: 3,
+        onExhausted: end.failed(
+          'Shared helper demo exhausted before reaching the finish route.',
+        ),
+      }),
+      write(ctx => ({
+        markdown: [
+          '# Shared Helper Demo',
+          `Attempts: ${ctx.attempts}`,
+          `Finished: ${ctx.finished}`,
+          `Summary: ${ctx.summary}`,
+        ].join('\n'),
+      })),
+      end.done(),
+    ),
 })

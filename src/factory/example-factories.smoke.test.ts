@@ -56,7 +56,7 @@ describe('example factories smoke', () => {
   it('runs expressive-primitives through the approve path', async () => {
     const writes: PageOutput[] = []
 
-    const result = await expressivePrimitives.run({
+    const result = await expressivePrimitives.run(expressivePrimitives.agents)({
       ctx: expressivePrimitives.initial,
       feedback: 'approve',
       runId: 'run-expressive',
@@ -78,7 +78,7 @@ describe('example factories smoke', () => {
   it('runs shared-helper-demo to completion', async () => {
     const writes: PageOutput[] = []
 
-    const result = await sharedHelperDemo.run({
+    const result = await sharedHelperDemo.run(sharedHelperDemo.agents)({
       ctx: sharedHelperDemo.initial,
       runId: 'run-shared',
       tickId: 'tick-shared',
@@ -95,7 +95,7 @@ describe('example factories smoke', () => {
   })
 
   it('supports pause/resume in magic-8 flow', async () => {
-    const first = await magic8Factory.run({
+    const first = await magic8Factory.run(magic8Factory.agents)({
       ctx: magic8Factory.initial,
       runId: 'run-magic-1',
       tickId: 'tick-magic-1',
@@ -103,7 +103,7 @@ describe('example factories smoke', () => {
     const firstAwait = expectAwaitFeedback(first)
     expect(firstAwait.prompt).toContain('Ask a yes/no question')
 
-    const second = await magic8Factory.run({
+    const second = await magic8Factory.run(magic8Factory.agents)({
       ctx: firstAwait.ctx as typeof magic8Factory.initial,
       feedback: 'Will this release go smoothly?',
       runId: 'run-magic-2',
@@ -113,7 +113,7 @@ describe('example factories smoke', () => {
     expect(secondAwait.prompt).toContain('Ask another? (yes/no)')
 
     const writes: PageOutput[] = []
-    const third = await magic8Factory.run({
+    const third = await magic8Factory.run(magic8Factory.agents)({
       ctx: secondAwait.ctx as typeof magic8Factory.initial,
       feedback: 'no',
       runId: 'run-magic-3',
@@ -130,7 +130,7 @@ describe('example factories smoke', () => {
   })
 
   it('handles invalid then valid input in would-you-rather', async () => {
-    const first = await wouldYouRatherFactory.run({
+    const first = await wouldYouRatherFactory.run(wouldYouRatherFactory.agents)({
       ctx: wouldYouRatherFactory.initial,
       runId: 'run-rather-1',
       tickId: 'tick-rather-1',
@@ -138,7 +138,7 @@ describe('example factories smoke', () => {
     const firstAwait = expectAwaitFeedback(first)
     expect(firstAwait.prompt).toContain('Reply with A or B')
 
-    const second = await wouldYouRatherFactory.run({
+    const second = await wouldYouRatherFactory.run(wouldYouRatherFactory.agents)({
       ctx: firstAwait.ctx as typeof wouldYouRatherFactory.initial,
       feedback: 'maybe',
       runId: 'run-rather-2',
@@ -148,7 +148,7 @@ describe('example factories smoke', () => {
     expect(secondAwait.prompt).toContain('Please reply with only A or B')
 
     const writes: PageOutput[] = []
-    const third = await wouldYouRatherFactory.run({
+    const third = await wouldYouRatherFactory.run(wouldYouRatherFactory.agents)({
       ctx: secondAwait.ctx as typeof wouldYouRatherFactory.initial,
       feedback: 'A',
       runId: 'run-rather-3',
@@ -165,7 +165,7 @@ describe('example factories smoke', () => {
   })
 
   it('captures an intent brief and completes in one reviewed pass', async () => {
-    const first = await intentFactory.run({
+    const first = await intentFactory.run(intentFactory.agents)({
       ctx: intentFactory.initial,
       runId: 'run-intent-1',
       tickId: 'tick-intent-1',
@@ -174,7 +174,7 @@ describe('example factories smoke', () => {
     expect(awaitIntent.prompt).toContain('Describe the request in one message')
 
     const writes: PageOutput[] = []
-    const second = await intentFactory.run({
+    const second = await intentFactory.run(intentFactory.agents)({
       ctx: awaitIntent.ctx as typeof intentFactory.initial,
       feedback:
         'repo=https://github.com/notionflow/example.git; feature=Add a clear progress dashboard for task runs.; decision=approve',
