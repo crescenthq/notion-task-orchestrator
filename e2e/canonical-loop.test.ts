@@ -48,7 +48,7 @@ describe('canonical loop e2e scenarios', () => {
         ),
     })
 
-    const result = await pipe.run(createInput({count: 0, trail: []}))
+    const result = await pipe.run(pipe.agents)(createInput({count: 0, trail: []}))
     expect(result).toEqual({
       count: 2,
       trail: ['iter-1', 'iter-2'],
@@ -75,7 +75,7 @@ describe('canonical loop e2e scenarios', () => {
         }),
     })
 
-    const result = await pipe.run(
+    const result = await pipe.run(pipe.agents)(
       createInput({count: 0, trail: []}, 'tick-loop-e2e-2'),
     )
     expect(result).toEqual({
