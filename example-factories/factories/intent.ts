@@ -144,10 +144,12 @@ export default definePipe({
     review_decision: 'approve',
     final_status: 'done',
   } satisfies IntentContext,
-  run: flow(
-    collectIntentBrief,
-    refinePlan,
-    captureImplementationSummary,
-    finalizeByDecision,
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      collectIntentBrief,
+      refinePlan,
+      captureImplementationSummary,
+      finalizeByDecision,
+    ),
 })

@@ -17,7 +17,7 @@ describe('factory command', () => {
     }
   })
 
-  it('creates a scaffold that does not import notionflow from the project tree', async () => {
+  it('creates an env-injected definePipe scaffold', async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), 'notionflow-factory-'))
     tempDirs.push(projectRoot)
 
@@ -50,8 +50,9 @@ describe('factory command', () => {
     })
 
     const scaffold = await readFile(path.join(projectRoot, 'factories', 'demo.ts'), 'utf8')
-    expect(scaffold).not.toContain("from 'notionflow'")
-    expect(scaffold).toContain('export default {')
-    expect(scaffold).toContain("run: async ({ctx}) => ({...ctx, result: 'ok'}),")
+    expect(scaffold).toContain("import {definePipe, end, flow, step} from 'notionflow'")
+    expect(scaffold).toContain('export default definePipe({')
+    expect(scaffold).toContain('agents: {},')
+    expect(scaffold).toContain('run: (_env) =>')
   })
 })

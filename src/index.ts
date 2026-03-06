@@ -11,6 +11,7 @@ export {
   type AwaitFeedback,
   type Control,
   type EndSignal,
+  type PipeAgents,
   type PipeDefinition,
   type PipeInput,
   type Step,
