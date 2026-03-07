@@ -46,3 +46,12 @@ directory during the initial migration:
   running.
 - Keep source-oriented references pointing to repository paths or GitHub when
   that is the simplest option.
+
+## Deployment
+
+- GitHub Pages deployment is handled by `.github/workflows/deploy-docs.yml`.
+- The Astro project root for deployment is `docs/`.
+- GitHub repository settings must use `GitHub Actions` as the Pages source.
+- The published URL is expected to be
+  `https://crescenthq.github.io/notion-task-orchestrator` until a custom domain
+  is configured.
