@@ -1,4 +1,7 @@
-# Architecture
+---
+title: Architecture
+description: Architectural overview of the NotionFlow runtime, persistence model, and execution flow.
+---
 
 NotionFlow is a project-local orchestration runtime for Notion-backed tasks.
 

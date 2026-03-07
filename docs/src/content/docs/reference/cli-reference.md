@@ -1,4 +1,7 @@
-# CLI Reference
+---
+title: CLI Reference
+description: Reference documentation for the NotionFlow CLI commands and integration subcommands.
+---
 
 ## Command Groups
 

@@ -113,8 +113,8 @@ Package-root authoring API:
 
 Reference contract:
 
-- [`docs/definepipe-v1-api-contract.ts`](./docs/definepipe-v1-api-contract.ts)
-- [`docs/definepipe-v1-api-contract.md`](./docs/definepipe-v1-api-contract.md)
+- [`docs/definepipe-v1-api-contract.ts`](https://github.com/crescenthq/notion-task-orchestrator/blob/main/docs/definepipe-v1-api-contract.ts)
+- [`docs/src/content/docs/reference/definepipe-v1-api-contract.md`](./docs/src/content/docs/reference/definepipe-v1-api-contract.md)
 
 ### definePipe Example
 
@@ -321,9 +321,9 @@ Then open `http://127.0.0.1:4173`.
 
 ## Docs
 
-- [CLI Reference](./docs/cli-reference.md)
-- [Factory Authoring](./docs/factory-authoring.md)
-- [Scratchpad Playground](./docs/scratchpad-playground.md)
-- [definePipe v1 API Contract (TypeScript)](./docs/definepipe-v1-api-contract.ts)
-- [definePipe v1 API Contract (Overview)](./docs/definepipe-v1-api-contract.md)
-- [Architecture](./docs/architecture.md)
+- [CLI Reference](./docs/src/content/docs/reference/cli-reference.md)
+- [Factory Authoring](./docs/src/content/docs/guides/factory-authoring.md)
+- [Scratchpad Playground](./docs/src/content/docs/guides/scratchpad-playground.md)
+- [definePipe v1 API Contract (TypeScript)](https://github.com/crescenthq/notion-task-orchestrator/blob/main/docs/definepipe-v1-api-contract.ts)
+- [definePipe v1 API Contract (Overview)](./docs/src/content/docs/reference/definepipe-v1-api-contract.md)
+- [Architecture](./docs/src/content/docs/reference/architecture.md)

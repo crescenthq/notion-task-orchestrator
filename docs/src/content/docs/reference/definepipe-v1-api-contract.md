@@ -1,11 +1,14 @@
-# definePipe v1 API Contract
+---
+title: definePipe v1 API Contract
+description: Reference contract for the definePipe v1 authoring model and runtime semantics.
+---
 
 This document is the reference contract for the planned hard-reset runtime and
 authoring model.
 
 For editor-native syntax highlighting, use
-[`definepipe-v1-api-contract.ts`](./definepipe-v1-api-contract.ts). That file is
-the source of truth for the v1 contract surface.
+[`definepipe-v1-api-contract.ts`](https://github.com/crescenthq/notion-task-orchestrator/blob/main/docs/definepipe-v1-api-contract.ts).
+That file is the source of truth for the v1 contract surface.
 
 ## Scope
 

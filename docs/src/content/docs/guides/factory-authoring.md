@@ -1,4 +1,7 @@
-# Factory Authoring Guide
+---
+title: Factory Authoring
+description: Guidance for authoring NotionFlow factories with definePipe and related primitives.
+---
 
 ## Canonical Authoring Model
 
@@ -16,9 +19,13 @@ Use these package-root APIs:
 - `end`
 
 Reference contract:
-[`definepipe-v1-api-contract.ts`](./definepipe-v1-api-contract.ts).
+[`definePipe v1 API Contract`](../reference/definepipe-v1-api-contract/).
 
-Quick try-it path: [`scratchpad-playground.md`](./scratchpad-playground.md).
+Source of truth:
+[`definepipe-v1-api-contract.ts`](https://github.com/crescenthq/notion-task-orchestrator/blob/main/docs/definepipe-v1-api-contract.ts).
+
+Quick try-it path:
+[`Scratchpad Playground`](./scratchpad-playground/).
 
 ## Minimal Factory Shape
 
@@ -110,7 +117,7 @@ export default definePipe({
 ```
 
 For runnable examples, see
-[`example-factories/factories/`](../example-factories/factories).
+[`example-factories/factories/`](https://github.com/crescenthq/notion-task-orchestrator/tree/main/example-factories/factories).
 
 ## Feedback Suspend/Resume Lifecycle
 
