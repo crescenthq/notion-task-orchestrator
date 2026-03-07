@@ -16,7 +16,8 @@ This site will host the project's public documentation, while the repository
 - [definePipe v1 API Contract](./reference/definepipe-v1-api-contract/)
 - [Architecture](./reference/architecture/)
 
-## Current status
+## Notes
 
-The initial site structure is in place. Existing Markdown from the repository's
-top-level `docs/` directory will be migrated into these pages next.
+This first migration focuses on getting the current docs into Starlight with
+minimal restructuring. Some links intentionally point to planned docs routes or
+repository source files that will be cleaned up in follow-up passes.
