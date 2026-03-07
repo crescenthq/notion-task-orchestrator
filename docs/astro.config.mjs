@@ -10,6 +10,10 @@ export default defineConfig({
       title: 'NotionFlow Docs',
       description:
         'Comprehensive documentation for NotionFlow, an agent-agnostic workflow orchestrator for Notion.',
+      editLink: {
+        baseUrl:
+          'https://github.com/crescenthq/notion-task-orchestrator/edit/main/docs',
+      },
       social: [
         {
           icon: 'github',

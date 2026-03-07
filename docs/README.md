@@ -55,3 +55,23 @@ directory during the initial migration:
 - The published URL is expected to be
   `https://crescenthq.github.io/notion-task-orchestrator` until a custom domain
   is configured.
+
+## Local Development
+
+From the repository root:
+
+```bash
+cd docs
+bun install
+bun run dev
+```
+
+Open `http://127.0.0.1:4321/notion-task-orchestrator` while the dev server is
+running.
+
+To verify a production build locally:
+
+```bash
+cd docs
+bun run build
+```
