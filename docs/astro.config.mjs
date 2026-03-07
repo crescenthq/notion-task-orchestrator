@@ -3,24 +3,33 @@ import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 
 export default defineConfig({
+  site: 'https://crescenthq.github.io',
+  base: '/notion-task-orchestrator',
   integrations: [
     starlight({
       title: 'NotionFlow Docs',
+      description:
+        'Comprehensive documentation for NotionFlow, an agent-agnostic workflow orchestrator for Notion.',
       social: [
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/Kamalnrf/notion-task-orchestrator',
+          href: 'https://github.com/crescenthq/notion-task-orchestrator',
         },
       ],
       sidebar: [
+        { label: 'Home', slug: 'index' },
         {
           label: 'Guides',
-          items: [{ label: 'Example Guide', slug: 'guides/example' }],
+          items: [{ slug: 'guides/factory-authoring' }],
         },
         {
           label: 'Reference',
-          autogenerate: { directory: 'reference' },
+          items: [
+            { slug: 'reference/cli-reference' },
+            { slug: 'reference/definepipe-v1-api-contract' },
+            { slug: 'reference/architecture' },
+          ],
         },
       ],
     }),
