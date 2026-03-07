@@ -66,7 +66,7 @@ bun install
 bun run dev
 ```
 
-Open `http://127.0.0.1:4321/notion-task-orchestrator` while the dev server is
+Open `http://localhost:4321/notion-task-orchestrator` while the dev server is
 running.
 
 To verify a production build locally:
