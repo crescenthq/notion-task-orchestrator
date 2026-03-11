@@ -12,6 +12,7 @@ type TickArgs = {
   factory?: string
   config?: string
   maxTransitionsPerTick?: string
+  runConcurrency?: string
   leaseMs?: string
   leaseMode?: string
   workerId?: string
@@ -25,6 +26,7 @@ type TickExecutionOptions = {
   configPath?: string
   startDir: string
   maxTransitionsPerTick?: number
+  runConcurrency?: number
   leaseMs?: number
   leaseMode: 'strict' | 'best-effort'
   workerId?: string
@@ -57,7 +59,9 @@ const defaultTickLoopDeps: TickLoopDeps = {
       configPath: options.configPath,
       startDir: options.startDir,
       runQueued: true,
+      awaitRunCompletion: false,
       maxTransitionsPerTick: options.maxTransitionsPerTick,
+      runConcurrency: options.runConcurrency,
       leaseMs: options.leaseMs,
       leaseMode: options.leaseMode,
       workerId: options.workerId,
@@ -93,6 +97,9 @@ function parseTickExecutionOptions(args: TickArgs): TickExecutionOptions {
   const maxTransitionsPerTick = args.maxTransitionsPerTick
     ? Number.parseInt(String(args.maxTransitionsPerTick), 10)
     : undefined
+  const runConcurrency = args.runConcurrency
+    ? Number.parseInt(String(args.runConcurrency), 10)
+    : undefined
   const leaseMs = args.leaseMs
     ? Number.parseInt(String(args.leaseMs), 10)
     : undefined
@@ -108,6 +115,7 @@ function parseTickExecutionOptions(args: TickArgs): TickExecutionOptions {
     maxTransitionsPerTick: Number.isFinite(maxTransitionsPerTick)
       ? maxTransitionsPerTick
       : undefined,
+    runConcurrency: Number.isFinite(runConcurrency) ? runConcurrency : undefined,
     leaseMs: Number.isFinite(leaseMs) ? leaseMs : undefined,
     leaseMode: args.leaseMode === 'strict' ? 'strict' : 'best-effort',
     workerId: args.workerId ? String(args.workerId) : undefined,
@@ -266,6 +274,11 @@ export const tickCmd = defineCommand({
       type: 'string',
       required: false,
       alias: 'max-transitions-per-tick',
+    },
+    runConcurrency: {
+      type: 'string',
+      required: false,
+      alias: 'run-concurrency',
     },
     leaseMs: {type: 'string', required: false, alias: 'lease-ms'},
     leaseMode: {type: 'string', required: false, alias: 'lease-mode'},

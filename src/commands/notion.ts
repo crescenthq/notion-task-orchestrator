@@ -44,6 +44,19 @@ function toBoardTitle(boardId: string): string {
     .join(' ')
 }
 
+const DEFAULT_RUN_CONCURRENCY = 16
+const MAX_RUN_CONCURRENCY = 32
+const activeQueuedTaskRuns = new Set<string>()
+
+function normalizeRunConcurrency(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_RUN_CONCURRENCY
+  }
+
+  const rounded = Math.floor(Number(value))
+  return Math.max(1, Math.min(MAX_RUN_CONCURRENCY, rounded))
+}
+
 type FactoryNotionBoardInfo = {
   boardId: string
   boardTitle: string
@@ -333,6 +346,8 @@ export async function syncNotionBoards(options: {
   configPath?: string
   startDir?: string
   runQueued?: boolean
+  awaitRunCompletion?: boolean
+  runConcurrency?: number
   maxTransitionsPerTick?: number
   leaseMs?: number
   leaseMode?: 'strict' | 'best-effort'
@@ -496,28 +511,76 @@ export async function syncNotionBoards(options: {
 
   if (!options.runQueued || queuedTaskIds.size === 0) return
 
+  const queuedTaskList = [...queuedTaskIds]
+  const runConcurrency = normalizeRunConcurrency(options.runConcurrency)
+  const awaitRunCompletion = options.awaitRunCompletion ?? true
+  const workerCount = Math.min(runConcurrency, queuedTaskList.length)
+
+  console.log(
+    `Running queued tasks: total=${queuedTaskList.length} concurrency=${workerCount} await_completion=${awaitRunCompletion}`,
+  )
+
   let runFailures = 0
-  for (const taskId of queuedTaskIds) {
-    console.log(`Running queued task: ${taskId}`)
-    try {
-      await runTaskByExternalId(taskId, {
-        configPath: options.configPath,
-        startDir: options.startDir,
-        maxTransitionsPerTick: options.maxTransitionsPerTick,
-        leaseMs: options.leaseMs,
-        leaseMode: options.leaseMode,
-        workerId: options.workerId,
-      })
-    } catch (error) {
-      runFailures += 1
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(`[warn] task run failed: ${taskId} (${message})`)
-    }
+  let nextTaskIndex = 0
+  const workers = Array.from({length: workerCount}, () =>
+    (async () => {
+      while (true) {
+        const taskIndex = nextTaskIndex
+        nextTaskIndex += 1
+        const taskId = queuedTaskList[taskIndex]
+        if (!taskId) return
+
+        if (activeQueuedTaskRuns.has(taskId)) {
+          console.log(`[skip] queued task already in-flight: ${taskId}`)
+          continue
+        }
+
+        console.log(`Running queued task: ${taskId}`)
+        activeQueuedTaskRuns.add(taskId)
+        try {
+          await runTaskByExternalId(taskId, {
+            configPath: options.configPath,
+            startDir: options.startDir,
+            maxTransitionsPerTick: options.maxTransitionsPerTick,
+            leaseMs: options.leaseMs,
+            leaseMode: options.leaseMode,
+            workerId: options.workerId,
+          })
+        } catch (error) {
+          runFailures += 1
+          const message = error instanceof Error ? error.message : String(error)
+          console.log(`[warn] task run failed: ${taskId} (${message})`)
+        } finally {
+          activeQueuedTaskRuns.delete(taskId)
+        }
+      }
+    })(),
+  )
+
+  const finalizeRunSummary = (): void => {
+    const runSuccesses = queuedTaskIds.size - runFailures
+    console.log(
+      `Run complete: ${runSuccesses}/${queuedTaskIds.size} queued task(s) succeeded`,
+    )
   }
 
-  const runSuccesses = queuedTaskIds.size - runFailures
+  if (awaitRunCompletion) {
+    await Promise.all(workers)
+    finalizeRunSummary()
+    return
+  }
+
+  void Promise.all(workers)
+    .then(() => {
+      finalizeRunSummary()
+    })
+    .catch(error => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`[warn] queued task worker crashed: ${message}`)
+    })
+
   console.log(
-    `Run complete: ${runSuccesses}/${queuedTaskIds.size} queued task(s) succeeded`,
+    `Run dispatch complete: dispatched=${queuedTaskIds.size} in_flight=${activeQueuedTaskRuns.size}`,
   )
 }
 
@@ -652,14 +715,26 @@ export const notionCmd = defineCommand({
         factory: {type: 'string', required: false},
         config: {type: 'string', required: false},
         run: {type: 'boolean', required: false},
+        runConcurrency: {
+          type: 'string',
+          required: false,
+          alias: 'run-concurrency',
+        },
       },
       async run({args}) {
+        const runConcurrency = args.runConcurrency
+          ? Number.parseInt(String(args.runConcurrency), 10)
+          : undefined
+
         await syncNotionBoards({
           boardId: args.board ? String(args.board) : undefined,
           factoryId: args.factory ? String(args.factory) : undefined,
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
           runQueued: Boolean(args.run),
+          runConcurrency: Number.isFinite(runConcurrency)
+            ? runConcurrency
+            : undefined,
         })
       },
     }),

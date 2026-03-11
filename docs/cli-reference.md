@@ -74,6 +74,7 @@ Options:
 - `--loop`
 - `--interval-ms <n>`
 - `--max-transitions-per-tick <n>`
+- `--run-concurrency <n>`
 - `--lease-ms <n>`
 - `--lease-mode <strict|best-effort>`
 - `--worker-id <id>`
@@ -82,6 +83,7 @@ Loop behavior defaults:
 
 - one-shot unless `--loop` is set
 - 2000ms successful cycle delay
+- queued task runs are dispatched asynchronously in loop mode
 - retryable Notion errors: `429` and transient `5xx`
 - exponential backoff with jitter and cap
 
@@ -164,6 +166,12 @@ Sync tasks from registered Notion boards.
 ```bash
 notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
 ```
+
+Extra option when `--run` is set:
+
+- `--run-concurrency <n>`
+
+Default queued run concurrency is `16` (clamped to max `32`).
 
 ### `integrations notion sync-factories`
 
