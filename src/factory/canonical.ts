@@ -68,10 +68,13 @@ type PipeResult<T> = T | Promise<T>
 
 export type Step<C> = (input: PipeInput<C>) => PipeResult<C | Control<C>>
 
-export type PipeDefinition<C> = {
+export type PipeAgents = Record<string, unknown>
+
+export type PipeDefinition<C, TAgents extends PipeAgents = PipeAgents> = {
   id: string
   initial: C
-  run: Step<C>
+  agents: TAgents
+  run: (env: TAgents) => Step<C>
 }
 
 export type AskPrompt<C> = string | ((ctx: C) => string)
@@ -247,7 +250,12 @@ async function notifyStepStart<C>(
   })
 }
 
-export function definePipe<C>(definition: PipeDefinition<C>): PipeDefinition<C> {
+export function definePipe<C, TAgents extends PipeAgents>(
+  definition: PipeDefinition<C, TAgents>,
+): PipeDefinition<C, TAgents>
+export function definePipe<C, TAgents extends PipeAgents>(
+  definition: PipeDefinition<C, TAgents>,
+): PipeDefinition<C, TAgents> {
   return definition
 }
 

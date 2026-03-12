@@ -145,7 +145,8 @@ function terminalFactorySource(
     'export default definePipe({',
     `  id: ${JSON.stringify(factoryId)},`,
     '  initial: {},',
-    `  run: ${endFactory},`,
+    '  agents: {},',
+    `  run: (_env) => ${endFactory},`,
     '});',
     '',
   ].join('\n')

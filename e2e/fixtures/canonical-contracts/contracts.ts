@@ -1,6 +1,8 @@
 import {
   ask,
   decide,
+  defineAgent,
+  definePipe,
   end,
   loop,
   step,
@@ -40,6 +42,21 @@ const doneSignal: EndSignal<WorkflowCtx> = {
 const controlSignal: Control<WorkflowCtx> =
   input.feedback === 'yes' ? doneSignal : waitingSignal
 void controlSignal
+
+const scorerAgent = defineAgent<{score: number}, {nextScore: number}>({
+  id: 'scorer',
+  call: async request => ({nextScore: request.score + 1}),
+})
+
+const approvalAgent = defineAgent<{score: number}, {approved: boolean}>({
+  id: 'approver',
+  call: async request => ({approved: request.score > 0}),
+})
+
+const agents = {
+  scorer: scorerAgent,
+  approval: approvalAgent,
+}
 
 const increment = step<WorkflowCtx>('increment', ctx => ({
   ...ctx,
@@ -95,13 +112,21 @@ const run: Step<WorkflowCtx> = async currentInput => {
   return branch({...currentInput, ctx: next})
 }
 
-const pipe: PipeDefinition<WorkflowCtx> = {
+const pipe = definePipe({
   id: 'canonical-contracts',
   initial: {score: 0, approved: false},
-  run,
-}
+  agents,
+  run: env => {
+    void env.scorer.invoke({score: 1})
+    void env.approval.invoke({score: 1})
+    // @ts-expect-error unknown agents must not be exposed on env
+    void env.missing
+    return run
+  },
+})
 
-void pipe.run(input)
+const typedPipe: PipeDefinition<WorkflowCtx, typeof agents> = pipe
+void typedPipe.run(typedPipe.agents)(input)
 
 // @ts-expect-error returning non-context output requires assign mapper
 step<WorkflowCtx>('invalid-step', ctx => ({nextScore: ctx.score + 1}))

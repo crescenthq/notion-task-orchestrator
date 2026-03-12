@@ -118,6 +118,9 @@ Reference contract:
 
 ### definePipe Example
 
+`definePipe` authoring is env-injected: declare `agents` and return workflow
+steps from `run(env)`.
+
 ```ts
 import {ask, decide, definePipe, end, flow, loop, step, write} from 'notionflow'
 
@@ -156,17 +159,19 @@ const revise = loop<Ctx>({
 export default definePipe({
   id: 'demo',
   initial: {decision: '', ready: false, revisions: 0} satisfies Ctx,
-  run: flow(
-    draft,
-    collect,
-    decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
-      revise,
-      publish: flow(
-        write(ctx => ({markdown: `# Result\nDecision: ${ctx.decision}`})),
-        end.done(),
-      ),
-    }),
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      draft,
+      collect,
+      decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
+        revise,
+        publish: flow(
+          write(ctx => ({markdown: `# Result\nDecision: ${ctx.decision}`})),
+          end.done(),
+        ),
+      }),
+    ),
 })
 ```
 
@@ -229,25 +234,32 @@ const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
   },
 })
 
-const plan = step('plan', async ctx => {
-  const planned = await planner.invoke({prompt: 'Draft plan and choose repo'})
-  if (!planned.ok) return {...ctx, failure: planned.error.message}
-
-  const status = await gitStatus.invoke({cwd: process.cwd()})
-  if (!status.ok) return {...ctx, failure: status.error.message}
-
-  return {
-    ...ctx,
-    plan: planned.value.text,
-    repo: planned.value.repo,
-    status: status.value.stdout,
-  }
-})
-
 export default definePipe({
   id: 'service-layer-demo',
   initial: {plan: '', repo: '', status: '', failure: ''},
-  run: flow(plan, end.done()),
+  agents: {planner, gitStatus},
+  run: ({planner, gitStatus}) => {
+    const plan = step('plan', async ctx => {
+      const result = await planner.invoke({
+        prompt: 'Draft plan and choose repo',
+      })
+      if (result.ok === false) return {...ctx, failure: result.error.message}
+
+      const statusResult = await gitStatus.invoke({cwd: process.cwd()})
+      if (statusResult.ok === false) {
+        return {...ctx, failure: statusResult.error.message}
+      }
+
+      return {
+        ...ctx,
+        plan: result.value.text,
+        repo: result.value.repo,
+        status: statusResult.value.stdout,
+      }
+    })
+
+    return flow(plan, end.done())
+  },
 })
 ```
 

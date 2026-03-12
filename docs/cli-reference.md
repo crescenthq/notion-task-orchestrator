@@ -127,6 +127,23 @@ notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-boa
 
 Writes `factories/<factory-id>.ts` in the resolved project root.
 
+Generated scaffold shape:
+
+```ts
+import {definePipe, end, flow, step} from 'notionflow'
+
+export default definePipe({
+  id: 'demo',
+  initial: {},
+  agents: {},
+  run: (_env) =>
+    flow(
+      step('complete', ctx => ({...ctx, result: 'ok'})),
+      end.done(),
+    ),
+})
+```
+
 ### `factory list`
 
 List known factories from runtime DB.

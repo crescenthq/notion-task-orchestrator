@@ -25,7 +25,7 @@ describe('loadFactoryFromPath', () => {
 
     await writeFile(
       filePath,
-      `export default {\n  id: "pipe-factory",\n  initial: { visits: 0 },\n  run: async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
+      `export default {\n  id: "pipe-factory",\n  initial: { visits: 0 },\n  agents: {},\n  run: () => async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
       'utf8',
     )
 
@@ -40,7 +40,7 @@ describe('loadFactoryFromPath', () => {
 
     await writeFile(
       filePath,
-      `export default {\n  id: "named-factory",\n  name: "Named Factory",\n  initial: { visits: 0 },\n  run: async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
+      `export default {\n  id: "named-factory",\n  name: "Named Factory",\n  initial: { visits: 0 },\n  agents: {},\n  run: () => async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
       'utf8',
     )
 
@@ -60,7 +60,22 @@ describe('loadFactoryFromPath', () => {
     )
 
     await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
-      /Module must export a definePipe factory with shape \{ id, initial, run \}/,
+      /Module must export a definePipe factory with shape \{ id, initial, agents, run\(env\) \}/,
+    )
+  })
+
+  it('rejects modules with non-object agents declaration', async () => {
+    const dir = await createTempDir()
+    const filePath = path.join(dir, 'invalid-agents-factory.mjs')
+
+    await writeFile(
+      filePath,
+      `export default {\n  id: "invalid-agents-factory",\n  initial: { visits: 0 },\n  agents: [],\n  run: () => async ({ ctx }) => ({ ...ctx, visits: Number(ctx.visits ?? 0) + 1 })\n};\n`,
+      'utf8',
+    )
+
+    await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
+      /`agents` must be an object map of declared dependencies/,
     )
   })
 
