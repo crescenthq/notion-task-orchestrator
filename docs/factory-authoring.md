@@ -130,13 +130,13 @@ Feedback sources consumed by `ask`:
 
 Typical Notion loop:
 
-1. `notionflow tick --board <board-id> --factory <factory-id>` pauses task in
+1. `notionflow tick --factory <factory-id>` pauses task in
    `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --board <board-id> --run` detects new
+3. `notionflow integrations notion sync --run` detects new
    comments, stores `human_feedback`, re-queues the task, and runs queued work.
-4. `notionflow integrations notion sync-factories --config <path>` provisions
-   all declared factory boards in a new environment before running the first
+4. `notionflow integrations notion connect --url <notion-database-url> --config <path>`
+   registers the shared board in a new environment before running the first
    tick.
 
 ## Agent Wrapper Setup (`defineAgent`)

@@ -23,8 +23,9 @@ Supported `--config <path>` override:
 - `factory create`
 - `run`
 - `tick`
+- `integrations notion connect`
+- `integrations notion repair-task`
 - `integrations notion sync`
-- `integrations notion sync-factories`
 - `integrations notion create-task`
 
 When `--config` is provided, NotionFlow resolves project root from that config
@@ -143,12 +144,20 @@ Namespace:
 notionflow integrations notion <subcommand>
 ```
 
-### `integrations notion provision-board`
+### `integrations notion connect`
 
-Create and register a Notion board.
+Connect an existing shared Notion board.
 
 ```bash
-notionflow integrations notion provision-board --board <board-id> [--title <name>] [--parent-page <notion_page_id>] [--config <path>]
+notionflow integrations notion connect --url <notion-database-url> [--config <path>]
+```
+
+### `integrations notion repair-task`
+
+Clear ownership quarantine after restoring the `Factory` property in Notion.
+
+```bash
+notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
 ```
 
 ### `integrations notion create-task`
@@ -156,7 +165,7 @@ notionflow integrations notion provision-board --board <board-id> [--title <name
 Create a Notion task and upsert local state.
 
 ```bash
-notionflow integrations notion create-task [--board <board-id> | --factory <factory-id>] --title "Task" [--status <state>] [--config <path>]
+notionflow integrations notion create-task --factory <factory-id> --title "Task" [--status <state>] [--config <path>]
 ```
 
 ### `integrations notion sync`
@@ -164,7 +173,7 @@ notionflow integrations notion create-task [--board <board-id> | --factory <fact
 Sync tasks from registered Notion boards.
 
 ```bash
-notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
+notionflow integrations notion sync [--config <path>] [--factory <factory-id>] [--run]
 ```
 
 Extra option when `--run` is set:
@@ -172,14 +181,6 @@ Extra option when `--run` is set:
 - `--run-concurrency <n>`
 
 Default queued run concurrency is `16` (clamped to max `32`).
-
-### `integrations notion sync-factories`
-
-Provision (or refresh) Notion boards for declared factories.
-
-```bash
-notionflow integrations notion sync-factories [--config <path>] [--factory <factory-id>] [--parent-page <notion_page_id>]
-```
 
 ## Runtime Paths
 
@@ -195,6 +196,7 @@ All runtime artifacts are project-local:
 notionflow init
 notionflow factory create --id demo --skip-notion-board
 notionflow doctor
-notionflow integrations notion sync-factories --factory demo
+notionflow integrations notion connect --url <notion-database-url>
+notionflow integrations notion create-task --factory demo --title "Try demo" --status queue
 notionflow tick --factory demo
 ```
