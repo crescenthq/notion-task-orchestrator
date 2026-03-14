@@ -10,7 +10,9 @@ import {
   notionAppendTaskPageLog,
   notionCreateBoardDataSource,
   notionCreateTaskPage,
+  notionEnsureBoardSchema,
   notionFindPageByTitle,
+  notionResolveDatabaseConnectionFromUrl,
   notionGetDataSource,
   notionGetNewComments,
   notionQueryDataSource,
@@ -47,6 +49,18 @@ function toBoardTitle(boardId: string): string {
 const DEFAULT_RUN_CONCURRENCY = 16
 const MAX_RUN_CONCURRENCY = 32
 const activeQueuedTaskRuns = new Set<string>()
+export const SHARED_NOTION_BOARD_ID = 'notion-shared'
+const FACTORY_OPTION_COLORS = [
+  'blue',
+  'green',
+  'yellow',
+  'orange',
+  'red',
+  'pink',
+  'purple',
+  'gray',
+  'brown',
+]
 
 function normalizeRunConcurrency(value: number | undefined): number {
   if (!Number.isFinite(value)) {
@@ -70,6 +84,125 @@ function resolveBoardTitle(
     return definitionName.trim()
   }
   return toBoardTitle(fallbackBoardId)
+}
+
+type SharedBoardCommandOptions = {
+  configPath?: string
+  startDir?: string
+}
+
+function buildFactorySelectOptions(factoryIds: string[]) {
+  return factoryIds.map((factoryId, index) => ({
+    name: factoryId,
+    color: FACTORY_OPTION_COLORS[index % FACTORY_OPTION_COLORS.length] ?? 'gray',
+  }))
+}
+
+async function loadDeclaredFactorySelectOptions(options: SharedBoardCommandOptions) {
+  const resolvedProject = await resolveProjectConfig({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: options.configPath,
+  })
+  const declaredFactories = await loadDeclaredFactories({
+    configPath: resolvedProject.configPath,
+    projectRoot: resolvedProject.projectRoot,
+  })
+
+  return {
+    resolvedProject,
+    factoryOptions: buildFactorySelectOptions(
+      declaredFactories.map(entry => entry.definition.id),
+    ),
+  }
+}
+
+export async function getRegisteredSharedNotionBoard(
+  options: SharedBoardCommandOptions = {},
+) {
+  const resolvedProject = await resolveProjectConfig({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: options.configPath,
+  })
+  const {db} = await openApp({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: resolvedProject.configPath,
+  })
+  const [board] = await db
+    .select()
+    .from(boards)
+    .where(eq(boards.id, SHARED_NOTION_BOARD_ID))
+    .limit(1)
+
+  if (!board) {
+    throw new Error(
+      'No shared Notion board connected. Run `notionflow integrations notion connect --url <notion-database-url>` first.',
+    )
+  }
+
+  if (board.adapter !== 'notion') {
+    throw new Error(
+      `Shared board ${SHARED_NOTION_BOARD_ID} is not registered as a Notion board.`,
+    )
+  }
+
+  return board
+}
+
+export async function connectSharedNotionBoard(
+  options: SharedBoardCommandOptions & {url: string},
+): Promise<{externalId: string; databaseId: string; url: string | null}> {
+  const token = notionToken()
+  if (!token) throw new Error('NOTION_API_TOKEN is required')
+
+  const {resolvedProject, factoryOptions} = await loadDeclaredFactorySelectOptions({
+    configPath: options.configPath,
+    startDir: options.startDir,
+  })
+  const {db} = await openApp({
+    startDir: options.startDir ?? process.cwd(),
+    configPath: resolvedProject.configPath,
+  })
+  const connection = await notionResolveDatabaseConnectionFromUrl(token, options.url)
+
+  await notionEnsureBoardSchema(
+    token,
+    connection.dataSourceId,
+    [],
+    factoryOptions,
+  )
+
+  const now = nowIso()
+  await db
+    .insert(boards)
+    .values({
+      id: SHARED_NOTION_BOARD_ID,
+      adapter: 'notion',
+      externalId: connection.dataSourceId,
+      configJson: JSON.stringify({
+        databaseId: connection.databaseId,
+        url: connection.url ?? options.url,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: boards.id,
+      set: {
+        adapter: 'notion',
+        externalId: connection.dataSourceId,
+        configJson: JSON.stringify({
+          databaseId: connection.databaseId,
+          url: connection.url ?? options.url,
+        }),
+        updatedAt: now,
+      },
+    })
+
+  return {
+    externalId: connection.dataSourceId,
+    databaseId: connection.databaseId,
+    url: connection.url,
+  }
 }
 
 async function resolveConfiguredFactoryBoardInfo(
@@ -587,6 +720,28 @@ export async function syncNotionBoards(options: {
 export const notionCmd = defineCommand({
   meta: {name: 'notion', description: 'Notion adapter commands'},
   subCommands: {
+    connect: defineCommand({
+      meta: {
+        name: 'connect',
+        description: 'Connect an existing shared Notion board',
+      },
+      args: {
+        url: {type: 'string', required: true},
+        config: {type: 'string', required: false},
+      },
+      async run({args}) {
+        const board = await connectSharedNotionBoard({
+          url: String(args.url),
+          configPath: args.config ? String(args.config) : undefined,
+          startDir: process.cwd(),
+        })
+
+        console.log(
+          `Shared board connected: ${SHARED_NOTION_BOARD_ID} -> ${board.externalId}`,
+        )
+        if (board.url) console.log(`Notion URL: ${board.url}`)
+      },
+    }),
     'provision-board': defineCommand({
       meta: {
         name: 'provision-board',
