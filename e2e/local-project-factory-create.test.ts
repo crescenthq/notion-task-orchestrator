@@ -29,10 +29,7 @@ describe('local project factory create', () => {
     fixtures.push(fixture)
 
     await execCli(['init'], fixture.projectDir)
-    await execCli(
-      ['factory', 'create', '--id', 'smoke', '--skip-notion-board'],
-      fixture.projectDir,
-    )
+    await execCli(['factory', 'create', '--id', 'smoke'], fixture.projectDir)
 
     await expect(
       stat(path.join(fixture.projectDir, 'factories', 'smoke.ts')),
@@ -60,7 +57,6 @@ describe('local project factory create', () => {
         'external',
         '--config',
         configPath,
-        '--skip-notion-board',
       ],
       outsider.projectDir,
     )

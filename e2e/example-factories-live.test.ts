@@ -13,6 +13,7 @@ import {
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
+import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
 
@@ -53,16 +54,16 @@ describe('example factories live e2e', () => {
       const resolvedProjectRoot = await realpath(fixture.projectDir)
       expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
 
-      const boardId = `example-live-${Date.now()}`
+      const board = await createTemporarySharedBoard(
+        `Example Live ${Date.now()}`,
+      )
       await execCli(
         [
           'integrations',
           'notion',
-          'provision-board',
-          '--board',
-          boardId,
-          '--title',
-          `Example Live ${boardId}`,
+          'connect',
+          '--url',
+          board.url,
         ],
         fixture.projectDir,
       )
@@ -72,8 +73,6 @@ describe('example factories live e2e', () => {
           'integrations',
           'notion',
           'create-task',
-          '--board',
-          boardId,
           '--factory',
           'shared-helper-demo',
           '--title',

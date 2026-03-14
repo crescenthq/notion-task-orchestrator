@@ -14,6 +14,7 @@ import {
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
+import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
 
@@ -39,10 +40,7 @@ describe('docs quickstart live smoke', () => {
 
       await execCli(['init'], fixture.projectDir)
       await ensureNotionflowDependencyAvailable(fixture.projectDir)
-      await execCli(
-        ['factory', 'create', '--id', 'docs-live', '--skip-notion-board'],
-        fixture.projectDir,
-      )
+      await execCli(['factory', 'create', '--id', 'docs-live'], fixture.projectDir)
 
       await writeFile(
         path.join(fixture.projectDir, 'notionflow.config.ts'),
@@ -62,16 +60,16 @@ describe('docs quickstart live smoke', () => {
         `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
       )
 
-      const boardId = `docs-live-${Date.now()}`
+      const board = await createTemporarySharedBoard(
+        `Docs Live ${Date.now()}`,
+      )
       await execCli(
         [
           'integrations',
           'notion',
-          'provision-board',
-          '--board',
-          boardId,
-          '--title',
-          `Docs Live ${boardId}`,
+          'connect',
+          '--url',
+          board.url,
         ],
         fixture.projectDir,
       )
@@ -82,8 +80,6 @@ describe('docs quickstart live smoke', () => {
           'integrations',
           'notion',
           'create-task',
-          '--board',
-          boardId,
           '--factory',
           'docs-live',
           '--title',
@@ -96,7 +92,7 @@ describe('docs quickstart live smoke', () => {
       const taskExternalId = extractTaskExternalId(created.stdout)
 
       const tick = await execCli(
-        ['tick', '--board', boardId, '--factory', 'docs-live'],
+        ['tick', '--factory', 'docs-live'],
         fixture.projectDir,
       )
       expect(tick.stdout).toContain('Sync complete')

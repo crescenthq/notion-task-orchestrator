@@ -59,6 +59,7 @@ const PIPE_BLOCKED_STATE_ID = '__pipe_blocked__'
 const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
+const OWNERSHIP_QUARANTINE_PREFIXES = ['factory_mismatch:', 'factory_invalid:']
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -91,6 +92,12 @@ function isCheckpointMismatchError(error: unknown): boolean {
   return (
     error instanceof CheckpointMismatchError ||
     (isRecord(error) && error.code === 'checkpoint_mismatch')
+  )
+}
+
+function isOwnershipQuarantined(lastError: string | null | undefined): boolean {
+  return OWNERSHIP_QUARANTINE_PREFIXES.some(prefix =>
+    lastError?.startsWith(prefix),
   )
 }
 
@@ -266,6 +273,14 @@ export async function runFactoryTaskByExternalId(
     .from(tasks)
     .where(eq(tasks.externalTaskId, taskExternalId))
   if (!task) throw new Error(`Task not found: ${taskExternalId}`)
+  if (isOwnershipQuarantined(task.lastError)) {
+    throw new Error(
+      [
+        `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Factory mismatch is resolved: ${task.lastError}`,
+        `Restore the original Factory in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
+      ].join(' '),
+    )
+  }
 
   const [board] = await db
     .select()

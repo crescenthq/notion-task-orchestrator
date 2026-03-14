@@ -16,7 +16,19 @@ type NotionDatabase = {
   url?: string
 }
 
-type NotionDataSource = {
+export type NotionDatabaseConnection = {
+  databaseId: string
+  dataSourceId: string
+  url: string | null
+}
+
+export type NotionQueryResult = {
+  results: NotionPage[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+export type NotionDataSource = {
   id: string
   database_parent?: {page_id?: string}
   properties: Record<string, {type: string}>
@@ -59,14 +71,27 @@ export async function notionWhoAmI(token: string): Promise<NotionUser> {
 export async function notionQueryDataSource(
   token: string,
   dataSourceId: string,
-  pageSize = 20,
-): Promise<NotionPage[]> {
+  input: {
+    pageSize?: number
+    startCursor?: string
+    factoryId?: string
+  } = {},
+): Promise<NotionQueryResult> {
+  const payload: Record<string, unknown> = {page_size: input.pageSize ?? 20}
+  if (input.startCursor) payload.start_cursor = input.startCursor
+  if (input.factoryId) {
+    payload.filter = {
+      property: 'Factory',
+      select: {equals: input.factoryId},
+    }
+  }
+
   const res = await fetch(
     `https://api.notion.com/v1/data_sources/${dataSourceId}/query`,
     {
       method: 'POST',
       headers: notionHeaders(token),
-      body: JSON.stringify({page_size: pageSize}),
+      body: JSON.stringify(payload),
     },
   )
 
@@ -75,8 +100,40 @@ export async function notionQueryDataSource(
     throw new Error(`Notion query failed (${res.status}): ${text}`)
   }
 
-  const body = (await res.json()) as {results: NotionPage[]}
-  return body.results
+  const body = (await res.json()) as {
+    results?: NotionPage[]
+    has_more?: boolean
+    next_cursor?: string | null
+  }
+
+  return {
+    results: body.results ?? [],
+    hasMore: body.has_more ?? false,
+    nextCursor: body.next_cursor ?? null,
+  }
+}
+
+export async function notionQueryAllDataSourcePages(
+  token: string,
+  dataSourceId: string,
+  input: {
+    pageSize?: number
+    factoryId?: string
+  } = {},
+): Promise<NotionPage[]> {
+  const results: NotionPage[] = []
+  let startCursor: string | undefined
+
+  while (true) {
+    const page = await notionQueryDataSource(token, dataSourceId, {
+      pageSize: input.pageSize,
+      startCursor,
+      factoryId: input.factoryId,
+    })
+    results.push(...page.results)
+    if (!page.hasMore) return results
+    startCursor = page.nextCursor ?? undefined
+  }
 }
 
 export async function notionCreateBoardDataSource(
@@ -84,7 +141,8 @@ export async function notionCreateBoardDataSource(
   parentPageId: string,
   title: string,
   stepStatusOptions: Array<{name: string; color: string}> = [],
-): Promise<{dataSourceId: string; databaseId: string; url: string | null}> {
+  factoryOptions: Array<{name: string; color: string}> = [],
+): Promise<NotionDatabaseConnection> {
   const createRes = await fetch('https://api.notion.com/v1/databases', {
     method: 'POST',
     headers: notionHeaders(token),
@@ -109,7 +167,12 @@ export async function notionCreateBoardDataSource(
       'Notion board create succeeded but no data source id was returned',
     )
 
-  await notionEnsureBoardSchema(token, dataSourceId, stepStatusOptions)
+  await notionEnsureBoardSchema(
+    token,
+    dataSourceId,
+    stepStatusOptions,
+    factoryOptions,
+  )
   return {dataSourceId, databaseId: database.id, url: database.url ?? null}
 }
 
@@ -126,6 +189,7 @@ export async function notionEnsureBoardSchema(
   token: string,
   dataSourceId: string,
   stepOptions: Array<{name: string; color: string}> = [],
+  factoryOptions: Array<{name: string; color: string}> = [],
 ): Promise<void> {
   const patchRes = await fetch(
     `https://api.notion.com/v1/data_sources/${dataSourceId}`,
@@ -136,6 +200,7 @@ export async function notionEnsureBoardSchema(
         properties: {
           State: {select: {options: STATE_OPTIONS}},
           Status: {select: {options: stepOptions}},
+          Factory: {select: {options: factoryOptions}},
         },
       }),
     },
@@ -168,20 +233,113 @@ export async function notionGetDataSource(
   return (await res.json()) as NotionDataSource
 }
 
+export function notionAssertSharedBoardSchema(
+  dataSource: NotionDataSource,
+): void {
+  const expectedTypes: Array<[property: string, type: string]> = [
+    ['State', 'select'],
+    ['Status', 'select'],
+    ['Factory', 'select'],
+  ]
+
+  const issues = expectedTypes.flatMap(([propertyName, expectedType]) => {
+    const property = dataSource.properties[propertyName]
+    if (!property) {
+      return [`missing ${propertyName}`]
+    }
+    if (property.type !== expectedType) {
+      return [
+        `${propertyName} must be ${expectedType} (found ${property.type})`,
+      ]
+    }
+    return []
+  })
+
+  if (issues.length === 0) return
+
+  throw new Error(
+    `Shared Notion board schema is invalid for data source ${dataSource.id}: ${issues.join('; ')}`,
+  )
+}
+
+function normalizeNotionId(id: string): string | null {
+  const hex = id.replace(/[^0-9a-f]/gi, '').toLowerCase()
+  if (!/^[0-9a-f]{32}$/.test(hex)) return null
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function notionExtractDatabaseIdFromUrl(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+
+  const match = parsed.pathname.match(/[0-9a-fA-F]{32}/)
+  if (!match?.[0]) return null
+  return normalizeNotionId(match[0])
+}
+
+export async function notionGetDatabase(
+  token: string,
+  databaseId: string,
+): Promise<NotionDatabase> {
+  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    headers: notionHeaders(token),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Notion database read failed (${res.status}): ${text}`)
+  }
+
+  return (await res.json()) as NotionDatabase
+}
+
+export async function notionResolveDatabaseConnectionFromUrl(
+  token: string,
+  url: string,
+): Promise<NotionDatabaseConnection> {
+  const databaseId = notionExtractDatabaseIdFromUrl(url)
+  if (!databaseId) {
+    throw new Error(`Could not extract Notion database id from URL: ${url}`)
+  }
+
+  const database = await notionGetDatabase(token, databaseId)
+  const dataSourceId = database.data_sources?.[0]?.id
+  if (!dataSourceId) {
+    throw new Error(
+      `Notion database ${database.id} is missing a data source id`,
+    )
+  }
+
+  return {
+    databaseId: database.id,
+    dataSourceId,
+    url: database.url ?? null,
+  }
+}
+
 export async function notionCreateTaskPage(
   token: string,
   dataSourceId: string,
-  input: {title: string; state: string},
+  input: {title: string; state: string; factoryId?: string},
 ): Promise<NotionCreatePageResult> {
+  const properties: Record<string, unknown> = {
+    Name: {title: [{text: {content: input.title}}]},
+    State: {select: {name: input.state}},
+  }
+  if (input.factoryId !== undefined) {
+    properties.Factory = {select: {name: input.factoryId}}
+  }
+
   const res = await fetch('https://api.notion.com/v1/pages', {
     method: 'POST',
     headers: notionHeaders(token),
     body: JSON.stringify({
       parent: {data_source_id: dataSourceId},
-      properties: {
-        Name: {title: [{text: {content: input.title}}]},
-        State: {select: {name: input.state}},
-      },
+      properties,
     }),
   })
 
@@ -489,6 +647,12 @@ export function pageTitle(page: NotionPage): string {
 export function pageState(page: NotionPage): string | null {
   const prop = page.properties.State
   if (prop?.type === 'select') return prop.select?.name?.toLowerCase() ?? null
+  return null
+}
+
+export function pageFactoryId(page: NotionPage): string | null {
+  const prop = page.properties.Factory
+  if (prop?.type === 'select') return prop.select?.name ?? null
   return null
 }
 
