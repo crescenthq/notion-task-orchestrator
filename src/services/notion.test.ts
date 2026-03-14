@@ -4,6 +4,8 @@ import {
   notionCreateTaskPage,
   notionEnsureBoardSchema,
   notionExtractDatabaseIdFromUrl,
+  notionQueryAllDataSourcePages,
+  notionQueryDataSource,
   notionResolveDatabaseConnectionFromUrl,
   pageFactoryId,
 } from './notion'
@@ -170,6 +172,91 @@ describe('notion board schema provisioning', () => {
       dataSourceId: 'ds-1',
       url: 'https://notion.so/shared-board',
     })
+  })
+
+  it('queries a data source page with cursor and factory filter', async () => {
+    const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      calls.push({input, init})
+      return jsonResponse({
+        results: [{id: 'page-1', properties: {}}],
+        has_more: true,
+        next_cursor: 'cursor-2',
+      })
+    }) as typeof fetch
+
+    await expect(
+      notionQueryDataSource('token-1', 'ds-1', {
+        pageSize: 50,
+        startCursor: 'cursor-1',
+        factoryId: 'alpha',
+      }),
+    ).resolves.toEqual({
+      results: [{id: 'page-1', properties: {}}],
+      hasMore: true,
+      nextCursor: 'cursor-2',
+    })
+
+    const payload = JSON.parse(String(calls[0]?.init?.body))
+    expect(payload).toEqual({
+      page_size: 50,
+      start_cursor: 'cursor-1',
+      filter: {
+        property: 'Factory',
+        select: {equals: 'alpha'},
+      },
+    })
+  })
+
+  it('queries all data source pages across cursors', async () => {
+    let callCount = 0
+    globalThis.fetch = (async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return jsonResponse({
+          results: [{id: 'page-1', properties: {}}, {id: 'page-2', properties: {}}],
+          has_more: true,
+          next_cursor: 'cursor-2',
+        })
+      }
+
+      return jsonResponse({
+        results: [{id: 'page-3', properties: {}}],
+        has_more: false,
+        next_cursor: null,
+      })
+    }) as typeof fetch
+
+    await expect(
+      notionQueryAllDataSourcePages('token-1', 'ds-1', {pageSize: 50}),
+    ).resolves.toEqual([
+      {id: 'page-1', properties: {}},
+      {id: 'page-2', properties: {}},
+      {id: 'page-3', properties: {}},
+    ])
+  })
+
+  it('fails when a later data source page query fails', async () => {
+    let callCount = 0
+    globalThis.fetch = (async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return jsonResponse({
+          results: [{id: 'page-1', properties: {}}],
+          has_more: true,
+          next_cursor: 'cursor-2',
+        })
+      }
+
+      return new Response('boom', {status: 500})
+    }) as typeof fetch
+
+    await expect(
+      notionQueryAllDataSourcePages('token-1', 'ds-1', {pageSize: 50}),
+    ).rejects.toThrow('Notion query failed (500): boom')
   })
 
   it('reads the Factory property from a task page', () => {

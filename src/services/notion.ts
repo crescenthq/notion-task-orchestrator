@@ -22,6 +22,12 @@ export type NotionDatabaseConnection = {
   url: string | null
 }
 
+export type NotionQueryResult = {
+  results: NotionPage[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
 type NotionDataSource = {
   id: string
   database_parent?: {page_id?: string}
@@ -65,14 +71,27 @@ export async function notionWhoAmI(token: string): Promise<NotionUser> {
 export async function notionQueryDataSource(
   token: string,
   dataSourceId: string,
-  pageSize = 20,
-): Promise<NotionPage[]> {
+  input: {
+    pageSize?: number
+    startCursor?: string
+    factoryId?: string
+  } = {},
+): Promise<NotionQueryResult> {
+  const payload: Record<string, unknown> = {page_size: input.pageSize ?? 20}
+  if (input.startCursor) payload.start_cursor = input.startCursor
+  if (input.factoryId) {
+    payload.filter = {
+      property: 'Factory',
+      select: {equals: input.factoryId},
+    }
+  }
+
   const res = await fetch(
     `https://api.notion.com/v1/data_sources/${dataSourceId}/query`,
     {
       method: 'POST',
       headers: notionHeaders(token),
-      body: JSON.stringify({page_size: pageSize}),
+      body: JSON.stringify(payload),
     },
   )
 
@@ -81,8 +100,40 @@ export async function notionQueryDataSource(
     throw new Error(`Notion query failed (${res.status}): ${text}`)
   }
 
-  const body = (await res.json()) as {results: NotionPage[]}
-  return body.results
+  const body = (await res.json()) as {
+    results?: NotionPage[]
+    has_more?: boolean
+    next_cursor?: string | null
+  }
+
+  return {
+    results: body.results ?? [],
+    hasMore: body.has_more ?? false,
+    nextCursor: body.next_cursor ?? null,
+  }
+}
+
+export async function notionQueryAllDataSourcePages(
+  token: string,
+  dataSourceId: string,
+  input: {
+    pageSize?: number
+    factoryId?: string
+  } = {},
+): Promise<NotionPage[]> {
+  const results: NotionPage[] = []
+  let startCursor: string | undefined
+
+  while (true) {
+    const page = await notionQueryDataSource(token, dataSourceId, {
+      pageSize: input.pageSize,
+      startCursor,
+      factoryId: input.factoryId,
+    })
+    results.push(...page.results)
+    if (!page.hasMore) return results
+    startCursor = page.nextCursor ?? undefined
+  }
 }
 
 export async function notionCreateBoardDataSource(

@@ -710,6 +710,38 @@ export default definePipe({
     expect(updatedTask?.lastError).toContain('Pipe transition budget exceeded (1)')
   })
 
+  it('refuses to run quarantined ownership-mismatch tasks', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-quarantined-task'
+    const externalTaskId = 'task-runtime-quarantined-task-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: {},
+  run: async ({ ctx }) => ({ ...ctx, ok: true }),
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'blocked',
+        lastError: 'factory_mismatch: local=alpha remote=beta task=page-1',
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await expect(
+      runtime.runFactoryTaskByExternalId(externalTaskId),
+    ).rejects.toThrow(/repair-task --task task-runtime-quarantined-task-1/)
+  })
+
   it(
     'keeps lease heartbeats active during long definePipe execution',
     async () => {
