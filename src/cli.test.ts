@@ -88,7 +88,7 @@ describe('CLI bootstrap flow', () => {
     })
     const namespacedOutput = `${namespaced.stdout}\n${namespaced.stderr}`
     expect(namespaced.status).not.toBe(0)
-    expect(namespacedOutput).toContain('No Notion boards registered')
+    expect(namespacedOutput).toContain('No shared Notion board connected')
   })
 
   it('loads .env from the project resolved via --config', () => {
@@ -110,7 +110,7 @@ describe('CLI bootstrap flow', () => {
 
     const output = `${run.stdout}\n${run.stderr}`
     expect(run.status).not.toBe(0)
-    expect(output).toContain('No Notion boards registered')
+    expect(output).toContain('No shared Notion board connected')
     expect(output).not.toContain('NOTION_API_TOKEN is required')
   })
 })
