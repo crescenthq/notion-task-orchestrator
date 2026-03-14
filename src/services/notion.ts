@@ -28,7 +28,7 @@ export type NotionQueryResult = {
   nextCursor: string | null
 }
 
-type NotionDataSource = {
+export type NotionDataSource = {
   id: string
   database_parent?: {page_id?: string}
   properties: Record<string, {type: string}>
@@ -231,6 +231,35 @@ export async function notionGetDataSource(
   }
 
   return (await res.json()) as NotionDataSource
+}
+
+export function notionAssertSharedBoardSchema(
+  dataSource: NotionDataSource,
+): void {
+  const expectedTypes: Array<[property: string, type: string]> = [
+    ['State', 'select'],
+    ['Status', 'select'],
+    ['Factory', 'select'],
+  ]
+
+  const issues = expectedTypes.flatMap(([propertyName, expectedType]) => {
+    const property = dataSource.properties[propertyName]
+    if (!property) {
+      return [`missing ${propertyName}`]
+    }
+    if (property.type !== expectedType) {
+      return [
+        `${propertyName} must be ${expectedType} (found ${property.type})`,
+      ]
+    }
+    return []
+  })
+
+  if (issues.length === 0) return
+
+  throw new Error(
+    `Shared Notion board schema is invalid for data source ${dataSource.id}: ${issues.join('; ')}`,
+  )
 }
 
 function normalizeNotionId(id: string): string | null {

@@ -9,6 +9,7 @@ import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
   notionCreateTaskPage,
+  notionAssertSharedBoardSchema,
   notionEnsureBoardSchema,
   notionGetPage,
   notionResolveDatabaseConnectionFromUrl,
@@ -138,9 +139,12 @@ async function reconcileSharedBoardSchema(
   token: string,
   boardExternalId: string,
   options: SharedBoardCommandOptions,
-): Promise<void> {
+): Promise<Awaited<ReturnType<typeof notionGetDataSource>>> {
   const {factoryOptions} = await loadDeclaredFactoryCatalog(options)
   await notionEnsureBoardSchema(token, boardExternalId, [], factoryOptions)
+  const dataSource = await notionGetDataSource(token, boardExternalId)
+  notionAssertSharedBoardSchema(dataSource)
+  return dataSource
 }
 
 async function quarantineTask(
@@ -854,7 +858,6 @@ export const notionCmd = defineCommand({
           configPath: resolvedProject.configPath,
           startDir: process.cwd(),
         })
-        await notionGetDataSource(token, board.externalId)
         const state = String(args.status ?? 'queue')
         const page = await notionCreateTaskPage(token, board.externalId, {
           title: String(args.title),

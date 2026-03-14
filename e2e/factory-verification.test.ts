@@ -376,7 +376,7 @@ describe('Live factory verification', () => {
       '--url',
       board.url,
     ])
-  })
+  }, 120_000)
 
   afterAll(async () => {
     if (artifacts.length > 0) {
@@ -413,7 +413,7 @@ describe('Live factory verification', () => {
       await fixture.cleanup()
       fixture = null
     }
-  })
+  }, 120_000)
 
   it('A: happy path reaches done', async () => {
     const scenario = 'A_happy'

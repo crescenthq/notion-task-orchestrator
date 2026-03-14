@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it} from 'vitest'
 import {
+  notionAssertSharedBoardSchema,
   notionCreateBoardDataSource,
   notionCreateTaskPage,
   notionEnsureBoardSchema,
@@ -257,6 +258,46 @@ describe('notion board schema provisioning', () => {
     await expect(
       notionQueryAllDataSourcePages('token-1', 'ds-1', {pageSize: 50}),
     ).rejects.toThrow('Notion query failed (500): boom')
+  })
+
+  it('accepts a shared board schema with compatible property types', () => {
+    expect(() =>
+      notionAssertSharedBoardSchema({
+        id: 'ds-1',
+        properties: {
+          State: {type: 'select'},
+          Status: {type: 'select'},
+          Factory: {type: 'select'},
+        },
+      }),
+    ).not.toThrow()
+  })
+
+  it('fails loudly when a required shared board property is missing', () => {
+    expect(() =>
+      notionAssertSharedBoardSchema({
+        id: 'ds-1',
+        properties: {
+          State: {type: 'select'},
+          Status: {type: 'select'},
+        },
+      }),
+    ).toThrow('Shared Notion board schema is invalid for data source ds-1: missing Factory')
+  })
+
+  it('fails loudly when a shared board property has the wrong type', () => {
+    expect(() =>
+      notionAssertSharedBoardSchema({
+        id: 'ds-1',
+        properties: {
+          State: {type: 'select'},
+          Status: {type: 'select'},
+          Factory: {type: 'rich_text'},
+        },
+      }),
+    ).toThrow(
+      'Shared Notion board schema is invalid for data source ds-1: Factory must be select (found rich_text)',
+    )
   })
 
   it('reads the Factory property from a task page', () => {

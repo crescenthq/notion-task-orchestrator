@@ -1,0 +1,203 @@
+import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import path from 'node:path'
+import {vi} from 'vitest'
+import {openApp} from '../app/context'
+import {boards, workflows} from '../db/schema'
+
+type NotionServiceModule = typeof import('../services/notion')
+
+const tempDirs: string[] = []
+const originalCwd = process.cwd()
+const originalToken = process.env.NOTION_API_TOKEN
+
+export async function cleanupNotionCommandTestEnv(): Promise<void> {
+  process.chdir(originalCwd)
+  if (originalToken === undefined) {
+    delete process.env.NOTION_API_TOKEN
+  } else {
+    process.env.NOTION_API_TOKEN = originalToken
+  }
+
+  vi.doUnmock('../services/notion')
+  vi.resetModules()
+  vi.restoreAllMocks()
+
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop()
+    if (!dir) continue
+    await rm(dir, {recursive: true, force: true})
+  }
+}
+
+export async function createProjectFixture(factoryIds: string[] = ['alpha', 'beta']) {
+  const projectRoot = await mkdtemp(
+    path.join(tmpdir(), 'notionflow-notion-command-test-'),
+  )
+  tempDirs.push(projectRoot)
+
+  const factoriesDir = path.join(projectRoot, 'factories')
+  await mkdir(factoriesDir, {recursive: true})
+  await writeFile(
+    path.join(projectRoot, 'notionflow.config.ts'),
+    [
+      'export default {',
+      `  factories: [${factoryIds.map(id => JSON.stringify(`./factories/${id}.mjs`)).join(', ')}],`,
+      '};',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+
+  for (const factoryId of factoryIds) {
+    await writeFactory(path.join(factoriesDir, `${factoryId}.mjs`), factoryId)
+  }
+
+  return projectRoot
+}
+
+export async function setupSharedBoardProject(options: {
+  registerBoard?: boolean
+  boardExternalId?: string
+  boardConfig?: {databaseId?: string; url?: string}
+  token?: string
+  factoryIds?: string[]
+} = {}) {
+  const projectRoot = await createProjectFixture(options.factoryIds)
+  process.chdir(projectRoot)
+  process.env.NOTION_API_TOKEN = options.token ?? 'test-token'
+
+  if (options.registerBoard !== false) {
+    await registerSharedBoard(
+      projectRoot,
+      options.boardExternalId ?? 'ds-shared',
+      options.boardConfig,
+    )
+  }
+
+  const {db} = await openApp({projectRoot})
+  return {projectRoot, db}
+}
+
+export function mockNotionService(
+  buildOverrides: (
+    actual: NotionServiceModule,
+  ) => Partial<NotionServiceModule> | Promise<Partial<NotionServiceModule>>,
+): void {
+  vi.doMock('../services/notion', async () => {
+    const actual = await vi.importActual<NotionServiceModule>('../services/notion')
+    return {
+      ...actual,
+      ...(await buildOverrides(actual)),
+    }
+  })
+}
+
+export async function runNotionSubcommand(
+  subcommandName: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const {notionCmd} = await import('./notion')
+  const command = notionCmd as unknown as {
+    subCommands: Record<
+      string,
+      {run: (input: {args: Record<string, unknown>}) => Promise<void>}
+    >
+  }
+
+  const subcommand = command.subCommands[subcommandName]
+  if (!subcommand) {
+    throw new Error(`Unknown notion test subcommand: ${subcommandName}`)
+  }
+
+  await subcommand.run({args})
+}
+
+export async function registerSharedBoard(
+  projectRoot: string,
+  externalId: string,
+  config: {databaseId?: string; url?: string} = {},
+): Promise<void> {
+  const {db} = await openApp({projectRoot})
+  await db.insert(boards).values({
+    id: 'notion-shared',
+    adapter: 'notion',
+    externalId,
+    configJson: JSON.stringify({
+      databaseId: config.databaseId ?? 'db-shared',
+      url: config.url ?? 'https://notion.so/shared-board',
+    }),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function registerWorkflow(
+  db: Awaited<ReturnType<typeof openApp>>['db'],
+  id: string,
+): Promise<void> {
+  const now = new Date().toISOString()
+  await db.insert(workflows).values({
+    id,
+    version: 1,
+    definitionYaml: '{}',
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+export function buildNotionPage(
+  id: string,
+  title: string,
+  state: string,
+  factoryId?: string,
+) {
+  return {
+    id,
+    properties: {
+      Name: {
+        type: 'title',
+        title: [{plain_text: title}],
+      },
+      State: {
+        type: 'select',
+        select: {name: state},
+      },
+      ...(factoryId
+        ? {
+            Factory: {
+              type: 'select',
+              select: {name: factoryId},
+            },
+          }
+        : {}),
+    },
+  }
+}
+
+export function buildSharedBoardDataSource(id: string) {
+  return {
+    id,
+    properties: {
+      Name: {type: 'title'},
+      State: {type: 'select'},
+      Status: {type: 'select'},
+      Factory: {type: 'select'},
+    },
+  }
+}
+
+async function writeFactory(filePath: string, id: string): Promise<void> {
+  await writeFile(
+    filePath,
+    [
+      'export default {',
+      `  id: ${JSON.stringify(id)},`,
+      '  initial: {},',
+      '  run: async ({ctx}) => ({...ctx, ok: true}),',
+      '};',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+}
