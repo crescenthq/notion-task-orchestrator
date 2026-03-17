@@ -130,14 +130,12 @@ Feedback sources consumed by `ask`:
 
 Typical Notion loop:
 
-1. `notionflow tick --factory <factory-id>` pauses task in
-   `feedback`.
+1. `notionflow tick --factory <factory-id>` pauses task in `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --run` detects new
-   comments, stores `human_feedback`, re-queues the task, and runs queued work.
-4. `notionflow integrations notion connect --url <notion-database-url> --config <path>`
-   registers the shared board in a new environment before running the first
-   tick.
+3. `notionflow integrations notion sync --run` detects new comments, stores
+   `human_feedback`, re-queues the task, and runs queued work.
+4. `notionflow integrations notion setup --config <path>` creates or resolves
+   the shared board in a new environment before running the first tick.
 
 ## Agent Wrapper Setup (`defineAgent`)
 
@@ -274,13 +272,15 @@ npx notionflow factory create --id my-factory --skip-notion-board
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
+  name: 'Asmara Tasks',
   factories: ['./factories/my-factory.ts'],
 })
 ```
 
-If you want board provisioning to use a human-friendly name, add `name` to the
-`definePipe` export (for example `name: 'My Factory'`). NotionFlow still uses
-the factory `id` as the board key, so you can rename the board in Notion later.
+If you want `notionflow integrations notion setup` to create a human-friendly
+shared tasks database title, set `name` in `defineConfig(...)`. If `name` is
+omitted, NotionFlow falls back to a title derived from the project directory
+name.
 
 4. Validate context and auth.
 
@@ -323,7 +323,8 @@ Live Notion API e2e gate (explicit):
 
 ```bash
 export NOTION_API_TOKEN="<integration-token>"
-export NOTION_WORKSPACE_PAGE_ID="<parent-page-id>"
+# optional: reuse a previously created shared tasks database
+export NOTION_TASKS_DATABASE_ID="<database-id>"
 # optional: local DB feedback injection for verification suite
 export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```

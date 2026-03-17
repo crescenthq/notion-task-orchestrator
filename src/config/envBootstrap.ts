@@ -12,14 +12,14 @@ type BootstrapOptions = {
 
 type RuntimeEnv = {
   NOTION_API_TOKEN?: string
-  NOTION_WORKSPACE_PAGE_ID?: string
+  NOTION_TASKS_DATABASE_ID?: string
   NOTIONFLOW_PROJECT_ROOT?: string
 }
 
 const nonEmpty = z.string().trim().min(1)
 const RuntimeEnvSchema = z.object({
   NOTION_API_TOKEN: nonEmpty.optional(),
-  NOTION_WORKSPACE_PAGE_ID: nonEmpty.optional(),
+  NOTION_TASKS_DATABASE_ID: nonEmpty.optional(),
   NOTIONFLOW_PROJECT_ROOT: nonEmpty.optional(),
 })
 
@@ -54,7 +54,9 @@ export function inferConfigPathFromArgv(argv: string[]): string | null {
 function loadEnvFile(filePath: string): boolean {
   try {
     if (typeof process.loadEnvFile !== 'function') {
-      throw new Error('Node build-in env loader is unavailable in this runtime.')
+      throw new Error(
+        'Node build-in env loader is unavailable in this runtime.',
+      )
     }
 
     process.loadEnvFile(filePath)

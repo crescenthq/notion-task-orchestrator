@@ -10,6 +10,7 @@ type NotionServiceModule = typeof import('../services/notion')
 const tempDirs: string[] = []
 const originalCwd = process.cwd()
 const originalToken = process.env.NOTION_API_TOKEN
+const originalTasksDatabaseId = process.env.NOTION_TASKS_DATABASE_ID
 
 export async function cleanupNotionCommandTestEnv(): Promise<void> {
   process.chdir(originalCwd)
@@ -17,6 +18,11 @@ export async function cleanupNotionCommandTestEnv(): Promise<void> {
     delete process.env.NOTION_API_TOKEN
   } else {
     process.env.NOTION_API_TOKEN = originalToken
+  }
+  if (originalTasksDatabaseId === undefined) {
+    delete process.env.NOTION_TASKS_DATABASE_ID
+  } else {
+    process.env.NOTION_TASKS_DATABASE_ID = originalTasksDatabaseId
   }
 
   vi.doUnmock('../services/notion')
@@ -30,18 +36,25 @@ export async function cleanupNotionCommandTestEnv(): Promise<void> {
   }
 }
 
-export async function createProjectFixture(factoryIds: string[] = ['alpha', 'beta']) {
+export async function createProjectFixture(
+  options: {
+    factoryIds?: string[]
+    name?: string
+  } = {},
+) {
   const projectRoot = await mkdtemp(
     path.join(tmpdir(), 'notionflow-notion-command-test-'),
   )
   tempDirs.push(projectRoot)
 
+  const factoryIds = options.factoryIds ?? ['alpha', 'beta']
   const factoriesDir = path.join(projectRoot, 'factories')
   await mkdir(factoriesDir, {recursive: true})
   await writeFile(
     path.join(projectRoot, 'notionflow.config.ts'),
     [
       'export default {',
+      ...(options.name ? [`  name: ${JSON.stringify(options.name)},`] : []),
       `  factories: [${factoryIds.map(id => JSON.stringify(`./factories/${id}.mjs`)).join(', ')}],`,
       '};',
       '',
@@ -56,14 +69,20 @@ export async function createProjectFixture(factoryIds: string[] = ['alpha', 'bet
   return projectRoot
 }
 
-export async function setupSharedBoardProject(options: {
-  registerBoard?: boolean
-  boardExternalId?: string
-  boardConfig?: {databaseId?: string; url?: string}
-  token?: string
-  factoryIds?: string[]
-} = {}) {
-  const projectRoot = await createProjectFixture(options.factoryIds)
+export async function setupSharedBoardProject(
+  options: {
+    registerBoard?: boolean
+    boardExternalId?: string
+    boardConfig?: {databaseId?: string; url?: string}
+    token?: string
+    factoryIds?: string[]
+    name?: string
+  } = {},
+) {
+  const projectRoot = await createProjectFixture({
+    factoryIds: options.factoryIds,
+    name: options.name,
+  })
   process.chdir(projectRoot)
   process.env.NOTION_API_TOKEN = options.token ?? 'test-token'
 
@@ -85,7 +104,8 @@ export function mockNotionService(
   ) => Partial<NotionServiceModule> | Promise<Partial<NotionServiceModule>>,
 ): void {
   vi.doMock('../services/notion', async () => {
-    const actual = await vi.importActual<NotionServiceModule>('../services/notion')
+    const actual =
+      await vi.importActual<NotionServiceModule>('../services/notion')
     return {
       ...actual,
       ...(await buildOverrides(actual)),
@@ -180,9 +200,9 @@ export function buildSharedBoardDataSource(id: string) {
     id,
     properties: {
       Name: {type: 'title'},
-      State: {type: 'select'},
-      Status: {type: 'select'},
-      Factory: {type: 'select'},
+      State: {type: 'select', select: {options: []}},
+      Status: {type: 'select', select: {options: []}},
+      Factory: {type: 'select', select: {options: []}},
     },
   }
 }

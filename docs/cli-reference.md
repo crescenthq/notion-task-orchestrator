@@ -23,7 +23,7 @@ Supported `--config <path>` override:
 - `factory create`
 - `run`
 - `tick`
-- `integrations notion connect`
+- `integrations notion setup`
 - `integrations notion repair-task`
 - `integrations notion sync`
 - `integrations notion create-task`
@@ -144,12 +144,13 @@ Namespace:
 notionflow integrations notion <subcommand>
 ```
 
-### `integrations notion connect`
+### `integrations notion setup`
 
-Connect an existing shared Notion board.
+Set up the shared Notion board by reusing `NOTION_TASKS_DATABASE_ID`, creating a
+database from project config, or adopting an existing Notion database URL.
 
 ```bash
-notionflow integrations notion connect --url <notion-database-url> [--config <path>]
+notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
 ```
 
 ### `integrations notion repair-task`
@@ -196,7 +197,7 @@ All runtime artifacts are project-local:
 notionflow init
 notionflow factory create --id demo --skip-notion-board
 notionflow doctor
-notionflow integrations notion connect --url <notion-database-url>
+notionflow integrations notion setup
 notionflow integrations notion create-task --factory demo --title "Try demo" --status queue
 notionflow tick --factory demo
 ```

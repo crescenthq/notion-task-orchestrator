@@ -6,6 +6,7 @@ import {loadFactoryFromPath} from '../core/factory'
 import type {LoadedFactoryDefinition} from '../core/factory'
 
 const projectConfigSchema = z.object({
+  name: z.string().trim().min(1).optional(),
   factories: z.array(z.string().min(1)).default([]),
 })
 

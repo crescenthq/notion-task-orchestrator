@@ -19,6 +19,27 @@ afterEach(async () => {
 })
 
 describe('projectConfig', () => {
+  it('loads an optional project name alongside declared factories', async () => {
+    const projectRoot = await createFixture('notionflow-project-config-name-')
+    const factoriesDir = path.join(projectRoot, 'factories')
+    await mkdir(factoriesDir, {recursive: true})
+
+    const localFactoryPath = path.join(factoriesDir, 'named.mjs')
+    await writeMinimalFactory(localFactoryPath, 'named-factory')
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { name: "Asmara", factories: ["./factories/named.mjs"] };\n`,
+      'utf8',
+    )
+
+    await expect(loadProjectConfig(configPath)).resolves.toEqual({
+      name: 'Asmara',
+      factories: ['./factories/named.mjs'],
+    })
+  })
+
   it('loads config and resolves declared relative and absolute factory paths', async () => {
     const projectRoot = await createFixture('notionflow-project-config-')
     const factoriesDir = path.join(projectRoot, 'factories')
@@ -150,7 +171,7 @@ async function writeMinimalFactory(
   await writeFile(
     targetPath,
     [
-      "const run = async ({ctx}) => ({ ...ctx, ok: true });",
+      'const run = async ({ctx}) => ({ ...ctx, ok: true });',
       '',
       'export default {',
       `  id: ${JSON.stringify(id)},`,

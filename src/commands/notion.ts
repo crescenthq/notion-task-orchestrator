@@ -1,17 +1,25 @@
+import path from 'node:path'
 import {defineCommand} from 'citty'
 import {and, count, eq, sql} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
 import {resolveProjectConfig} from '../project/discoverConfig'
-import {notionToken} from '../config/env'
+import {notionTasksDatabaseId, notionToken} from '../config/env'
+import {upsertEnvVar} from '../config/envFile'
 import {boards, tasks, workflows} from '../db/schema'
-import {loadDeclaredFactories} from '../project/projectConfig'
+import {
+  loadDeclaredFactories,
+  loadProjectConfig,
+} from '../project/projectConfig'
 import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
   notionCreateTaskPage,
   notionAssertSharedBoardSchema,
+  notionCreateBoardDataSource,
   notionEnsureBoardSchema,
   notionGetPage,
+  notionWaitForTaskFactory,
+  notionResolveDatabaseConnection,
   notionResolveDatabaseConnectionFromUrl,
   notionGetDataSource,
   notionGetNewComments,
@@ -44,6 +52,7 @@ const DEFAULT_RUN_CONCURRENCY = 16
 const MAX_RUN_CONCURRENCY = 32
 const activeQueuedTaskRuns = new Set<string>()
 export const SHARED_NOTION_BOARD_ID = 'notion-shared'
+const TASKS_DATABASE_ENV_KEY = 'NOTION_TASKS_DATABASE_ID'
 const FACTORY_OPTION_COLORS = [
   'blue',
   'green',
@@ -79,23 +88,41 @@ type DeclaredFactoryCatalog = {
 function buildFactorySelectOptions(factoryIds: string[]) {
   return factoryIds.map((factoryId, index) => ({
     name: factoryId,
-    color: FACTORY_OPTION_COLORS[index % FACTORY_OPTION_COLORS.length] ?? 'gray',
+    color:
+      FACTORY_OPTION_COLORS[index % FACTORY_OPTION_COLORS.length] ?? 'gray',
   }))
+}
+
+function defaultProjectName(projectRoot: string): string {
+  const baseName = path.basename(projectRoot).trim()
+  if (!baseName) return 'NotionFlow'
+
+  const parts = baseName
+    .split(/[-_]+/)
+    .map((part: string) => part.trim())
+    .filter((part: string) => part.length > 0)
+
+  if (parts.length === 0) return baseName
+  return parts
+    .map((part: string) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 const FACTORY_MISMATCH_ERROR_PREFIX = 'factory_mismatch:'
 const FACTORY_INVALID_ERROR_PREFIX = 'factory_invalid:'
-const REPAIR_TASK_COMMAND =
-  'notionflow integrations notion repair-task --task'
+const REPAIR_TASK_COMMAND = 'notionflow integrations notion repair-task --task'
 
 function isOwnershipQuarantined(lastError: string | null | undefined): boolean {
   return Boolean(
     lastError?.startsWith(FACTORY_MISMATCH_ERROR_PREFIX) ||
-      lastError?.startsWith(FACTORY_INVALID_ERROR_PREFIX),
+    lastError?.startsWith(FACTORY_INVALID_ERROR_PREFIX),
   )
 }
 
-function ownershipRepairHint(taskExternalId: string, expectedFactory: string): string {
+function ownershipRepairHint(
+  taskExternalId: string,
+  expectedFactory: string,
+): string {
   return [
     'You may have changed the Factory property by mistake.',
     `Restore Factory to \`${expectedFactory}\` in Notion, then run \`${REPAIR_TASK_COMMAND} ${taskExternalId}\`.`,
@@ -116,7 +143,10 @@ function makeFactoryMismatchMessage(
   return `${FACTORY_MISMATCH_ERROR_PREFIX} shared-board Factory changed from ${task.workflowId} to ${remoteFactory}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
 }
 
-function parseBoardConfig(configJson: string): {databaseId?: string; url?: string} {
+function parseBoardConfig(configJson: string): {
+  databaseId?: string
+  url?: string
+} {
   try {
     const parsed = JSON.parse(configJson) as {databaseId?: string; url?: string}
     return parsed && typeof parsed === 'object' ? parsed : {}
@@ -125,7 +155,11 @@ function parseBoardConfig(configJson: string): {databaseId?: string; url?: strin
   }
 }
 
-function formatBoardDescriptor(input: {databaseId?: string; externalId?: string; url?: string | null}): string {
+function formatBoardDescriptor(input: {
+  databaseId?: string
+  externalId?: string
+  url?: string | null
+}): string {
   return [
     input.databaseId ? `database=${input.databaseId}` : null,
     input.externalId ? `data_source=${input.externalId}` : null,
@@ -209,7 +243,8 @@ async function assertDeclaredFactoryId(
   factoryId: string,
   options: SharedBoardCommandOptions = {},
 ): Promise<void> {
-  const {resolvedProject, factoryIds} = await loadDeclaredFactoryCatalog(options)
+  const {resolvedProject, factoryIds} =
+    await loadDeclaredFactoryCatalog(options)
   if (factoryIds.includes(factoryId)) return
 
   throw new Error(
@@ -219,6 +254,29 @@ async function assertDeclaredFactoryId(
       `Available factories: ${factoryIds.sort().join(', ') || '<none>'}`,
     ].join('\n'),
   )
+}
+
+function sharedBoardTitle(input: {name?: string; projectRoot: string}): string {
+  const configuredName = input.name?.trim()
+  if (configuredName) return configuredName
+  return defaultProjectName(input.projectRoot)
+}
+
+async function createSharedBoardConnection(
+  token: string,
+  title: string,
+  factoryOptions: Array<{name: string; color: string}>,
+) {
+  return notionCreateBoardDataSource(token, title, [], factoryOptions)
+}
+
+async function persistTasksDatabaseMapping(
+  resolvedProject: Awaited<ReturnType<typeof resolveProjectConfig>>,
+  databaseId: string,
+): Promise<void> {
+  const envPath = path.join(resolvedProject.projectRoot, '.env')
+  await upsertEnvVar(envPath, TASKS_DATABASE_ENV_KEY, databaseId)
+  process.env[TASKS_DATABASE_ENV_KEY] = databaseId
 }
 
 export async function getRegisteredSharedNotionBoard(
@@ -240,7 +298,7 @@ export async function getRegisteredSharedNotionBoard(
 
   if (!board) {
     throw new Error(
-      'No shared Notion board connected. Run `notionflow integrations notion connect --url <notion-database-url>` first.',
+      'No shared Notion board connected. Run `notionflow integrations notion setup` first.',
     )
   }
 
@@ -253,13 +311,13 @@ export async function getRegisteredSharedNotionBoard(
   return board
 }
 
-export async function connectSharedNotionBoard(
-  options: SharedBoardCommandOptions & {url: string},
+export async function setupSharedNotionBoard(
+  options: SharedBoardCommandOptions & {url?: string},
 ): Promise<{externalId: string; databaseId: string; url: string | null}> {
   const token = notionToken()
   if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-  const {resolvedProject} = await loadDeclaredFactoryCatalog({
+  const {resolvedProject, factoryOptions} = await loadDeclaredFactoryCatalog({
     configPath: options.configPath,
     startDir: options.startDir,
   })
@@ -267,17 +325,34 @@ export async function connectSharedNotionBoard(
     startDir: options.startDir ?? process.cwd(),
     configPath: resolvedProject.configPath,
   })
-  const connection = await notionResolveDatabaseConnectionFromUrl(token, options.url)
-
+  const requestedUrl = options.url?.trim() ?? null
+  const existingDatabaseId = notionTasksDatabaseId()
   const [existingBoard] = await db
     .select()
     .from(boards)
     .where(eq(boards.id, SHARED_NOTION_BOARD_ID))
     .limit(1)
-
   const existingConfig = existingBoard
     ? parseBoardConfig(existingBoard.configJson)
     : {}
+  const connection = requestedUrl
+    ? await notionResolveDatabaseConnectionFromUrl(token, requestedUrl)
+    : existingDatabaseId
+      ? await notionResolveDatabaseConnection(token, existingDatabaseId)
+      : existingConfig.databaseId
+        ? await notionResolveDatabaseConnection(
+            token,
+            existingConfig.databaseId,
+          )
+        : await createSharedBoardConnection(
+            token,
+            sharedBoardTitle({
+              name: (await loadProjectConfig(resolvedProject.configPath)).name,
+              projectRoot: resolvedProject.projectRoot,
+            }),
+            factoryOptions,
+          )
+
   const sameBoard =
     existingBoard?.externalId === connection.dataSourceId &&
     existingConfig.databaseId === connection.databaseId
@@ -291,7 +366,7 @@ export async function connectSharedNotionBoard(
     if (taskCount > 0) {
       throw new Error(
         [
-          'Cannot reconnect shared Notion board to a different database while local shared-board tasks still exist.',
+          'Cannot re-run shared Notion setup against a different database while local shared-board tasks still exist.',
           `Current board: ${formatBoardDescriptor({
             databaseId: existingConfig.databaseId,
             externalId: existingBoard.externalId,
@@ -300,13 +375,17 @@ export async function connectSharedNotionBoard(
           `Requested board: ${formatBoardDescriptor({
             databaseId: connection.databaseId,
             externalId: connection.dataSourceId,
-            url: connection.url ?? options.url,
+            url: connection.url ?? requestedUrl,
           })}`,
           `Existing local shared-board tasks: ${taskCount}`,
-          'Clear or migrate local shared-board task state before connecting a different Notion database.',
+          'Clear or migrate local shared-board task state before running setup against a different Notion database.',
         ].join('\n'),
       )
     }
+  }
+
+  if (requestedUrl || !existingDatabaseId) {
+    await persistTasksDatabaseMapping(resolvedProject, connection.databaseId)
   }
 
   await reconcileSharedBoardSchema(token, connection.dataSourceId, {
@@ -323,7 +402,7 @@ export async function connectSharedNotionBoard(
       externalId: connection.dataSourceId,
       configJson: JSON.stringify({
         databaseId: connection.databaseId,
-        url: connection.url ?? options.url,
+        url: connection.url ?? requestedUrl,
       }),
       createdAt: now,
       updatedAt: now,
@@ -335,7 +414,7 @@ export async function connectSharedNotionBoard(
         externalId: connection.dataSourceId,
         configJson: JSON.stringify({
           databaseId: connection.databaseId,
-          url: connection.url ?? options.url,
+          url: connection.url ?? requestedUrl,
         }),
         updatedAt: now,
       },
@@ -491,7 +570,9 @@ export async function syncNotionBoards(options: {
           `[warn] quarantined page without Factory: ${page.id} ${pageTitle(page)} ${ownershipRepairHint(existingTask.externalTaskId, existingTask.workflowId)}`,
         )
       }
-      console.log(`[warn] skipping page without Factory: ${page.id} ${pageTitle(page)}`)
+      console.log(
+        `[warn] skipping page without Factory: ${page.id} ${pageTitle(page)}`,
+      )
       continue
     }
     if (!declaredFactoryIds.has(workflowId)) {
@@ -619,7 +700,9 @@ export async function syncNotionBoards(options: {
     }
   }
 
-  console.log(`Sync complete: ${totalImported} tasks upserted from shared board`)
+  console.log(
+    `Sync complete: ${totalImported} tasks upserted from shared board`,
+  )
 
   if (!options.runQueued || queuedTaskIds.size === 0) return
 
@@ -724,9 +807,7 @@ export async function repairQuarantinedSharedBoardTask(options: {
     .limit(1)
 
   if (!task) {
-    throw new Error(
-      `Shared-board task not found: ${options.taskExternalId}`,
-    )
+    throw new Error(`Shared-board task not found: ${options.taskExternalId}`)
   }
   if (!isOwnershipQuarantined(task.lastError)) {
     throw new Error(
@@ -779,24 +860,24 @@ export async function repairQuarantinedSharedBoardTask(options: {
 export const notionCmd = defineCommand({
   meta: {name: 'notion', description: 'Notion adapter commands'},
   subCommands: {
-    connect: defineCommand({
+    setup: defineCommand({
       meta: {
-        name: 'connect',
-        description: 'Connect an existing shared Notion board',
+        name: 'setup',
+        description: 'Resolve, create, or adopt the shared Notion board',
       },
       args: {
-        url: {type: 'string', required: true},
+        url: {type: 'string', required: false},
         config: {type: 'string', required: false},
       },
       async run({args}) {
-        const board = await connectSharedNotionBoard({
-          url: String(args.url),
+        const board = await setupSharedNotionBoard({
+          url: args.url ? String(args.url) : undefined,
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
         })
 
         console.log(
-          `Shared board connected: ${SHARED_NOTION_BOARD_ID} -> ${board.externalId}`,
+          `Shared board ready: ${SHARED_NOTION_BOARD_ID} -> ${board.externalId}`,
         )
         if (board.url) console.log(`Notion URL: ${board.url}`)
       },
@@ -817,9 +898,7 @@ export const notionCmd = defineCommand({
           startDir: process.cwd(),
         })
 
-        console.log(
-          `Task repaired and re-queued: ${String(args.task)}`,
-        )
+        console.log(`Task repaired and re-queued: ${String(args.task)}`)
       },
     }),
     'create-task': defineCommand({
@@ -864,6 +943,7 @@ export const notionCmd = defineCommand({
           state: localStateToDisplayStatus(state),
           factoryId,
         })
+        await notionWaitForTaskFactory(token, page.id, factoryId)
 
         await ensureWorkflowRecord(db, factoryId)
         await upsertTask(
@@ -879,7 +959,10 @@ export const notionCmd = defineCommand({
       },
     }),
     sync: defineCommand({
-      meta: {name: 'sync', description: 'Pull tasks from the shared Notion board'},
+      meta: {
+        name: 'sync',
+        description: 'Pull tasks from the shared Notion board',
+      },
       args: {
         factory: {type: 'string', required: false},
         config: {type: 'string', required: false},
