@@ -1,0 +1,39 @@
+src/services/notion.test.ts
+  3eac96fe44202ea3 3,7,13,26-52,74-75,77,82-83,101-103,105-107,123,126,129-132,135,152-155,166,169-174,177,184-308,331-398,429-440,494,560
+e2e/helpers/sharedNotionBoard.ts
+  3eac96fe44202ea3 1-3,5-8,11-14,16-17,21-23,25,28-71,73-81,83-84,86-94,97,101-108,110,113,118-145,147-149
+src/config/env.ts
+  3eac96fe44202ea3 3,10-11,17
+README.md
+  3eac96fe44202ea3 59,64-66,90,184-185,285-286
+src/services/notion.ts
+  3eac96fe44202ea3 19-29,45,155,161-163,165,167,194-209,221-245,253,263-267,271-275,279-283,381,383,400-403,408-409,442-467
+e2e/helpers/liveNotionEnv.ts
+  3eac96fe44202ea3 1,4,11
+e2e/helpers/sharedNotionBoard.test.ts
+  3eac96fe44202ea3 1-238
+docs/factory-authoring.md
+  3eac96fe44202ea3 137,275,280-283,326-327
+src/config/envBootstrap.ts
+  3eac96fe44202ea3 15,22,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "9fef9ccb90a1ece76cb13262dff748011c49a964",
+  "prompts": {
+    "3eac96fe44202ea3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019cfc74-99be-7b23-9c72-87eb19213380",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 1026,
+      "total_deletions": 279,
+      "accepted_lines": 789,
+      "overriden_lines": 0
+    }
+  }
+}
