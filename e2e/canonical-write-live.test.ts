@@ -2,22 +2,34 @@ import {spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
 import {writeFile} from 'node:fs/promises'
 import path from 'node:path'
-import {afterEach, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {definePipe, write} from '../src/factory/canonical'
-import {notionAppendMarkdownToPage, notionGetPageBodyText} from '../src/services/notion'
-import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
-import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
-import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
+import {
+  notionAppendMarkdownToPage,
+  notionGetPageBodyText,
+} from '../src/services/notion'
+import {
+  createTempProjectFixture,
+  type TempProjectFixture,
+} from './helpers/projectFixture'
+import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
+import {
+  finishLiveBoardSuite,
+  registerLiveBoardSuite,
+  resolveSharedBoardConnection,
+} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
+const liveSuiteEnabled = hasLiveNotionEnv()
+if (liveSuiteEnabled) {
+  registerLiveBoardSuite()
+}
 
-describe('canonical write live e2e', () => {
+;(liveSuiteEnabled ? describe : describe.skip)(
+  'canonical write live e2e',
+  () => {
   let fixture: TempProjectFixture | null = null
-
-  beforeAll(() => {
-    assertLiveNotionEnv()
-  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -25,84 +37,79 @@ describe('canonical write live e2e', () => {
     fixture = null
   })
 
-  it(
-    'appends rendered write output to the Notion task page via writePage adapter',
-    async () => {
-      fixture = await createTempProjectFixture('notionflow-write-live-')
-      await execCli(['init'], fixture.projectDir)
-      await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
-        writeLiveConfigSource(),
-        'utf8',
-      )
-      await writeFile(
-        path.join(fixture.projectDir, 'factories', 'write-live.ts'),
-        writeLiveFactorySource(),
-        'utf8',
-      )
+  afterAll(async () => {
+    await finishLiveBoardSuite()
+  })
 
-      const board = await createTemporarySharedBoard(`Write Live ${Date.now()}`)
-      await execCli(
-        [
-          'integrations',
-          'notion',
-          'connect',
-          '--url',
-          board.url,
-        ],
-        fixture.projectDir,
-      )
+  it('appends rendered write output to the Notion task page via writePage adapter', async () => {
+    fixture = await createTempProjectFixture('notionflow-write-live-')
+    await execCli(['init'], fixture.projectDir)
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      writeLiveConfigSource(),
+      'utf8',
+    )
+    await writeFile(
+      path.join(fixture.projectDir, 'factories', 'write-live.ts'),
+      writeLiveFactorySource(),
+      'utf8',
+    )
 
-      const created = await execCli(
-        [
-          'integrations',
-          'notion',
-          'create-task',
-          '--factory',
-          'write-live',
-          '--title',
-          'Canonical write live e2e task',
-          '--status',
-          'queue',
-        ],
-        fixture.projectDir,
-      )
-      const taskExternalId = extractTaskExternalId(created.stdout)
-      const token = notionToken()
-      if (!token) {
-        throw new Error('NOTION_API_TOKEN is required for live write e2e')
-      }
+    const board = await resolveSharedBoardConnection()
+    await execCli(
+      ['integrations', 'notion', 'setup', '--url', board.url],
+      fixture.projectDir,
+    )
 
-      const marker = `canonical-write-live-${Date.now()}`
-      const writePipe = definePipe({
-        id: 'write-live-e2e',
-        initial: {score: 9},
-        run: write<{score: number}>(ctx => ({
-          markdown: `## ${marker}\n\nscore=${ctx.score}`,
-        })),
-      })
+    const created = await execCli(
+      [
+        'integrations',
+        'notion',
+        'create-task',
+        '--factory',
+        'write-live',
+        '--title',
+        'Canonical write live e2e task',
+        '--status',
+        'queue',
+      ],
+      fixture.projectDir,
+    )
+    const taskExternalId = extractTaskExternalId(created.stdout)
+    const token = notionToken()
+    if (!token) {
+      throw new Error('NOTION_API_TOKEN is required for live write e2e')
+    }
 
-      const result = await writePipe.run({
-        ctx: {score: 9},
-        runId: `run-${Date.now()}`,
-        tickId: `tick-${Date.now()}`,
-        task: {
-          id: taskExternalId,
-          title: 'Canonical write live e2e task',
-        },
-        writePage: async output => {
-          const markdown = typeof output === 'string' ? output : output.markdown
-          await notionAppendMarkdownToPage(token, taskExternalId, markdown)
-        },
-      })
+    const marker = `canonical-write-live-${Date.now()}`
+    const writePipe = definePipe({
+      id: 'write-live-e2e',
+      initial: {score: 9},
+      run: write<{score: number}>(ctx => ({
+        markdown: `## ${marker}\n\nscore=${ctx.score}`,
+      })),
+    })
 
-      expect(result).toEqual({score: 9})
-      const body = await waitForPageBodyContains(token, taskExternalId, marker)
-      expect(body).toContain('score=9')
-    },
-    180_000,
-  )
-})
+    const result = await writePipe.run({
+      ctx: {score: 9},
+      runId: `run-${Date.now()}`,
+      tickId: `tick-${Date.now()}`,
+      task: {
+        id: taskExternalId,
+        title: 'Canonical write live e2e task',
+      },
+      writePage: async output => {
+        const markdown = typeof output === 'string' ? output : output.markdown
+        await notionAppendMarkdownToPage(token, taskExternalId, markdown)
+      },
+    })
+
+    expect(result).toEqual({score: 9})
+    const body = await waitForPageBodyContains(token, taskExternalId, marker)
+    expect(body).toContain('score=9')
+  }, 180_000)
+  },
+)
 
 async function waitForPageBodyContains(
   token: string,
@@ -122,7 +129,9 @@ async function waitForPageBodyContains(
     }
   }
 
-  throw new Error(`Timed out waiting for page ${pageId} to contain marker ${marker}`)
+  throw new Error(
+    `Timed out waiting for page ${pageId} to contain marker ${marker}`,
+  )
 }
 
 async function execCli(

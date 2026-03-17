@@ -8,13 +8,6 @@ const RUNTIME_DIR = '.notionflow'
 const GITIGNORE_FILE = '.gitignore'
 const RUNTIME_GITIGNORE_ENTRY = '.notionflow/'
 
-const DEFAULT_CONFIG_TEMPLATE = `import { defineConfig } from "notionflow";
-
-export default defineConfig({
-  factories: [],
-});
-`
-
 export const initCmd = defineCommand({
   meta: {
     name: 'init',
@@ -28,7 +21,7 @@ export const initCmd = defineCommand({
 
     await mkdir(factoriesPath, {recursive: true})
     await mkdir(runtimePath, {recursive: true})
-    await writeFile(configPath, DEFAULT_CONFIG_TEMPLATE, {
+    await writeFile(configPath, buildDefaultConfigTemplate(projectRoot), {
       encoding: 'utf8',
       flag: 'wx',
     }).catch(async error => {
@@ -46,6 +39,29 @@ export const initCmd = defineCommand({
     console.log(`Config: ${configPath}`)
   },
 })
+
+function buildDefaultConfigTemplate(projectRoot: string): string {
+  return `import { defineConfig } from "notionflow";
+
+export default defineConfig({
+  name: ${JSON.stringify(defaultProjectName(projectRoot))},
+  factories: [],
+});
+`
+}
+
+function defaultProjectName(projectRoot: string): string {
+  const baseName = path.basename(projectRoot).trim()
+  if (!baseName) return 'NotionFlow'
+
+  const parts = baseName
+    .split(/[-_]+/)
+    .map(part => part.trim())
+    .filter(part => part.length > 0)
+
+  if (parts.length === 0) return baseName
+  return parts.map(part => part[0]?.toUpperCase() + part.slice(1)).join(' ')
+}
 
 async function ensureRuntimeDirGitIgnored(
   gitignorePath: string,

@@ -66,7 +66,12 @@ describe('CLI bootstrap flow', () => {
     const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
     createdHomes.push(home)
 
-    for (const args of [['setup'], ['config', 'set'], ['board', 'list']]) {
+    for (const args of [
+      ['setup'],
+      ['config', 'set'],
+      ['board', 'list'],
+      ['integrations', 'notion', 'connect'],
+    ]) {
       const run = runCli(args, home)
       const output = `${run.stdout}\n${run.stderr}`.toLowerCase()
       expect(run.status).not.toBe(0)
@@ -76,16 +81,29 @@ describe('CLI bootstrap flow', () => {
 
   it('routes Notion commands through integrations and rejects top-level notion', () => {
     const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
+    const project = mkdtempSync(path.join(tmpdir(), 'notionflow-project-test-'))
     createdHomes.push(home)
+    createdProjects.push(project)
 
     const legacy = runCli(['notion', 'sync'], home)
     const legacyOutput = `${legacy.stdout}\n${legacy.stderr}`.toLowerCase()
     expect(legacy.status).not.toBe(0)
     expect(legacyOutput).toContain('unknown command')
 
-    const namespaced = runCli(['integrations', 'notion', 'sync'], home, {
-      NOTION_API_TOKEN: 'test-token',
-    })
+    writeFileSync(
+      path.join(project, 'notionflow.config.ts'),
+      'export default { factories: [] };\n',
+      'utf8',
+    )
+
+    const namespaced = runCli(
+      ['integrations', 'notion', 'sync'],
+      home,
+      {
+        NOTION_API_TOKEN: 'test-token',
+      },
+      project,
+    )
     const namespacedOutput = `${namespaced.stdout}\n${namespaced.stderr}`
     expect(namespaced.status).not.toBe(0)
     expect(namespacedOutput).toContain('No shared Notion board connected')
@@ -99,7 +117,11 @@ describe('CLI bootstrap flow', () => {
 
     const configPath = path.join(project, 'notionflow.config.ts')
     writeFileSync(configPath, 'export default { factories: [] };\n', 'utf8')
-    writeFileSync(path.join(project, '.env'), 'NOTION_API_TOKEN=test-token\n', 'utf8')
+    writeFileSync(
+      path.join(project, '.env'),
+      'NOTION_API_TOKEN=test-token\n',
+      'utf8',
+    )
 
     const run = runCli(
       ['integrations', 'notion', 'sync', '--config', configPath],

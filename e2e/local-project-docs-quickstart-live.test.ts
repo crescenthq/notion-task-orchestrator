@@ -4,7 +4,7 @@ import {mkdir, symlink} from 'node:fs/promises'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
-import {afterEach, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
 import {tasks, workflows} from '../src/db/schema'
 import {
@@ -13,17 +13,23 @@ import {
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
-import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
-import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
+import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
+import {
+  finishLiveBoardSuite,
+  registerLiveBoardSuite,
+  resolveSharedBoardConnection,
+} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
+const liveSuiteEnabled = hasLiveNotionEnv()
+if (liveSuiteEnabled) {
+  registerLiveBoardSuite()
+}
 
-describe('docs quickstart live smoke', () => {
+;(liveSuiteEnabled ? describe : describe.skip)(
+  'docs quickstart live smoke',
+  () => {
   let fixture: TempProjectFixture | null = null
-
-  beforeAll(() => {
-    assertLiveNotionEnv()
-  })
 
   afterEach(async () => {
     if (fixture) {
@@ -32,83 +38,79 @@ describe('docs quickstart live smoke', () => {
     }
   })
 
-  it(
-    'runs init -> factory create -> doctor -> tick in local project mode',
-    async () => {
-      const before = await snapshotGlobalNotionflowWrites()
-      fixture = await createTempProjectFixture('notionflow-docs-live-')
+  afterAll(async () => {
+    await finishLiveBoardSuite()
+  })
 
-      await execCli(['init'], fixture.projectDir)
-      await ensureNotionflowDependencyAvailable(fixture.projectDir)
-      await execCli(['factory', 'create', '--id', 'docs-live'], fixture.projectDir)
+  it('runs init -> factory create -> doctor -> tick in local project mode', async () => {
+    const before = await snapshotGlobalNotionflowWrites()
+    fixture = await createTempProjectFixture('notionflow-docs-live-')
 
-      await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
-        docsConfigSource(),
-        'utf8',
-      )
-      await writeFile(
-        path.join(fixture.projectDir, 'factories', 'docs-live.ts'),
-        docsFactorySource(),
-        'utf8',
-      )
+    await execCli(['init'], fixture.projectDir)
+    await ensureNotionflowDependencyAvailable(fixture.projectDir)
+    await execCli(
+      ['factory', 'create', '--id', 'docs-live'],
+      fixture.projectDir,
+    )
 
-      const doctor = await execCli(['doctor'], fixture.projectDir)
-      const resolvedProjectRoot = await realpath(fixture.projectDir)
-      expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
-      expect(doctor.stdout).toContain(
-        `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
-      )
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      docsConfigSource(),
+      'utf8',
+    )
+    await writeFile(
+      path.join(fixture.projectDir, 'factories', 'docs-live.ts'),
+      docsFactorySource(),
+      'utf8',
+    )
 
-      const board = await createTemporarySharedBoard(
-        `Docs Live ${Date.now()}`,
-      )
-      await execCli(
-        [
-          'integrations',
-          'notion',
-          'connect',
-          '--url',
-          board.url,
-        ],
-        fixture.projectDir,
-      )
-      await ensureWorkflowRegistered(fixture.projectDir, 'docs-live')
+    const doctor = await execCli(['doctor'], fixture.projectDir)
+    const resolvedProjectRoot = await realpath(fixture.projectDir)
+    expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
+    expect(doctor.stdout).toContain(
+      `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
+    )
 
-      const created = await execCli(
-        [
-          'integrations',
-          'notion',
-          'create-task',
-          '--factory',
-          'docs-live',
-          '--title',
-          'Docs quickstart live task',
-          '--status',
-          'queue',
-        ],
-        fixture.projectDir,
-      )
-      const taskExternalId = extractTaskExternalId(created.stdout)
+    const board = await resolveSharedBoardConnection()
+    await execCli(
+      ['integrations', 'notion', 'setup', '--url', board.url],
+      fixture.projectDir,
+    )
+    await ensureWorkflowRegistered(fixture.projectDir, 'docs-live')
 
-      const tick = await execCli(
-        ['tick', '--factory', 'docs-live'],
-        fixture.projectDir,
-      )
-      expect(tick.stdout).toContain('Sync complete')
+    const created = await execCli(
+      [
+        'integrations',
+        'notion',
+        'create-task',
+        '--factory',
+        'docs-live',
+        '--title',
+        'Docs quickstart live task',
+        '--status',
+        'queue',
+      ],
+      fixture.projectDir,
+    )
+    const taskExternalId = extractTaskExternalId(created.stdout)
 
-      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
+    const tick = await execCli(
+      ['tick', '--factory', 'docs-live'],
+      fixture.projectDir,
+    )
+    expect(tick.stdout).toContain('Sync complete')
 
-      await expect(
-        readTaskState(fixture.projectDir, taskExternalId),
-      ).resolves.toBe('done')
+    await execCli(['run', '--task', taskExternalId], fixture.projectDir)
 
-      const after = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(before, after)
-    },
-    180_000,
-  )
-})
+    await expect(
+      readTaskState(fixture.projectDir, taskExternalId),
+    ).resolves.toBe('done')
+
+    const after = await snapshotGlobalNotionflowWrites()
+    assertNoNewGlobalNotionflowWrites(before, after)
+  }, 180_000)
+  },
+)
 
 async function execCli(
   args: string[],
@@ -169,7 +171,11 @@ async function ensureNotionflowDependencyAvailable(
   const target = process.cwd()
 
   await mkdir(nodeModules, {recursive: true})
-  await symlink(target, linkedPackage, process.platform === 'win32' ? 'junction' : 'dir')
+  await symlink(
+    target,
+    linkedPackage,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  )
 }
 
 function extractTaskExternalId(stdout: string): string {

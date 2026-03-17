@@ -56,18 +56,14 @@ until it finds `notionflow.config.ts`.
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
+  name: 'Asmara Tasks',
   factories: ['./factories/demo.ts', './factories/shared-helper-demo.ts'],
 })
 ```
 
-Board provisioning for `tick --factory <id>` now derives the board title from
-the factory definition:
-
-- `name` in the exported `definePipe(...)` (if present)
-- otherwise an automatic title from the factory id (`demo` -> `Demo`)
-
-The board id remains the factory id, so renaming the Notion board in-place does
-not break runtime mapping.
+Shared board setup uses `name` from `defineConfig(...)` as the Notion database
+title. If `name` is omitted, NotionFlow falls back to a title derived from the
+project directory name.
 
 Factory declarations are explicit and deterministic:
 
@@ -91,7 +87,7 @@ notionflow doctor [--config <path>]
 notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
 notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--factory <id>]
 notionflow run --task <notion_page_id> [--config <path>]
-notionflow integrations notion connect --url <notion-database-url> [--config <path>]
+notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
 notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
 notionflow integrations notion create-task --factory <factory-id> --title "title" [--status <state>] [--config <path>]
 notionflow integrations notion sync [--config <path>] [--factory <factory-id>] [--run]
@@ -181,13 +177,12 @@ export default definePipe({
 
 Common live loop:
 
-1. `notionflow tick --factory <factory-id>` pauses in
-   `feedback`.
+1. `notionflow tick --factory <factory-id>` pauses in `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --run` detects new
-   comments, re-queues feedback tasks, and runs queued work.
-4. `notionflow integrations notion connect --url <notion-database-url> --config notionflow.config.ts`
-   registers the shared board once before starting tick loops.
+3. `notionflow integrations notion sync --run` detects new comments, re-queues
+   feedback tasks, and runs queued work.
+4. `notionflow integrations notion setup --config notionflow.config.ts` creates
+   or resolves the shared board once before starting tick loops.
 
 ## Agent Wrappers (`defineAgent`)
 
@@ -287,7 +282,8 @@ Live Notion API e2e gate (explicit):
 
 ```bash
 export NOTION_API_TOKEN="<integration-token>"
-export NOTION_WORKSPACE_PAGE_ID="<parent-page-id>"
+# optional: reuse a previously created shared tasks database
+export NOTION_TASKS_DATABASE_ID="<database-id>"
 # optional: use local DB feedback injection instead of Notion comments
 export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```

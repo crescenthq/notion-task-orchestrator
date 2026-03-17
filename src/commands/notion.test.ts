@@ -1,4 +1,5 @@
 import path from 'node:path'
+import {readFile} from 'node:fs/promises'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {eq} from 'drizzle-orm'
 import {openApp} from '../app/context'
@@ -20,32 +21,36 @@ describe('notion command shared board registration', () => {
     await cleanupNotionCommandTestEnv()
   })
 
-  it('connect registers the shared board locally and refreshes Factory schema options', async () => {
+  it('setup --url registers the shared board locally and refreshes Factory schema options', async () => {
     const {projectRoot} = await setupSharedBoardProject({registerBoard: false})
 
     mockNotionService(() => ({
-        notionResolveDatabaseConnectionFromUrl: vi.fn(async () => ({
-          databaseId: 'db-1',
-          dataSourceId: 'ds-1',
-          url: 'https://notion.so/shared-board',
-        })),
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-1')),
-      }))
+      notionResolveDatabaseConnectionFromUrl: vi.fn(async () => ({
+        databaseId: 'db-1',
+        dataSourceId: 'ds-1',
+        url: 'https://notion.so/shared-board',
+      })),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-1'),
+      ),
+    }))
 
     const notionService = await import('../services/notion')
     const {notionCmd, SHARED_NOTION_BOARD_ID, getRegisteredSharedNotionBoard} =
       await import('./notion')
 
-    const connectRun = (
+    const setupRun = (
       notionCmd as unknown as {
         subCommands: {
-          connect: {run: (input: {args: Record<string, unknown>}) => Promise<void>}
+          setup: {
+            run: (input: {args: Record<string, unknown>}) => Promise<void>
+          }
         }
       }
-    ).subCommands.connect.run
+    ).subCommands.setup.run
 
-    await connectRun({
+    await setupRun({
       args: {
         url: 'https://www.notion.so/workspace/Shared-Board-1234567890abcdef1234567890abcdef?v=view-id',
       },
@@ -64,10 +69,9 @@ describe('notion command shared board registration', () => {
     expect(ensureSchemaCalls[0]?.[0]).toBe('test-token')
     expect(ensureSchemaCalls[0]?.[1]).toBe('ds-1')
     expect(ensureSchemaCalls[0]?.[2]).toEqual([])
-    expect((ensureSchemaCalls[0]?.[3] ?? []).map(option => option.name)).toEqual([
-      'alpha',
-      'beta',
-    ])
+    expect(
+      (ensureSchemaCalls[0]?.[3] ?? []).map(option => option.name),
+    ).toEqual(['alpha', 'beta'])
 
     const {db} = await openApp({projectRoot})
     const [storedBoard] = await db
@@ -90,6 +94,91 @@ describe('notion command shared board registration', () => {
     })
   })
 
+  it('setup creates a shared board from config name and persists NOTION_TASKS_DATABASE_ID', async () => {
+    const {projectRoot} = await setupSharedBoardProject({
+      registerBoard: false,
+      name: 'Asmara Tasks',
+    })
+    delete process.env.NOTION_TASKS_DATABASE_ID
+
+    mockNotionService(() => ({
+      notionCreateBoardDataSource: vi.fn(async () => ({
+        databaseId: 'db-created',
+        dataSourceId: 'ds-created',
+        url: 'https://notion.so/asmara-tasks',
+      })),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-created'),
+      ),
+    }))
+
+    await runNotionSubcommand('setup', {})
+
+    const notionService = await import('../services/notion')
+    expect(
+      vi.mocked(notionService.notionCreateBoardDataSource),
+    ).toHaveBeenCalledWith(
+      'test-token',
+      'Asmara Tasks',
+      [],
+      [
+        {name: 'alpha', color: 'blue'},
+        {name: 'beta', color: 'green'},
+      ],
+    )
+    expect(process.env.NOTION_TASKS_DATABASE_ID).toBe('db-created')
+    await expect(
+      readFile(path.join(projectRoot, '.env'), 'utf8'),
+    ).resolves.toContain('NOTION_TASKS_DATABASE_ID=db-created')
+
+    const {db} = await openApp({projectRoot})
+    const [storedBoard] = await db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, 'notion-shared'))
+
+    expect(storedBoard?.externalId).toBe('ds-created')
+    expect(JSON.parse(storedBoard?.configJson ?? '{}')).toMatchObject({
+      databaseId: 'db-created',
+      url: 'https://notion.so/asmara-tasks',
+    })
+  })
+
+  it('setup reuses the locally registered shared board when env mapping is missing', async () => {
+    const {projectRoot} = await setupSharedBoardProject()
+    delete process.env.NOTION_TASKS_DATABASE_ID
+
+    mockNotionService(() => ({
+      notionResolveDatabaseConnection: vi.fn(async () => ({
+        databaseId: 'db-shared',
+        dataSourceId: 'ds-shared',
+        url: 'https://notion.so/shared-board',
+      })),
+      notionCreateBoardDataSource: vi.fn(async () => {
+        throw new Error('should not create a new board')
+      }),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
+
+    await runNotionSubcommand('setup', {})
+
+    const notionService = await import('../services/notion')
+    expect(
+      vi.mocked(notionService.notionResolveDatabaseConnection),
+    ).toHaveBeenCalledWith('test-token', 'db-shared')
+    expect(
+      vi.mocked(notionService.notionCreateBoardDataSource),
+    ).not.toHaveBeenCalled()
+    expect(process.env.NOTION_TASKS_DATABASE_ID).toBe('db-shared')
+    await expect(
+      readFile(path.join(projectRoot, '.env'), 'utf8'),
+    ).resolves.toContain('NOTION_TASKS_DATABASE_ID=db-shared')
+  })
+
   it('shared board lookup fails with an actionable error when not connected', async () => {
     const {projectRoot} = await setupSharedBoardProject({registerBoard: false})
 
@@ -100,29 +189,29 @@ describe('notion command shared board registration', () => {
     ).rejects.toThrowError(/No shared Notion board connected/)
   })
 
-  it('connect fails loudly when shared board schema remains incompatible after reconcile', async () => {
+  it('setup --url fails loudly when shared board schema remains incompatible after reconcile', async () => {
     const {projectRoot} = await setupSharedBoardProject({registerBoard: false})
 
     mockNotionService(() => ({
-        notionResolveDatabaseConnectionFromUrl: vi.fn(async () => ({
-          databaseId: 'db-1',
-          dataSourceId: 'ds-1',
-          url: 'https://notion.so/shared-board',
-        })),
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => ({
-          id: 'ds-1',
-          properties: {
-            State: {type: 'select'},
-            Status: {type: 'select'},
-            Factory: {type: 'rich_text'},
-          },
-        })),
-      }))
+      notionResolveDatabaseConnectionFromUrl: vi.fn(async () => ({
+        databaseId: 'db-1',
+        dataSourceId: 'ds-1',
+        url: 'https://notion.so/shared-board',
+      })),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () => ({
+        id: 'ds-1',
+        properties: {
+          State: {type: 'select'},
+          Status: {type: 'select'},
+          Factory: {type: 'rich_text'},
+        },
+      })),
+    }))
 
-    const {connectSharedNotionBoard} = await import('./notion')
+    const {setupSharedNotionBoard} = await import('./notion')
     await expect(
-      connectSharedNotionBoard({
+      setupSharedNotionBoard({
         url: 'https://notion.so/shared-board',
         startDir: projectRoot,
       }),
@@ -133,13 +222,16 @@ describe('notion command shared board registration', () => {
     const {db} = await setupSharedBoardProject()
 
     mockNotionService(() => ({
-        notionCreateTaskPage: vi.fn(async () => ({
-          id: 'page-created-1',
-          url: 'https://notion.so/page-created-1',
-        })),
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
-      }))
+      notionCreateTaskPage: vi.fn(async () => ({
+        id: 'page-created-1',
+        url: 'https://notion.so/page-created-1',
+      })),
+      notionWaitForTaskFactory: vi.fn(async () => undefined),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
 
     const notionService = await import('../services/notion')
     const {SHARED_NOTION_BOARD_ID} = await import('./notion')
@@ -163,7 +255,14 @@ describe('notion command shared board registration', () => {
         factoryId: 'alpha',
       },
     )
-    expect(vi.mocked(notionService.notionEnsureBoardSchema)).toHaveBeenCalledWith(
+    expect(vi.mocked(notionService.notionWaitForTaskFactory)).toHaveBeenCalledWith(
+      'test-token',
+      'page-created-1',
+      'alpha',
+    )
+    expect(
+      vi.mocked(notionService.notionEnsureBoardSchema),
+    ).toHaveBeenCalledWith(
       'test-token',
       'ds-shared',
       [],
@@ -186,15 +285,15 @@ describe('notion command shared board registration', () => {
     await setupSharedBoardProject()
 
     mockNotionService(() => ({
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => ({
-          id: 'ds-shared',
-          properties: {
-            State: {type: 'select'},
-            Status: {type: 'select'},
-          },
-        })),
-      }))
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () => ({
+        id: 'ds-shared',
+        properties: {
+          State: {type: 'select'},
+          Status: {type: 'select'},
+        },
+      })),
+    }))
 
     await expect(
       runNotionSubcommand('create-task', {
@@ -208,20 +307,22 @@ describe('notion command shared board registration', () => {
   it('sync imports only tasks for the selected factory from the shared board', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const queryAllPages = vi.fn(async () => [
-          buildNotionPage('page-alpha', 'Alpha task', 'Queue', 'alpha'),
-          buildNotionPage('page-beta', 'Beta task', 'Queue', 'beta'),
-          buildNotionPage('page-missing', 'Missing factory', 'Queue'),
-          buildNotionPage('page-unknown', 'Unknown factory', 'Queue', 'gamma'),
-        ])
+      buildNotionPage('page-alpha', 'Alpha task', 'Queue', 'alpha'),
+      buildNotionPage('page-beta', 'Beta task', 'Queue', 'beta'),
+      buildNotionPage('page-missing', 'Missing factory', 'Queue'),
+      buildNotionPage('page-unknown', 'Unknown factory', 'Queue', 'gamma'),
+    ])
 
     mockNotionService(() => ({
-        notionQueryAllDataSourcePages: queryAllPages,
-        notionGetNewComments: vi.fn(async () => ''),
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
-        notionUpdateTaskPageState: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
-      }))
+      notionQueryAllDataSourcePages: queryAllPages,
+      notionGetNewComments: vi.fn(async () => ''),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionUpdateTaskPageState: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
 
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
@@ -248,9 +349,10 @@ describe('notion command shared board registration', () => {
     await registerSharedBoard(projectRoot, 'ds-shared')
 
     vi.doMock('../services/notion', async () => {
-      const actual = await vi.importActual<typeof import('../services/notion')>(
-        '../services/notion',
-      )
+      const actual =
+        await vi.importActual<typeof import('../services/notion')>(
+          '../services/notion',
+        )
 
       return {
         ...actual,
@@ -277,7 +379,9 @@ describe('notion command shared board registration', () => {
       }),
     ).rejects.toThrow(/Shared Notion board schema is invalid/)
 
-    expect(vi.mocked(notionService.notionQueryAllDataSourcePages)).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(notionService.notionQueryAllDataSourcePages),
+    ).not.toHaveBeenCalled()
   })
 
   it('sync --factory quarantines tasks whose remote Factory drifted away', async () => {
@@ -301,18 +405,20 @@ describe('notion command shared board registration', () => {
     })
 
     const queryAllPages = vi.fn(async () => [
-          buildNotionPage('page-alpha-drifted', 'Alpha drifted', 'Queue', 'beta'),
-          buildNotionPage('page-alpha-queued', 'Alpha queued', 'Queue', 'alpha'),
-        ])
+      buildNotionPage('page-alpha-drifted', 'Alpha drifted', 'Queue', 'beta'),
+      buildNotionPage('page-alpha-queued', 'Alpha queued', 'Queue', 'alpha'),
+    ])
 
     mockNotionService(() => ({
-        notionQueryAllDataSourcePages: queryAllPages,
-        notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
-        notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
-        notionUpdateTaskPageState: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
-      }))
+      notionQueryAllDataSourcePages: queryAllPages,
+      notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionUpdateTaskPageState: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
 
     const notionService = await import('../services/notion')
     const {syncNotionBoards} = await import('./notion')
@@ -328,19 +434,25 @@ describe('notion command shared board registration', () => {
     })
 
     const rows = await db.select().from(tasks)
-    const drifted = rows.find(row => row.externalTaskId === 'page-alpha-drifted')
+    const drifted = rows.find(
+      row => row.externalTaskId === 'page-alpha-drifted',
+    )
     const queued = rows.find(row => row.externalTaskId === 'page-alpha-queued')
 
     expect(drifted?.workflowId).toBe('alpha')
     expect(drifted?.state).toBe('blocked')
     expect(drifted?.lastError).toContain('factory_mismatch:')
-    expect(drifted?.lastError).toContain('You may have changed the Factory property by mistake.')
+    expect(drifted?.lastError).toContain(
+      'You may have changed the Factory property by mistake.',
+    )
 
     expect(queued?.workflowId).toBe('alpha')
     expect(queued?.state).toBe('queued')
 
     expect(vi.mocked(notionService.notionGetNewComments)).not.toHaveBeenCalled()
-    expect(vi.mocked(notionService.notionAppendTaskPageLog)).toHaveBeenCalledWith(
+    expect(
+      vi.mocked(notionService.notionAppendTaskPageLog),
+    ).toHaveBeenCalledWith(
       'test-token',
       'page-alpha-drifted',
       'Factory property changed',
@@ -348,8 +460,10 @@ describe('notion command shared board registration', () => {
     )
   })
 
-  it('connect allows same-board reconnect and blocks switching boards when local tasks exist', async () => {
-    const {projectRoot, db} = await setupSharedBoardProject({registerBoard: false})
+  it('setup --url allows same-board reuse and blocks switching boards when local tasks exist', async () => {
+    const {projectRoot, db} = await setupSharedBoardProject({
+      registerBoard: false,
+    })
     await registerSharedBoard(projectRoot, 'ds-shared', {
       databaseId: 'db-shared',
       url: 'https://notion.so/original-board',
@@ -372,39 +486,43 @@ describe('notion command shared board registration', () => {
     })
 
     const ensureBoardSchema = vi.fn(async () => undefined)
-    const getDataSource = vi.fn(async () => buildSharedBoardDataSource('ds-shared'))
+    const getDataSource = vi.fn(async () =>
+      buildSharedBoardDataSource('ds-shared'),
+    )
     mockNotionService(() => ({
-        notionResolveDatabaseConnectionFromUrl: vi
-          .fn()
-          .mockResolvedValueOnce({
-            databaseId: 'db-shared',
-            dataSourceId: 'ds-shared',
-            url: 'https://notion.so/original-board',
-          })
-          .mockResolvedValueOnce({
-            databaseId: 'db-other',
-            dataSourceId: 'ds-other',
-            url: 'https://notion.so/other-board',
-          }),
-        notionEnsureBoardSchema: ensureBoardSchema,
-        notionGetDataSource: getDataSource,
-      }))
+      notionResolveDatabaseConnectionFromUrl: vi
+        .fn()
+        .mockResolvedValueOnce({
+          databaseId: 'db-shared',
+          dataSourceId: 'ds-shared',
+          url: 'https://notion.so/original-board',
+        })
+        .mockResolvedValueOnce({
+          databaseId: 'db-other',
+          dataSourceId: 'ds-other',
+          url: 'https://notion.so/other-board',
+        }),
+      notionEnsureBoardSchema: ensureBoardSchema,
+      notionGetDataSource: getDataSource,
+    }))
 
-    const {connectSharedNotionBoard} = await import('./notion')
+    const {setupSharedNotionBoard} = await import('./notion')
 
     await expect(
-      connectSharedNotionBoard({
+      setupSharedNotionBoard({
         url: 'https://notion.so/original-board',
         startDir: projectRoot,
       }),
     ).resolves.toMatchObject({externalId: 'ds-shared', databaseId: 'db-shared'})
 
     await expect(
-      connectSharedNotionBoard({
+      setupSharedNotionBoard({
         url: 'https://notion.so/other-board',
         startDir: projectRoot,
       }),
-    ).rejects.toThrow(/Cannot reconnect shared Notion board to a different database/)
+    ).rejects.toThrow(
+      /Cannot re-run shared Notion setup against a different database/,
+    )
 
     const [storedBoard] = await db
       .select()
@@ -417,11 +535,16 @@ describe('notion command shared board registration', () => {
     })
     expect(ensureBoardSchema).toHaveBeenCalledTimes(1)
     expect(getDataSource).toHaveBeenCalledTimes(1)
-    expect(ensureBoardSchema).not.toHaveBeenCalledWith('test-token', 'ds-other', [], expect.anything())
+    expect(ensureBoardSchema).not.toHaveBeenCalledWith(
+      'test-token',
+      'ds-other',
+      [],
+      expect.anything(),
+    )
     expect(getDataSource).not.toHaveBeenCalledWith('test-token', 'ds-other')
   })
 
-  it('connect allows switching boards when no shared-board tasks exist', async () => {
+  it('setup --url allows switching boards when no shared-board tasks exist', async () => {
     const projectRoot = await createProjectFixture()
     process.chdir(projectRoot)
     process.env.NOTION_API_TOKEN = 'test-token'
@@ -431,9 +554,10 @@ describe('notion command shared board registration', () => {
     })
 
     vi.doMock('../services/notion', async () => {
-      const actual = await vi.importActual<typeof import('../services/notion')>(
-        '../services/notion',
-      )
+      const actual =
+        await vi.importActual<typeof import('../services/notion')>(
+          '../services/notion',
+        )
 
       return {
         ...actual,
@@ -443,12 +567,15 @@ describe('notion command shared board registration', () => {
           url: 'https://notion.so/other-board',
         })),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-other')),
+        notionGetDataSource: vi.fn(async () =>
+          buildSharedBoardDataSource('ds-other'),
+        ),
       }
     })
 
-    const {connectSharedNotionBoard, SHARED_NOTION_BOARD_ID} = await import('./notion')
-    await connectSharedNotionBoard({
+    const {setupSharedNotionBoard, SHARED_NOTION_BOARD_ID} =
+      await import('./notion')
+    await setupSharedNotionBoard({
       url: 'https://notion.so/other-board',
       startDir: projectRoot,
     })
@@ -479,16 +606,19 @@ describe('notion command shared board registration', () => {
     ])
 
     vi.doMock('../services/notion', async () => {
-      const actual = await vi.importActual<typeof import('../services/notion')>(
-        '../services/notion',
-      )
+      const actual =
+        await vi.importActual<typeof import('../services/notion')>(
+          '../services/notion',
+        )
 
       return {
         ...actual,
         notionQueryAllDataSourcePages: queryAllPages,
         notionGetNewComments: vi.fn(async () => ''),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
+        notionGetDataSource: vi.fn(async () =>
+          buildSharedBoardDataSource('ds-shared'),
+        ),
       }
     })
 
@@ -568,9 +698,10 @@ describe('notion command shared board registration', () => {
     ])
 
     vi.doMock('../services/notion', async () => {
-      const actual = await vi.importActual<typeof import('../services/notion')>(
-        '../services/notion',
-      )
+      const actual =
+        await vi.importActual<typeof import('../services/notion')>(
+          '../services/notion',
+        )
 
       return {
         ...actual,
@@ -583,7 +714,9 @@ describe('notion command shared board registration', () => {
         notionEnsureBoardSchema: vi.fn(async () => undefined),
         notionAppendTaskPageLog: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
+        notionGetDataSource: vi.fn(async () =>
+          buildSharedBoardDataSource('ds-shared'),
+        ),
       }
     })
 
@@ -597,7 +730,9 @@ describe('notion command shared board registration', () => {
     const rows = await db.select().from(tasks)
     const mismatch = rows.find(row => row.externalTaskId === 'page-mismatch')
     const missing = rows.find(row => row.externalTaskId === 'page-missing')
-    const undeclared = rows.find(row => row.externalTaskId === 'page-undeclared')
+    const undeclared = rows.find(
+      row => row.externalTaskId === 'page-undeclared',
+    )
 
     expect(mismatch?.workflowId).toBe('alpha')
     expect(mismatch?.state).toBe('blocked')
@@ -609,7 +744,9 @@ describe('notion command shared board registration', () => {
 
     expect(undeclared?.workflowId).toBe('alpha')
     expect(undeclared?.state).toBe('blocked')
-    expect(undeclared?.lastError).toContain('factory_invalid: undeclared Factory gamma')
+    expect(undeclared?.lastError).toContain(
+      'factory_invalid: undeclared Factory gamma',
+    )
     expect(mismatch?.lastError).toContain('Restore Factory to `alpha`')
   })
 
@@ -640,9 +777,10 @@ describe('notion command shared board registration', () => {
     })
 
     vi.doMock('../services/notion', async () => {
-      const actual = await vi.importActual<typeof import('../services/notion')>(
-        '../services/notion',
-      )
+      const actual =
+        await vi.importActual<typeof import('../services/notion')>(
+          '../services/notion',
+        )
 
       return {
         ...actual,
@@ -653,7 +791,9 @@ describe('notion command shared board registration', () => {
         notionEnsureBoardSchema: vi.fn(async () => undefined),
         notionAppendTaskPageLog: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
+        notionGetDataSource: vi.fn(async () =>
+          buildSharedBoardDataSource('ds-shared'),
+        ),
       }
     })
 
@@ -694,13 +834,15 @@ describe('notion command shared board registration', () => {
     })
 
     mockNotionService(() => ({
-        notionGetPage: vi.fn(async () =>
-          buildNotionPage('page-repair', 'Repair me', 'Blocked', 'alpha'),
-        ),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
-        notionUpdateTaskPageState: vi.fn(async () => undefined),
-        notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
-      }))
+      notionGetPage: vi.fn(async () =>
+        buildNotionPage('page-repair', 'Repair me', 'Blocked', 'alpha'),
+      ),
+      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionUpdateTaskPageState: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
 
     const notionService = await import('../services/notion')
     const {repairQuarantinedSharedBoardTask} = await import('./notion')
@@ -720,12 +862,12 @@ describe('notion command shared board registration', () => {
     expect(taskRow?.currentStepId).toBe('__pipe_feedback__')
     expect(taskRow?.stepVarsJson).toBe(JSON.stringify({attempts: 1}))
 
-    expect(vi.mocked(notionService.notionUpdateTaskPageState)).toHaveBeenCalledWith(
-      'test-token',
-      'page-repair',
-      'queued',
-    )
-    expect(vi.mocked(notionService.notionAppendTaskPageLog)).toHaveBeenCalledWith(
+    expect(
+      vi.mocked(notionService.notionUpdateTaskPageState),
+    ).toHaveBeenCalledWith('test-token', 'page-repair', 'queued')
+    expect(
+      vi.mocked(notionService.notionAppendTaskPageLog),
+    ).toHaveBeenCalledWith(
       'test-token',
       'page-repair',
       'Factory quarantine cleared',
@@ -760,7 +902,9 @@ describe('notion command shared board registration', () => {
       ),
       notionAppendTaskPageLog: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
-      notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
     }))
 
     const notionService = await import('../services/notion')
@@ -772,7 +916,9 @@ describe('notion command shared board registration', () => {
         configPath: path.join(projectRoot, 'notionflow.config.ts'),
         startDir: projectRoot,
       }),
-    ).rejects.toThrow(/still quarantined because its shared-board Factory is beta/)
+    ).rejects.toThrow(
+      /still quarantined because its shared-board Factory is beta/,
+    )
 
     const [taskRow] = await db
       .select()
@@ -780,8 +926,12 @@ describe('notion command shared board registration', () => {
       .where(eq(tasks.externalTaskId, 'page-repair-wrong'))
     expect(taskRow?.state).toBe('blocked')
     expect(taskRow?.lastError).toContain('factory_mismatch:')
-    expect(vi.mocked(notionService.notionUpdateTaskPageState)).not.toHaveBeenCalled()
-    expect(vi.mocked(notionService.notionAppendTaskPageLog)).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(notionService.notionUpdateTaskPageState),
+    ).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(notionService.notionAppendTaskPageLog),
+    ).not.toHaveBeenCalled()
   })
 
   it('repair-task fails when Factory is missing and leaves task blocked', async () => {
@@ -811,7 +961,9 @@ describe('notion command shared board registration', () => {
       ),
       notionAppendTaskPageLog: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
-      notionGetDataSource: vi.fn(async () => buildSharedBoardDataSource('ds-shared')),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
     }))
 
     const notionService = await import('../services/notion')
@@ -828,7 +980,11 @@ describe('notion command shared board registration', () => {
       .where(eq(tasks.externalTaskId, 'page-repair-missing'))
     expect(taskRow?.state).toBe('blocked')
     expect(taskRow?.lastError).toContain('factory_invalid:')
-    expect(vi.mocked(notionService.notionUpdateTaskPageState)).not.toHaveBeenCalled()
-    expect(vi.mocked(notionService.notionAppendTaskPageLog)).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(notionService.notionUpdateTaskPageState),
+    ).not.toHaveBeenCalled()
+    expect(
+      vi.mocked(notionService.notionAppendTaskPageLog),
+    ).not.toHaveBeenCalled()
   })
 })

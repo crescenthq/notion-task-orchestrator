@@ -16,6 +16,17 @@ type NotionDatabase = {
   url?: string
 }
 
+type NotionSelectOption = {
+  id?: string
+  name: string
+  color?: string
+}
+
+type NotionDataSourceProperty = {
+  type: string
+  select?: {options?: NotionSelectOption[]}
+}
+
 export type NotionDatabaseConnection = {
   databaseId: string
   dataSourceId: string
@@ -31,7 +42,7 @@ export type NotionQueryResult = {
 export type NotionDataSource = {
   id: string
   database_parent?: {page_id?: string}
-  properties: Record<string, {type: string}>
+  properties: Record<string, NotionDataSourceProperty>
   url?: string
 }
 
@@ -138,19 +149,23 @@ export async function notionQueryAllDataSourcePages(
 
 export async function notionCreateBoardDataSource(
   token: string,
-  parentPageId: string,
   title: string,
   stepStatusOptions: Array<{name: string; color: string}> = [],
   factoryOptions: Array<{name: string; color: string}> = [],
+  input: {parentPageId?: string | null} = {},
 ): Promise<NotionDatabaseConnection> {
   const createRes = await fetch('https://api.notion.com/v1/databases', {
     method: 'POST',
     headers: notionHeaders(token),
     body: JSON.stringify({
-      parent: {type: 'page_id', page_id: parentPageId},
+      parent: input.parentPageId
+        ? {type: 'page_id', page_id: input.parentPageId}
+        : {type: 'workspace', workspace: true},
       title: [{type: 'text', text: {content: title}}],
-      properties: {
-        Name: {title: {}},
+      initial_data_source: {
+        properties: {
+          Name: {title: {}},
+        },
       },
     }),
   })
@@ -176,6 +191,24 @@ export async function notionCreateBoardDataSource(
   return {dataSourceId, databaseId: database.id, url: database.url ?? null}
 }
 
+export async function notionArchiveDatabase(
+  token: string,
+  databaseId: string,
+): Promise<void> {
+  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    method: 'PATCH',
+    headers: notionHeaders(token),
+    body: JSON.stringify({in_trash: true}),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Notion database archive failed (${res.status}): ${text}`,
+    )
+  }
+}
+
 const STATE_OPTIONS = [
   {name: 'Queue', color: 'gray'},
   {name: 'In Progress', color: 'blue'},
@@ -185,12 +218,39 @@ const STATE_OPTIONS = [
   {name: 'Failed', color: 'red'},
 ]
 
+function mergeSelectOptions(
+  existing: NotionSelectOption[] | undefined,
+  desired: Array<{name: string; color: string}>,
+): NotionSelectOption[] {
+  const merged: NotionSelectOption[] = []
+  const seen = new Set<string>()
+
+  for (const option of existing ?? []) {
+    const name = option.name?.trim()
+    if (!name) continue
+    const normalized = name.toLowerCase()
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    merged.push(option)
+  }
+
+  for (const option of desired) {
+    const normalized = option.name.trim().toLowerCase()
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    merged.push(option)
+  }
+
+  return merged
+}
+
 export async function notionEnsureBoardSchema(
   token: string,
   dataSourceId: string,
   stepOptions: Array<{name: string; color: string}> = [],
   factoryOptions: Array<{name: string; color: string}> = [],
 ): Promise<void> {
+  const currentDataSource = await notionGetDataSource(token, dataSourceId)
   const patchRes = await fetch(
     `https://api.notion.com/v1/data_sources/${dataSourceId}`,
     {
@@ -198,9 +258,30 @@ export async function notionEnsureBoardSchema(
       headers: notionHeaders(token),
       body: JSON.stringify({
         properties: {
-          State: {select: {options: STATE_OPTIONS}},
-          Status: {select: {options: stepOptions}},
-          Factory: {select: {options: factoryOptions}},
+          State: {
+            select: {
+              options: mergeSelectOptions(
+                currentDataSource.properties.State?.select?.options,
+                STATE_OPTIONS,
+              ),
+            },
+          },
+          Status: {
+            select: {
+              options: mergeSelectOptions(
+                currentDataSource.properties.Status?.select?.options,
+                stepOptions,
+              ),
+            },
+          },
+          Factory: {
+            select: {
+              options: mergeSelectOptions(
+                currentDataSource.properties.Factory?.select?.options,
+                factoryOptions,
+              ),
+            },
+          },
         },
       }),
     },
@@ -297,15 +378,10 @@ export async function notionGetDatabase(
   return (await res.json()) as NotionDatabase
 }
 
-export async function notionResolveDatabaseConnectionFromUrl(
+export async function notionResolveDatabaseConnection(
   token: string,
-  url: string,
+  databaseId: string,
 ): Promise<NotionDatabaseConnection> {
-  const databaseId = notionExtractDatabaseIdFromUrl(url)
-  if (!databaseId) {
-    throw new Error(`Could not extract Notion database id from URL: ${url}`)
-  }
-
   const database = await notionGetDatabase(token, databaseId)
   const dataSourceId = database.data_sources?.[0]?.id
   if (!dataSourceId) {
@@ -319,6 +395,18 @@ export async function notionResolveDatabaseConnectionFromUrl(
     dataSourceId,
     url: database.url ?? null,
   }
+}
+
+export async function notionResolveDatabaseConnectionFromUrl(
+  token: string,
+  url: string,
+): Promise<NotionDatabaseConnection> {
+  const databaseId = notionExtractDatabaseIdFromUrl(url)
+  if (!databaseId) {
+    throw new Error(`Could not extract Notion database id from URL: ${url}`)
+  }
+
+  return notionResolveDatabaseConnection(token, databaseId)
 }
 
 export async function notionCreateTaskPage(
@@ -349,6 +437,34 @@ export async function notionCreateTaskPage(
   }
 
   return (await res.json()) as NotionCreatePageResult
+}
+
+export async function notionWaitForTaskFactory(
+  token: string,
+  pageId: string,
+  expectedFactoryId: string,
+  input: {maxAttempts?: number; delayMs?: number} = {},
+): Promise<void> {
+  const maxAttempts = input.maxAttempts ?? 12
+  const delayMs = input.delayMs ?? 500
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const page = await notionGetPage(token, pageId)
+    if (pageFactoryId(page) === expectedFactoryId) {
+      return
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+
+  throw new Error(
+    [
+      `Timed out waiting for shared-board page ${pageId} to report Factory=${expectedFactoryId}.`,
+      'Notion may not have applied the select property yet.',
+    ].join(' '),
+  )
 }
 
 export async function notionGetPage(

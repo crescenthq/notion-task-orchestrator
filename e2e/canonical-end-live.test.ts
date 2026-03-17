@@ -3,21 +3,30 @@ import {existsSync, readFileSync} from 'node:fs'
 import {mkdir, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {pathToFileURL} from 'node:url'
-import {afterEach, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {notionGetPage, pageState} from '../src/services/notion'
-import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
-import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
-import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
+import {
+  createTempProjectFixture,
+  type TempProjectFixture,
+} from './helpers/projectFixture'
+import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
+import {
+  finishLiveBoardSuite,
+  registerLiveBoardSuite,
+  resolveSharedBoardConnection,
+} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
+const liveSuiteEnabled = hasLiveNotionEnv()
+if (liveSuiteEnabled) {
+  registerLiveBoardSuite()
+}
 
-describe('canonical end live e2e', () => {
+;(liveSuiteEnabled ? describe : describe.skip)(
+  'canonical end live e2e',
+  () => {
   let fixture: TempProjectFixture | null = null
-
-  beforeAll(() => {
-    assertLiveNotionEnv()
-  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -25,83 +34,78 @@ describe('canonical end live e2e', () => {
     fixture = null
   })
 
-  it(
-    'syncs terminal done/blocked/failed states to Notion task State',
-    async () => {
-      fixture = await createTempProjectFixture('notionflow-end-live-')
-      await execCli(['init'], fixture.projectDir)
+  afterAll(async () => {
+    await finishLiveBoardSuite()
+  })
 
-      const canonicalModuleUrl = pathToFileURL(
-        path.resolve(process.cwd(), 'src/factory/canonical.ts'),
-      ).href
-      const factoriesDir = path.join(fixture.projectDir, 'factories')
-      await mkdir(factoriesDir, {recursive: true})
+  it('syncs terminal done/blocked/failed states to Notion task State', async () => {
+    fixture = await createTempProjectFixture('notionflow-end-live-')
+    await execCli(['init'], fixture.projectDir)
 
-      const scenarios = [
-        {status: 'done', factoryId: 'end-live-done'},
-        {status: 'blocked', factoryId: 'end-live-blocked'},
-        {status: 'failed', factoryId: 'end-live-failed'},
-      ] as const
+    const canonicalModuleUrl = pathToFileURL(
+      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+    ).href
+    const factoriesDir = path.join(fixture.projectDir, 'factories')
+    await mkdir(factoriesDir, {recursive: true})
 
-      for (const {factoryId, status} of scenarios) {
-        await writeFile(
-          path.join(factoriesDir, `${factoryId}.ts`),
-          terminalFactorySource(canonicalModuleUrl, factoryId, status),
-          'utf8',
-        )
-      }
+    const scenarios = [
+      {status: 'done', factoryId: 'end-live-done'},
+      {status: 'blocked', factoryId: 'end-live-blocked'},
+      {status: 'failed', factoryId: 'end-live-failed'},
+    ] as const
 
+    for (const {factoryId, status} of scenarios) {
       await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
-        projectConfigSource(
-          scenarios.map(({factoryId}) => `./factories/${factoryId}.ts`),
-        ),
+        path.join(factoriesDir, `${factoryId}.ts`),
+        terminalFactorySource(canonicalModuleUrl, factoryId, status),
         'utf8',
       )
+    }
 
-      const board = await createTemporarySharedBoard(`End Live ${Date.now()}`)
-      await execCli(
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      projectConfigSource(
+        scenarios.map(({factoryId}) => `./factories/${factoryId}.ts`),
+      ),
+      'utf8',
+    )
+
+    const board = await resolveSharedBoardConnection()
+    await execCli(
+      ['integrations', 'notion', 'setup', '--url', board.url],
+      fixture.projectDir,
+    )
+
+    const token = notionToken()
+    if (!token) {
+      throw new Error('NOTION_API_TOKEN is required for live end e2e')
+    }
+
+    for (const {factoryId, status} of scenarios) {
+      const created = await execCli(
         [
           'integrations',
           'notion',
-          'connect',
-          '--url',
-          board.url,
+          'create-task',
+          '--factory',
+          factoryId,
+          '--title',
+          `Canonical end live ${status} ${Date.now()}`,
+          '--status',
+          'queue',
         ],
         fixture.projectDir,
       )
+      const taskExternalId = extractTaskExternalId(created.stdout)
 
-      const token = notionToken()
-      if (!token) {
-        throw new Error('NOTION_API_TOKEN is required for live end e2e')
-      }
+      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
 
-      for (const {factoryId, status} of scenarios) {
-        const created = await execCli(
-          [
-            'integrations',
-            'notion',
-            'create-task',
-            '--factory',
-            factoryId,
-            '--title',
-            `Canonical end live ${status} ${Date.now()}`,
-            '--status',
-            'queue',
-          ],
-          fixture.projectDir,
-        )
-        const taskExternalId = extractTaskExternalId(created.stdout)
-
-        await execCli(['run', '--task', taskExternalId], fixture.projectDir)
-
-        const syncedState = await waitForPageState(token, taskExternalId, status)
-        expect(syncedState).toBe(status)
-      }
-    },
-    240_000,
-  )
-})
+      const syncedState = await waitForPageState(token, taskExternalId, status)
+      expect(syncedState).toBe(status)
+    }
+  }, 240_000)
+  },
+)
 
 async function waitForPageState(
   token: string,

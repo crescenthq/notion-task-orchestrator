@@ -3,7 +3,7 @@ import {existsSync, readFileSync} from 'node:fs'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {eq} from 'drizzle-orm'
-import {afterEach, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {openApp} from '../src/app/context'
 import {tasks} from '../src/db/schema'
 import {
@@ -12,17 +12,23 @@ import {
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
-import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
-import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
+import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
+import {
+  finishLiveBoardSuite,
+  registerLiveBoardSuite,
+  resolveSharedBoardConnection,
+} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
+const liveSuiteEnabled = hasLiveNotionEnv()
+if (liveSuiteEnabled) {
+  registerLiveBoardSuite()
+}
 
-describe('example factories live e2e', () => {
+;(liveSuiteEnabled ? describe : describe.skip)(
+  'example factories live e2e',
+  () => {
   let fixture: TempProjectFixture | null = null
-
-  beforeAll(() => {
-    assertLiveNotionEnv()
-  })
 
   afterEach(async () => {
     if (!fixture) return
@@ -30,71 +36,64 @@ describe('example factories live e2e', () => {
     fixture = null
   })
 
-  it(
-    'runs rewritten shared-helper-demo example through CLI run in live Notion mode',
-    async () => {
-      const before = await snapshotGlobalNotionflowWrites()
-      fixture = await createTempProjectFixture('notionflow-example-live-')
+  afterAll(async () => {
+    await finishLiveBoardSuite()
+  })
 
-      await execCli(['init'], fixture.projectDir)
+  it('runs rewritten shared-helper-demo example through CLI run in live Notion mode', async () => {
+    const before = await snapshotGlobalNotionflowWrites()
+    fixture = await createTempProjectFixture('notionflow-example-live-')
 
-      const exampleFactoryPath = path.resolve(
-        process.cwd(),
-        'example-factories',
-        'factories',
-        'shared-helper-demo.ts',
-      )
-      await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
-        exampleConfigSource(exampleFactoryPath),
-        'utf8',
-      )
+    await execCli(['init'], fixture.projectDir)
 
-      const doctor = await execCli(['doctor'], fixture.projectDir)
-      const resolvedProjectRoot = await realpath(fixture.projectDir)
-      expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
+    const exampleFactoryPath = path.resolve(
+      process.cwd(),
+      'example-factories',
+      'factories',
+      'shared-helper-demo.ts',
+    )
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      exampleConfigSource(exampleFactoryPath),
+      'utf8',
+    )
 
-      const board = await createTemporarySharedBoard(
-        `Example Live ${Date.now()}`,
-      )
-      await execCli(
-        [
-          'integrations',
-          'notion',
-          'connect',
-          '--url',
-          board.url,
-        ],
-        fixture.projectDir,
-      )
+    const doctor = await execCli(['doctor'], fixture.projectDir)
+    const resolvedProjectRoot = await realpath(fixture.projectDir)
+    expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
 
-      const created = await execCli(
-        [
-          'integrations',
-          'notion',
-          'create-task',
-          '--factory',
-          'shared-helper-demo',
-          '--title',
-          'Shared helper example live task',
-          '--status',
-          'queue',
-        ],
-        fixture.projectDir,
-      )
-      const taskExternalId = extractTaskExternalId(created.stdout)
+    const board = await resolveSharedBoardConnection()
+    await execCli(
+      ['integrations', 'notion', 'setup', '--url', board.url],
+      fixture.projectDir,
+    )
 
-      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
-      await expect(readTaskState(fixture.projectDir, taskExternalId)).resolves.toBe(
-        'done',
-      )
+    const created = await execCli(
+      [
+        'integrations',
+        'notion',
+        'create-task',
+        '--factory',
+        'shared-helper-demo',
+        '--title',
+        'Shared helper example live task',
+        '--status',
+        'queue',
+      ],
+      fixture.projectDir,
+    )
+    const taskExternalId = extractTaskExternalId(created.stdout)
 
-      const after = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(before, after)
-    },
-    180_000,
-  )
-})
+    await execCli(['run', '--task', taskExternalId], fixture.projectDir)
+    await expect(
+      readTaskState(fixture.projectDir, taskExternalId),
+    ).resolves.toBe('done')
+
+    const after = await snapshotGlobalNotionflowWrites()
+    assertNoNewGlobalNotionflowWrites(before, after)
+  }, 180_000)
+  },
+)
 
 async function execCli(
   args: string[],
