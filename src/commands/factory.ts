@@ -47,7 +47,7 @@ export const factoryCmd = defineCommand({
         const id = String(args.id)
         const targetDir = path.join(resolvedProject.projectRoot, 'factories')
         const targetPath = path.join(targetDir, `${id}.ts`)
-        const template = `export default {\n  id: "${id}",\n  initial: {},\n  run: async ({ctx}) => ({...ctx, result: 'ok'}),\n}\n`
+        const template = `import {definePipe, end, flow, step} from 'notionflow'\n\nexport default definePipe({\n  id: "${id}",\n  initial: {},\n  agents: {},\n  run: (_env) =>\n    flow(\n      step('complete', ctx => ({...ctx, result: 'ok'})),\n      end.done(),\n    ),\n})\n`
         await mkdir(targetDir, {recursive: true})
         await writeFile(targetPath, template, 'utf8')
 

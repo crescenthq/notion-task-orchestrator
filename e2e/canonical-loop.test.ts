@@ -33,20 +33,22 @@ describe('canonical loop e2e scenarios', () => {
     const pipe = definePipe({
       id: 'loop-e2e-complete',
       initial: {count: 0, trail: [] as string[]},
-      run: flow(
-        loop<LoopE2ECtx>({
-          body: increment,
-          until: ctx => ctx.count >= 2,
-          max: 5,
-        }),
-        step<LoopE2ECtx>('mark-complete', ctx => ({
-          ...ctx,
-          summary: `completed:${ctx.count}`,
-        })),
-      ),
+      agents: {},
+      run: _env =>
+        flow(
+          loop<LoopE2ECtx>({
+            body: increment,
+            until: ctx => ctx.count >= 2,
+            max: 5,
+          }),
+          step<LoopE2ECtx>('mark-complete', ctx => ({
+            ...ctx,
+            summary: `completed:${ctx.count}`,
+          })),
+        ),
     })
 
-    const result = await pipe.run(createInput({count: 0, trail: []}))
+    const result = await pipe.run(pipe.agents)(createInput({count: 0, trail: []}))
     expect(result).toEqual({
       count: 2,
       trail: ['iter-1', 'iter-2'],
@@ -64,14 +66,16 @@ describe('canonical loop e2e scenarios', () => {
     const pipe = definePipe({
       id: 'loop-e2e-exhausted',
       initial: {count: 0, trail: [] as string[]},
-      run: loop<LoopE2ECtx>({
-        body: increment,
-        until: () => false,
-        max: 2,
-      }),
+      agents: {},
+      run: _env =>
+        loop<LoopE2ECtx>({
+          body: increment,
+          until: () => false,
+          max: 2,
+        }),
     })
 
-    const result = await pipe.run(
+    const result = await pipe.run(pipe.agents)(
       createInput({count: 0, trail: []}, 'tick-loop-e2e-2'),
     )
     expect(result).toEqual({

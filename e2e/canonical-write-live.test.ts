@@ -77,12 +77,14 @@ describe('canonical write live e2e', () => {
       const writePipe = definePipe({
         id: 'write-live-e2e',
         initial: {score: 9},
-        run: write<{score: number}>(ctx => ({
-          markdown: `## ${marker}\n\nscore=${ctx.score}`,
-        })),
+        agents: {},
+        run: _env =>
+          write<{score: number}>(ctx => ({
+            markdown: `## ${marker}\n\nscore=${ctx.score}`,
+          })),
       })
 
-      const result = await writePipe.run({
+      const result = await writePipe.run(writePipe.agents)({
         ctx: {score: 9},
         runId: `run-${Date.now()}`,
         tickId: `tick-${Date.now()}`,

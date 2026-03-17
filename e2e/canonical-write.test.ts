@@ -29,22 +29,24 @@ describe('canonical write e2e scenarios', () => {
     const pipe = definePipe({
       id: 'write-e2e-string',
       initial: {score: 0, trail: [] as string[]},
-      run: flow(
-        step<WriteE2ECtx>('prepare', ctx => ({
-          ...ctx,
-          score: 2,
-          trail: [...ctx.trail, 'prepared'],
-        })),
-        write<WriteE2ECtx>(ctx => `score=${ctx.score}`),
-        step<WriteE2ECtx>('finalize', ctx => ({
-          ...ctx,
-          summary: `done:${ctx.score}`,
-          trail: [...ctx.trail, 'finalized'],
-        })),
-      ),
+      agents: {},
+      run: _env =>
+        flow(
+          step<WriteE2ECtx>('prepare', ctx => ({
+            ...ctx,
+            score: 2,
+            trail: [...ctx.trail, 'prepared'],
+          })),
+          write<WriteE2ECtx>(ctx => `score=${ctx.score}`),
+          step<WriteE2ECtx>('finalize', ctx => ({
+            ...ctx,
+            summary: `done:${ctx.score}`,
+            trail: [...ctx.trail, 'finalized'],
+          })),
+        ),
     })
 
-    const result = await pipe.run(
+    const result = await pipe.run(pipe.agents)(
       createInput({score: 0, trail: []}, async output => {
         outputs.push(output)
       }),
@@ -63,20 +65,22 @@ describe('canonical write e2e scenarios', () => {
     const pipe = definePipe({
       id: 'write-e2e-markdown',
       initial: {score: 0, trail: [] as string[]},
-      run: flow(
-        step<WriteE2ECtx>('prepare', ctx => ({
-          ...ctx,
-          score: 4,
-          trail: [...ctx.trail, 'prepared'],
-        })),
-        write<WriteE2ECtx>(ctx => ({
-          markdown: `# score ${ctx.score}`,
-          body: `trail=${ctx.trail.length}`,
-        })),
-      ),
+      agents: {},
+      run: _env =>
+        flow(
+          step<WriteE2ECtx>('prepare', ctx => ({
+            ...ctx,
+            score: 4,
+            trail: [...ctx.trail, 'prepared'],
+          })),
+          write<WriteE2ECtx>(ctx => ({
+            markdown: `# score ${ctx.score}`,
+            body: `trail=${ctx.trail.length}`,
+          })),
+        ),
     })
 
-    const result = await pipe.run(
+    const result = await pipe.run(pipe.agents)(
       createInput({score: 0, trail: []}, async output => {
         outputs.push(output)
       }),

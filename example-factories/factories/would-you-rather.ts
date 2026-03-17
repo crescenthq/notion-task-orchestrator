@@ -125,22 +125,24 @@ export default definePipe({
     selected_option: '',
     complete: false,
   } as RatherContext,
-  run: flow(
-    loop({
-      body: flow(selectQuestion, captureChoice, applyChoice),
-      until: ctx => Boolean(ctx.complete),
-      max: 3,
-      onExhausted: end.failed('No valid A/B choice received before loop exhaustion.'),
-    }),
-    write(ctx => ({
-      markdown: [
-        '# Would You Rather',
-        ctx.current_prompt,
-        '',
-        `Choice: ${ctx.choice}) ${ctx.selected_option}`,
-        'Outcome: Bold choice. No take-backs.',
-      ].join('\n'),
-    })),
-    end.done(),
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      loop({
+        body: flow(selectQuestion, captureChoice, applyChoice),
+        until: ctx => Boolean(ctx.complete),
+        max: 3,
+        onExhausted: end.failed('No valid A/B choice received before loop exhaustion.'),
+      }),
+      write(ctx => ({
+        markdown: [
+          '# Would You Rather',
+          ctx.current_prompt,
+          '',
+          `Choice: ${ctx.choice}) ${ctx.selected_option}`,
+          'Outcome: Bold choice. No take-backs.',
+        ].join('\n'),
+      })),
+      end.done(),
+    ),
 })

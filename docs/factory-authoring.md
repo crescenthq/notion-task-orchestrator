@@ -22,16 +22,21 @@ Quick try-it path: [`scratchpad-playground.md`](./scratchpad-playground.md).
 
 ## Minimal Factory Shape
 
+Canonical `definePipe` shape is env-injected: declare `agents` and return a
+workflow from `run(env)`.
+
 ```ts
 import {definePipe, end, flow, step} from 'notionflow'
 
 export default definePipe({
   id: 'my-factory',
   initial: {completed: false},
-  run: flow(
-    step('complete', ctx => ({...ctx, completed: true})),
-    end.done(),
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      step('complete', ctx => ({...ctx, completed: true})),
+      end.done(),
+    ),
 })
 ```
 
@@ -94,18 +99,20 @@ export default definePipe({
     ready: false,
     revisions: 0,
   } satisfies Context,
-  run: flow(
-    collectDecision,
-    decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
-      revise: flow(reviseUntilReady),
-      publish: flow(
-        write(ctx => ({
-          markdown: `# Approval Result\nDecision: ${ctx.decision}`,
-        })),
-        end.done(),
-      ),
-    }),
-  ),
+  agents: {},
+  run: _env =>
+    flow(
+      collectDecision,
+      decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
+        revise: flow(reviseUntilReady),
+        publish: flow(
+          write(ctx => ({
+            markdown: `# Approval Result\nDecision: ${ctx.decision}`,
+          })),
+          end.done(),
+        ),
+      }),
+    ),
 })
 ```
 
@@ -196,28 +203,33 @@ const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
   },
 })
 
-const runPlanning = step('run-planning', async ctx => {
-  const repo = await selectRepo.invoke({
-    prompt: 'Select repository for rollout',
-  })
-  if (!repo.ok) return {...ctx, failure: repo.error.message}
-
-  const status = await gitStatus.invoke({cwd: process.cwd()})
-  if (!status.ok) return {...ctx, failure: status.error.message}
-
-  return {
-    ...ctx,
-    repo: repo.value.repo,
-    branch: repo.value.branch,
-    planReason: repo.value.reason,
-    status: status.value.stdout,
-  }
-})
-
 export default definePipe({
   id: 'service-layer-demo',
   initial: {repo: '', branch: '', planReason: '', status: '', failure: ''},
-  run: flow(runPlanning, end.done()),
+  agents: {selectRepo, gitStatus},
+  run: ({selectRepo, gitStatus}) => {
+    const runPlanning = step('run-planning', async ctx => {
+      const result = await selectRepo.invoke({
+        prompt: 'Select repository for rollout',
+      })
+      if (result.ok === false) return {...ctx, failure: result.error.message}
+
+      const statusResult = await gitStatus.invoke({cwd: process.cwd()})
+      if (statusResult.ok === false) {
+        return {...ctx, failure: statusResult.error.message}
+      }
+
+      return {
+        ...ctx,
+        repo: result.value.repo,
+        branch: result.value.branch,
+        planReason: result.value.reason,
+        status: statusResult.value.stdout,
+      }
+    })
+
+    return flow(runPlanning, end.done())
+  },
 })
 ```
 

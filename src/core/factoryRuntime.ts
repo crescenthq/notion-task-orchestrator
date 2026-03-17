@@ -32,6 +32,17 @@ type PageContent = {markdown: string; body?: string} | string
 
 type LeaseMode = 'strict' | 'best-effort'
 
+type PipeRuntimeStepInput = {
+  ctx: JsonObject
+  feedback?: string
+  checkpoint?: Checkpoint
+  task: {id: string; title: string; prompt: string; context: string}
+  writePage: (output: PageContent) => Promise<void>
+  onStepStart: (event: PipeStepLifecycleEvent) => Promise<void>
+  runId: string
+  tickId: string
+}
+
 export type RuntimeRunOptions = {
   maxTransitionsPerTick?: number
   leaseMs?: number
@@ -63,6 +74,62 @@ const OWNERSHIP_QUARANTINE_PREFIXES = ['factory_mismatch:', 'factory_invalid:']
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function describeRuntimeValue(value: unknown): string {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
+function isInjectedAgent(value: unknown): value is {invoke: (...args: unknown[]) => unknown} {
+  return isRecord(value) && typeof value.invoke === 'function'
+}
+
+function resolvePipeRuntimeEnv(definition: PipeFactoryDefinition): Record<string, unknown> {
+  if (!isRecord(definition.agents)) {
+    throw new Error(
+      `Pipe factory \`${definition.id}\` must declare \`agents\` as an object map`,
+    )
+  }
+
+  const invalidAgentEntries = Object.entries(definition.agents)
+    .filter(([, agent]) => !isInjectedAgent(agent))
+    .map(([name]) => name)
+
+  if (invalidAgentEntries.length > 0) {
+    throw new Error(
+      [
+        `Pipe factory \`${definition.id}\` has invalid \`agents\` entries: ${invalidAgentEntries.join(', ')}`,
+        'Each entry must be a defineAgent(...) result exposing invoke(input, options?).',
+      ].join(' '),
+    )
+  }
+
+  return definition.agents
+}
+
+function resolvePipeRuntimeStep(
+  definition: PipeFactoryDefinition,
+  env: Record<string, unknown>,
+): (input: PipeRuntimeStepInput) => unknown {
+  let maybeStep: unknown
+  try {
+    maybeStep = definition.run(env)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Pipe factory \`${definition.id}\` failed while evaluating run(env): ${message}`,
+    )
+  }
+
+  if (typeof maybeStep !== 'function') {
+    throw new Error(
+      `Pipe factory \`${definition.id}\` run(env) must return a callable step, received ${describeRuntimeValue(maybeStep)}`,
+    )
+  }
+
+  return maybeStep as (input: PipeRuntimeStepInput) => unknown
 }
 
 function isPipeControlSignalType(
@@ -812,8 +879,13 @@ export async function runFactoryTaskByExternalId(
 
     let result: unknown
     try {
+      const pipeRuntimeEnv = resolvePipeRuntimeEnv(pipeDefinition)
+      const pipeRuntimeStep = resolvePipeRuntimeStep(
+        pipeDefinition,
+        pipeRuntimeEnv,
+      )
       const runPipe = async (checkpoint: Checkpoint | undefined): Promise<unknown> =>
-        pipeDefinition.run({
+        pipeRuntimeStep({
           ctx,
           feedback,
           checkpoint,
