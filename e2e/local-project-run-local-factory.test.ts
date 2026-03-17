@@ -31,14 +31,14 @@ describe('local project run command', () => {
 
     await execCli(['init'], fixture.projectDir)
 
-    const factoryPath = path.join(fixture.projectDir, 'factories', 'smoke.ts')
+    const factoryPath = path.join(fixture.projectDir, 'pipes', 'smoke.ts')
     const canonicalModuleUrl = pathToFileURL(
       path.resolve(process.cwd(), 'src/factory/canonical.ts'),
     ).href
     await writeFile(factoryPath, factorySource(canonicalModuleUrl, 'done'), 'utf8')
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
-      configSource('./factories/smoke.ts'),
+      configSource('./pipes/smoke.ts'),
       'utf8',
     )
 
@@ -70,7 +70,7 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(
       fixture.projectDir,
-      'factories',
+      'pipes',
       'ask-resume.ts',
     )
     const canonicalModuleUrl = pathToFileURL(
@@ -79,7 +79,7 @@ describe('local project run command', () => {
     await writeFile(factoryPath, askResumeFactorySource(canonicalModuleUrl), 'utf8')
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
-      configSource('./factories/ask-resume.ts'),
+      configSource('./pipes/ask-resume.ts'),
       'utf8',
     )
 
@@ -132,7 +132,7 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(
       fixture.projectDir,
-      'factories',
+      'pipes',
       'pipe-resume.ts',
     )
     const canonicalModuleUrl = pathToFileURL(
@@ -145,7 +145,7 @@ describe('local project run command', () => {
     )
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
-      configSource('./factories/pipe-resume.ts'),
+      configSource('./pipes/pipe-resume.ts'),
       'utf8',
     )
 

@@ -45,8 +45,8 @@ if (liveSuiteEnabled) {
     const canonicalModuleUrl = pathToFileURL(
       path.resolve(process.cwd(), 'src/factory/canonical.ts'),
     ).href
-    const factoriesDir = path.join(fixture.projectDir, 'factories')
-    await mkdir(factoriesDir, {recursive: true})
+    const pipesDir = path.join(fixture.projectDir, 'pipes')
+    await mkdir(pipesDir, {recursive: true})
 
     const scenarios = [
       {status: 'done', factoryId: 'end-live-done'},
@@ -56,7 +56,7 @@ if (liveSuiteEnabled) {
 
     for (const {factoryId, status} of scenarios) {
       await writeFile(
-        path.join(factoriesDir, `${factoryId}.ts`),
+        path.join(pipesDir, `${factoryId}.ts`),
         terminalFactorySource(canonicalModuleUrl, factoryId, status),
         'utf8',
       )
@@ -65,7 +65,7 @@ if (liveSuiteEnabled) {
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
       projectConfigSource(
-        scenarios.map(({factoryId}) => `./factories/${factoryId}.ts`),
+        scenarios.map(({factoryId}) => `./pipes/${factoryId}.ts`),
       ),
       'utf8',
     )

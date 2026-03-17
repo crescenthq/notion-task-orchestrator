@@ -126,7 +126,7 @@ Use `tick` when you want to sync and immediately run queued work. Use
 example-factories/
   notionflow.config.ts        # Explicit factory declarations
   package.json                # Standalone package with runnable scripts
-  factories/
+  pipes/
     intent.ts
     expressive-primitives.ts
     magic-8.ts

@@ -110,7 +110,7 @@ export default definePipe({
 ```
 
 For runnable examples, see
-[`example-factories/factories/`](../example-factories/factories).
+[`example-factories/pipes/`](../example-factories/pipes).
 
 ## Feedback Suspend/Resume Lifecycle
 
@@ -273,7 +273,7 @@ import {defineConfig} from 'notionflow'
 
 export default defineConfig({
   name: 'Asmara Tasks',
-  factories: ['./factories/my-factory.ts'],
+  factories: ['./pipes/my-factory.ts'],
 })
 ```
 

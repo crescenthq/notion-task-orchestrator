@@ -7,7 +7,7 @@ NotionFlow is a project-local orchestration runtime for Notion-backed tasks.
 Each NotionFlow project defines:
 
 - `notionflow.config.ts`
-- `factories/`
+- `pipes/`
 - `.notionflow/`
 
 Project root is the directory containing the resolved config file.

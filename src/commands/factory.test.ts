@@ -48,7 +48,10 @@ describe('factory command', () => {
       },
     })
 
-    const scaffold = await readFile(path.join(projectRoot, 'factories', 'demo.ts'), 'utf8')
+    const scaffold = await readFile(
+      path.join(projectRoot, 'pipes', 'demo.ts'),
+      'utf8',
+    )
     expect(scaffold).not.toContain("from 'notionflow'")
     expect(scaffold).toContain('export default {')
     expect(scaffold).toContain("run: async ({ctx}) => ({...ctx, result: 'ok'}),")

@@ -49,7 +49,7 @@ if (liveSuiteEnabled) {
     const exampleFactoryPath = path.resolve(
       process.cwd(),
       'example-factories',
-      'factories',
+      'pipes',
       'shared-helper-demo.ts',
     )
     await writeFile(

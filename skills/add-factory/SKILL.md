@@ -39,7 +39,7 @@ success/failure routes it needs.
 npx notionflow factory create --id <factory-id>
 ```
 
-This creates `./factories/<factory-id>.ts` relative to the project root (the
+This creates `./pipes/<factory-id>.ts` relative to the project root (the
 directory containing `notionflow.config.ts`). Edit the file directly — it's just
 TypeScript.
 
@@ -291,7 +291,7 @@ NotionFlow loads it:
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ['./factories/<factory-id>.ts'],
+  factories: ['./pipes/<factory-id>.ts'],
 })
 ```
 
@@ -367,7 +367,7 @@ npx notionflow doctor
 
 ## Modifying Later
 
-- **Edit logic:** Open `./factories/<factory-id>.ts`, change the inline agent
+- **Edit logic:** Open `./pipes/<factory-id>.ts`, change the inline agent
   function. No re-install needed — NotionFlow reads the file on each run via
   `notionflow.config.ts`.
 - **Add a state:** Add the state to `states`, wire up `on` maps in affected
