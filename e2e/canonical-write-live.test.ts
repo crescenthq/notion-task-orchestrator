@@ -1,5 +1,6 @@
 import {spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
+import {writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {afterEach, beforeAll, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
@@ -7,6 +8,7 @@ import {definePipe, write} from '../src/factory/canonical'
 import {notionAppendMarkdownToPage, notionGetPageBodyText} from '../src/services/notion'
 import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
 import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
+import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
 
@@ -28,17 +30,25 @@ describe('canonical write live e2e', () => {
     async () => {
       fixture = await createTempProjectFixture('notionflow-write-live-')
       await execCli(['init'], fixture.projectDir)
+      await writeFile(
+        path.join(fixture.projectDir, 'notionflow.config.ts'),
+        writeLiveConfigSource(),
+        'utf8',
+      )
+      await writeFile(
+        path.join(fixture.projectDir, 'factories', 'write-live.ts'),
+        writeLiveFactorySource(),
+        'utf8',
+      )
 
-      const boardId = `write-live-${Date.now()}`
+      const board = await createTemporarySharedBoard(`Write Live ${Date.now()}`)
       await execCli(
         [
           'integrations',
           'notion',
-          'provision-board',
-          '--board',
-          boardId,
-          '--title',
-          `Write Live ${boardId}`,
+          'connect',
+          '--url',
+          board.url,
         ],
         fixture.projectDir,
       )
@@ -48,8 +58,6 @@ describe('canonical write live e2e', () => {
           'integrations',
           'notion',
           'create-task',
-          '--board',
-          boardId,
           '--factory',
           'write-live',
           '--title',
@@ -172,6 +180,26 @@ function extractTaskExternalId(stdout: string): string {
   }
 
   return match[1]
+}
+
+function writeLiveConfigSource(): string {
+  return [
+    'export default {',
+    '  factories: ["./factories/write-live.ts"],',
+    '};',
+    '',
+  ].join('\n')
+}
+
+function writeLiveFactorySource(): string {
+  return [
+    'export default {',
+    '  id: "write-live",',
+    '  initial: {},',
+    '  run: async ({ctx}) => ctx,',
+    '}',
+    '',
+  ].join('\n')
 }
 
 function loadDotEnv(): void {

@@ -45,7 +45,6 @@ describe('factory command', () => {
     await createRun({
       args: {
         id: 'demo',
-        skipNotionBoard: true,
       },
     })
 

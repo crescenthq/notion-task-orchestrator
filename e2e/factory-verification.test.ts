@@ -21,6 +21,7 @@ import {
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
+import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,7 +123,6 @@ async function sleep(ms: number): Promise<void> {
 }
 
 async function createTaskAndReadNewExternalId(
-  boardId: string,
   factoryId: string,
   title: string,
 ): Promise<string> {
@@ -130,15 +130,13 @@ async function createTaskAndReadNewExternalId(
   const before = await db
     .select({id: tasks.id})
     .from(tasks)
-    .where(and(eq(tasks.boardId, boardId), eq(tasks.workflowId, factoryId)))
+    .where(and(eq(tasks.boardId, sharedBoardId), eq(tasks.workflowId, factoryId)))
   const beforeIds = new Set(before.map(row => row.id))
 
   await execCli([
     'integrations',
     'notion',
     'create-task',
-    '--board',
-    boardId,
     '--title',
     title,
     '--factory',
@@ -155,7 +153,7 @@ async function createTaskAndReadNewExternalId(
         createdAt: tasks.createdAt,
       })
       .from(tasks)
-      .where(and(eq(tasks.boardId, boardId), eq(tasks.workflowId, factoryId)))
+      .where(and(eq(tasks.boardId, sharedBoardId), eq(tasks.workflowId, factoryId)))
       .orderBy(desc(tasks.createdAt))
 
     const created = after.find(row => !beforeIds.has(row.id))
@@ -164,7 +162,7 @@ async function createTaskAndReadNewExternalId(
   }
 
   throw new Error(
-    `Unable to detect newly created task for board=${boardId} factory=${factoryId}`,
+    `Unable to detect newly created task for shared board factory=${factoryId}`,
   )
 }
 
@@ -211,11 +209,10 @@ function buildTickTimeline(
 }
 
 async function runTick(
-  boardId: string,
   factoryId: string,
   maxTransitionsPerTick?: number,
 ): Promise<void> {
-  const args = ['tick', '--board', boardId, '--factory', factoryId, '--run']
+  const args = ['tick', '--factory', factoryId]
   if (typeof maxTransitionsPerTick === 'number') {
     args.push('--max-transitions-per-tick', String(maxTransitionsPerTick))
   }
@@ -223,7 +220,6 @@ async function runTick(
 }
 
 async function runUntilState(
-  boardId: string,
   factoryId: string,
   taskExternalId: string,
   states: string[],
@@ -232,7 +228,7 @@ async function runUntilState(
   const maxTicks = options?.maxTicks ?? 12
 
   for (let i = 0; i < maxTicks; i += 1) {
-    await runTick(boardId, factoryId, options?.maxTransitionsPerTick)
+    await runTick(factoryId, options?.maxTransitionsPerTick)
     const {task} = await fetchTaskWithArtifacts(taskExternalId)
     if (states.includes(task.state)) return task
     await sleep(500)
@@ -242,25 +238,6 @@ async function runUntilState(
   throw new Error(
     `Task ${taskExternalId} did not reach states [${states.join(', ')}] within ${maxTicks} ticks (current=${task.state})`,
   )
-}
-
-async function provisionNotionBoard(
-  boardId: string,
-  title: string,
-): Promise<void> {
-  const args = [
-    'integrations',
-    'notion',
-    'provision-board',
-    '--board',
-    boardId,
-    '--title',
-    title,
-  ]
-  if (parentPage) {
-    args.push('--parent-page', parentPage)
-  }
-  await execCli(args)
 }
 
 async function writeVerificationProjectConfig(
@@ -364,13 +341,11 @@ function summarizeScenario(
 // ---------------------------------------------------------------------------
 
 loadDotEnv()
-const parentPage =
-  process.env.NOTION_WORKSPACE_PAGE_ID ??
-  process.env.NOTIONFLOW_VERIFY_PARENT_PAGE_ID
 const artifacts: ScenarioArtifact[] = []
 const runStartedAt = new Date()
 const repositoryRoot = path.resolve(process.cwd())
 const cliPath = path.resolve(repositoryRoot, 'src/cli.ts')
+const sharedBoardId = 'notion-shared'
 const verificationFactories = [
   'verify-happy.ts',
   'verify-feedback.ts',
@@ -391,7 +366,17 @@ describe('Live factory verification', () => {
     await execCli(['init'])
     await writeVerificationProjectConfig(requireProjectRoot())
     await seedVerificationWorkflows(requireProjectRoot())
-  })
+    const board = await createTemporarySharedBoard(
+      `NotionFlow verification ${isoStamp()}`,
+    )
+    await execCli([
+      'integrations',
+      'notion',
+      'connect',
+      '--url',
+      board.url,
+    ])
+  }, 120_000)
 
   afterAll(async () => {
     if (artifacts.length > 0) {
@@ -428,22 +413,18 @@ describe('Live factory verification', () => {
       await fixture.cleanup()
       fixture = null
     }
-  })
+  }, 120_000)
 
   it('A: happy path reaches done', async () => {
     const scenario = 'A_happy'
     const factoryId = 'verify-happy'
-    const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
     const startedAt = new Date().toISOString()
 
-    await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
     const taskExternalId = await createTaskAndReadNewExternalId(
-      boardId,
       factoryId,
       `A happy path ${isoStamp()}`,
     )
     const task = await runUntilState(
-      boardId,
       factoryId,
       taskExternalId,
       ['done'],
@@ -473,18 +454,14 @@ describe('Live factory verification', () => {
     async () => {
       const scenario = 'B_feedback'
       const factoryId = 'verify-feedback'
-      const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
       const startedAt = new Date().toISOString()
 
-      await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
       const taskExternalId = await createTaskAndReadNewExternalId(
-        boardId,
         factoryId,
         `B feedback path ${isoStamp()}`,
       )
 
       const paused = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['feedback'],
@@ -540,7 +517,6 @@ describe('Live factory verification', () => {
       }
 
       const task = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['done'],
@@ -575,17 +551,13 @@ describe('Live factory verification', () => {
   it('C: retry exhaustion reaches failed', async () => {
     const scenario = 'C_retry_failure'
     const factoryId = 'verify-retry-failure'
-    const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
     const startedAt = new Date().toISOString()
 
-    await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
     const taskExternalId = await createTaskAndReadNewExternalId(
-      boardId,
       factoryId,
       `C retry failure ${isoStamp()}`,
     )
     const task = await runUntilState(
-      boardId,
       factoryId,
       taskExternalId,
       ['failed'],
@@ -623,17 +595,13 @@ describe('Live factory verification', () => {
     async () => {
       const scenario = 'D_bounded_loop'
       const factoryId = 'verify-loop'
-      const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
       const startedAt = new Date().toISOString()
 
-      await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
       const taskExternalId = await createTaskAndReadNewExternalId(
-        boardId,
         factoryId,
         `D bounded loop ${isoStamp()}`,
       )
       const task = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['done', 'failed'],
@@ -678,7 +646,6 @@ describe('Live factory verification', () => {
     async () => {
       const scenario = 'E_checkpoint_resume'
       const factoryId = 'verify-resume-budget'
-      const boardId = `${factoryId}-${isoStamp()}`.toLowerCase()
       const startedAt = new Date().toISOString()
       const token = notionToken()!
 
@@ -705,15 +672,12 @@ describe('Live factory verification', () => {
         await notionUpdateTaskPageState(token, taskRow.externalTaskId, 'queued')
       }
 
-      await provisionNotionBoard(boardId, `NotionFlow ${boardId}`)
       const taskExternalId = await createTaskAndReadNewExternalId(
-        boardId,
         factoryId,
         `E checkpoint resume ${isoStamp()}`,
       )
 
       const firstPause = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['feedback'],
@@ -733,7 +697,6 @@ describe('Live factory verification', () => {
       await queueWithFeedback(firstPause, 'checkpoint-feedback-1')
 
       const secondPause = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['feedback'],
@@ -755,7 +718,6 @@ describe('Live factory verification', () => {
       await queueWithFeedback(secondPause, 'checkpoint-feedback-2')
 
       const task = await runUntilState(
-        boardId,
         factoryId,
         taskExternalId,
         ['done'],

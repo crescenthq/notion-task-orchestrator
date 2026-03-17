@@ -91,10 +91,10 @@ notionflow doctor [--config <path>]
 notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
 notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--factory <id>]
 notionflow run --task <notion_page_id> [--config <path>]
-notionflow integrations notion provision-board --board <board-id>
-notionflow integrations notion sync-factories [--factory <factory-id>]
-notionflow integrations notion create-task [--board <board-id> | --factory <factory-id>] [--title "title"] [--status <state>] [--config <path>]
-notionflow integrations notion sync [--config <path>] [--board <board-id>] [--factory <factory-id>] [--run]
+notionflow integrations notion connect --url <notion-database-url> [--config <path>]
+notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
+notionflow integrations notion create-task --factory <factory-id> --title "title" [--status <state>] [--config <path>]
+notionflow integrations notion sync [--config <path>] [--factory <factory-id>] [--run]
 ```
 
 ## Canonical Library API
@@ -181,13 +181,13 @@ export default definePipe({
 
 Common live loop:
 
-1. `notionflow tick --board <board-id> --factory <factory-id>` pauses in
+1. `notionflow tick --factory <factory-id>` pauses in
    `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --board <board-id> --run` detects new
+3. `notionflow integrations notion sync --run` detects new
    comments, re-queues feedback tasks, and runs queued work.
-4. `notionflow integrations notion sync-factories --config notionflow.config.ts`
-   provisions boards for every declared factory before starting tick loops.
+4. `notionflow integrations notion connect --url <notion-database-url> --config notionflow.config.ts`
+   registers the shared board once before starting tick loops.
 
 ## Agent Wrappers (`defineAgent`)
 

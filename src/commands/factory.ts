@@ -19,12 +19,6 @@ export const factoryCmd = defineCommand({
       args: {
         id: {type: 'string', required: true},
         config: {type: 'string', required: false},
-        skipNotionBoard: {
-          type: 'boolean',
-          required: false,
-          alias: 'skip-notion-board',
-        },
-        parentPage: {type: 'string', required: false, alias: 'parent-page'},
       },
       async run({args}) {
         let resolvedProject
@@ -59,12 +53,6 @@ export const factoryCmd = defineCommand({
 
         console.log(`Factory scaffold created: ${id}`)
         console.log(`Path: ${targetPath}`)
-
-        if (!args.skipNotionBoard) {
-          console.log(
-            '[warn] Notion board provisioning is not yet supported for local-only factory scaffolds.',
-          )
-        }
       },
     }),
     list: defineCommand({

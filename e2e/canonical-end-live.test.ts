@@ -8,6 +8,7 @@ import {notionToken} from '../src/config/env'
 import {notionGetPage, pageState} from '../src/services/notion'
 import {createTempProjectFixture, type TempProjectFixture} from './helpers/projectFixture'
 import {assertLiveNotionEnv} from './helpers/liveNotionEnv'
+import {createTemporarySharedBoard} from './helpers/sharedNotionBoard'
 
 loadDotEnv()
 
@@ -58,16 +59,14 @@ describe('canonical end live e2e', () => {
         'utf8',
       )
 
-      const boardId = `end-live-${Date.now()}`
+      const board = await createTemporarySharedBoard(`End Live ${Date.now()}`)
       await execCli(
         [
           'integrations',
           'notion',
-          'provision-board',
-          '--board',
-          boardId,
-          '--title',
-          `End Live ${boardId}`,
+          'connect',
+          '--url',
+          board.url,
         ],
         fixture.projectDir,
       )
@@ -83,8 +82,6 @@ describe('canonical end live e2e', () => {
             'integrations',
             'notion',
             'create-task',
-            '--board',
-            boardId,
             '--factory',
             factoryId,
             '--title',
