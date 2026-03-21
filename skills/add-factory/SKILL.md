@@ -284,19 +284,24 @@ export default {
 
 ## Phase 4 — Register
 
-After `factory create` writes the file, declare it in `notionflow.config.ts` so
-NotionFlow loads it:
+After `factory create` writes the file under `pipes/`, NotionFlow loads it
+automatically in the default project layout. You only need `pipes` in
+`notionflow.config.ts` when you want custom locations or filtering:
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ['./pipes/<factory-id>.ts'],
+  pipes: [
+    './pipes',
+    './manual/<factory-id>.ts',
+    {directory: './packages/factories', recursive: true, match: /^team-a\/.*\.ts$/},
+  ],
 })
 ```
 
-Relative paths resolve from the project root (the directory containing
-`notionflow.config.ts`). Add one entry per factory.
+Relative file and directory declarations resolve from the project root (the
+directory containing `notionflow.config.ts`).
 
 NotionFlow discovers `notionflow.config.ts` by walking up parent directories
 from the current working directory. Use `--config <path>` on any command to
@@ -375,8 +380,8 @@ npx notionflow doctor
 - **Change routing:** Update `select` or `orchestrate.agent` return value,
   update `on` map, save the file.
 - **Add another factory:** Run `npx notionflow factory create --id <new-id>`,
-  write the factory, add the path to the `factories` array in
-  `notionflow.config.ts`.
+  write the factory. No config edit is needed unless the new file lives outside
+  the default top-level `pipes/` directory.
 
 ## Common Gotchas
 

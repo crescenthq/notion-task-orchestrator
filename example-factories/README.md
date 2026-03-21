@@ -50,8 +50,8 @@ must have access to the Notion workspace you will write tasks to.
 npm run doctor
 ```
 
-Expected output: all checks pass, factory files resolved from
-`notionflow.config.ts`.
+Expected output: all checks pass, factory files resolved from the default
+top-level `pipes/` discovery.
 
 ### 4. Connect the shared board and seed a task
 
@@ -124,7 +124,7 @@ Use `tick` when you want to sync and immediately run queued work. Use
 
 ```
 example-factories/
-  notionflow.config.ts        # Explicit factory declarations
+  notionflow.config.ts        # Uses default top-level pipes/ discovery
   package.json                # Standalone package with runnable scripts
   pipes/
     intent.ts

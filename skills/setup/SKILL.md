@@ -84,14 +84,15 @@ then use the **add-factory** skill to create the TypeScript factory file.
 
 ## 4. Register the Factory
 
-After the factory file is created under `pipes/`, declare it in
-`notionflow.config.ts`:
+After the factory file is created under `pipes/`, it loads automatically in the
+default project layout. Use `notionflow.config.ts` only when you want a custom
+project name or non-default factory locations:
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ['./pipes/<factory-id>.ts'],
+  name: 'Asmara Tasks',
 })
 ```
 
@@ -150,13 +151,14 @@ an environment variable or in a `.env` file at the project root. NotionFlow does
 not read global config files.
 
 **`tick` processes nothing:** Run `npx notionflow doctor` to confirm the project
-is resolved and auth is valid. Check that at least one factory is declared in
-`notionflow.config.ts`.
+is resolved and auth is valid. Check that at least one factory exists under the
+top-level `pipes/` directory, or that `notionflow.config.ts` points to the
+custom location you intended.
 
 **Factory load error:** Check that the TypeScript file exports a valid factory
-object and the path in `notionflow.config.ts` matches the file location.
-Relative paths resolve from the project root (directory containing
-`notionflow.config.ts`).
+object and that the file lives under the default `pipes/` directory or matches
+the `pipes` declarations in `notionflow.config.ts`. Relative declarations
+resolve from the project root (directory containing `notionflow.config.ts`).
 
 **Notion page not updating:** Ensure the integration is connected to the
 database in Notion (Share → Connect to → NotionFlow).

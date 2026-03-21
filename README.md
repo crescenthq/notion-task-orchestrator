@@ -13,8 +13,8 @@ Each project contains:
 - `pipes/`
 - `.notionflow/` (runtime DB + logs)
 
-`run` and `tick` load factories only from paths declared in
-`notionflow.config.ts`.
+`run` and `tick` load factories from top-level `pipes/` by default, or from
+custom declarations in `notionflow.config.ts`.
 
 ## Prerequisites
 
@@ -30,13 +30,10 @@ npx notionflow init
 # 2) Scaffold a definePipe factory
 npx notionflow factory create --id demo --skip-notion-board
 
-# 3) Declare the factory in notionflow.config.ts
-# factories: ["./pipes/demo.ts"]
-
-# 4) Validate config + auth resolution
+# 3) Validate config + auth resolution
 npx notionflow doctor
 
-# 5) Run one queue tick
+# 4) Run one queue tick
 npx notionflow tick --factory demo
 ```
 
@@ -57,7 +54,6 @@ import {defineConfig} from 'notionflow'
 
 export default defineConfig({
   name: 'Asmara Tasks',
-  factories: ['./pipes/demo.ts', './pipes/shared-helper-demo.ts'],
 })
 ```
 
@@ -65,10 +61,33 @@ Shared board setup uses `name` from `defineConfig(...)` as the Notion database
 title. If `name` is omitted, NotionFlow falls back to a title derived from the
 project directory name.
 
-Factory declarations are explicit and deterministic:
+If `pipes` is omitted or empty, NotionFlow scans loadable modules in the
+top-level `./pipes/` directory.
 
-- Relative paths resolve from project root
-- Missing paths fail fast with diagnostics
+Use `pipes` only when you want custom locations or tighter filtering:
+
+```ts
+import {defineConfig} from 'notionflow'
+
+export default defineConfig({
+  pipes: [
+    './pipes',
+    './manual/critical-review.ts',
+    {
+      directory: './packages/factories',
+      recursive: true,
+      match: /^team-a\/.*\.ts$/,
+    },
+  ],
+})
+```
+
+Factory discovery stays deterministic:
+
+- Relative file and directory declarations resolve from project root
+- Default `./pipes` discovery is top-level only
+- Directory declarations can opt into recursive scans with `match: RegExp`
+- Missing explicit paths fail fast with diagnostics
 - Duplicate factory IDs fail startup with conflict diagnostics
 
 ## Runtime Artifacts

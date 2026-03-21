@@ -266,14 +266,14 @@ npx notionflow init
 npx notionflow factory create --id my-factory --skip-notion-board
 ```
 
-3. Declare factory file in `notionflow.config.ts`.
+3. Optional: set project name or customize factory discovery in
+   `notionflow.config.ts`.
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
   name: 'Asmara Tasks',
-  factories: ['./pipes/my-factory.ts'],
 })
 ```
 
@@ -281,6 +281,10 @@ If you want `notionflow integrations notion setup` to create a human-friendly
 shared tasks database title, set `name` in `defineConfig(...)`. If `name` is
 omitted, NotionFlow falls back to a title derived from the project directory
 name.
+
+`factory create` writes to `pipes/`, so the default project layout does not need
+any `pipes` entry. Add `pipes` only when you want custom locations, directory
+scans, or regex filtering.
 
 4. Validate context and auth.
 

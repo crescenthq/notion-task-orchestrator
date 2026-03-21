@@ -128,6 +128,9 @@ notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-boa
 
 Writes `pipes/<factory-id>.ts` in the resolved project root.
 
+Files under the top-level `pipes/` directory load automatically unless
+`notionflow.config.ts` overrides `pipes`.
+
 ### `factory list`
 
 List known factories from runtime DB.

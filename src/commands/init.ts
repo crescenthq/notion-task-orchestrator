@@ -45,7 +45,6 @@ function buildDefaultConfigTemplate(projectRoot: string): string {
 
 export default defineConfig({
   name: ${JSON.stringify(defaultProjectName(projectRoot))},
-  factories: [],
 });
 `
 }

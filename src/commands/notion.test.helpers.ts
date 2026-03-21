@@ -55,7 +55,7 @@ export async function createProjectFixture(
     [
       'export default {',
       ...(options.name ? [`  name: ${JSON.stringify(options.name)},`] : []),
-      `  factories: [${factoryIds.map(id => JSON.stringify(`./pipes/${id}.mjs`)).join(', ')}],`,
+      `  pipes: [${factoryIds.map(id => JSON.stringify(`./pipes/${id}.mjs`)).join(', ')}],`,
       '};',
       '',
     ].join('\n'),

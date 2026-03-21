@@ -27,12 +27,15 @@ Applicable commands also support `--config <path>` for explicit resolution.
 
 ## Factory Loading Model
 
-Factories are loaded only from explicit path declarations in
-`notionflow.config.ts`.
+Factories default to top-level `./pipes` discovery.
 
-- no implicit glob scan
+`notionflow.config.ts` can override discovery with exact file paths, directory
+paths, or `{directory, match, recursive}` entries.
+
+- no repo-wide implicit glob scan
+- default `./pipes` scan is top-level only
 - relative declarations resolve from project root
-- missing declaration paths fail fast
+- missing explicit declaration paths fail fast
 - duplicate factory IDs fail fast with conflicting path diagnostics
 
 ## Runtime Persistence

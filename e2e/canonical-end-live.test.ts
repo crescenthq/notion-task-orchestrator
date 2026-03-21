@@ -23,9 +23,7 @@ if (liveSuiteEnabled) {
   registerLiveBoardSuite()
 }
 
-;(liveSuiteEnabled ? describe : describe.skip)(
-  'canonical end live e2e',
-  () => {
+;(liveSuiteEnabled ? describe : describe.skip)('canonical end live e2e', () => {
   let fixture: TempProjectFixture | null = null
 
   afterEach(async () => {
@@ -104,8 +102,7 @@ if (liveSuiteEnabled) {
       expect(syncedState).toBe(status)
     }
   }, 240_000)
-  },
-)
+})
 
 async function waitForPageState(
   token: string,
@@ -155,7 +152,7 @@ function terminalFactorySource(
 function projectConfigSource(factoryPaths: string[]): string {
   return [
     'export default {',
-    '  factories: [',
+    '  pipes: [',
     ...factoryPaths.map(factoryPath => `    ${JSON.stringify(factoryPath)},`),
     '  ],',
     '};',

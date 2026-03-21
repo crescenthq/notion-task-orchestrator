@@ -19,28 +19,39 @@ afterEach(async () => {
 })
 
 describe('projectConfig', () => {
-  it('loads an optional project name alongside declared factories', async () => {
+  it('loads an optional project name alongside default pipes discovery', async () => {
     const projectRoot = await createFixture('notionflow-project-config-name-')
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
 
     const localFactoryPath = path.join(pipesDir, 'named.mjs')
+    const sharedHelperPath = path.join(pipesDir, 'shared', 'helper.mjs')
     await writeMinimalFactory(localFactoryPath, 'named-factory')
-
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await mkdir(path.dirname(sharedHelperPath), {recursive: true})
     await writeFile(
-      configPath,
-      `export default { name: "Asmara", factories: ["./pipes/named.mjs"] };\n`,
+      sharedHelperPath,
+      'export default { helper: true };\n',
       'utf8',
     )
 
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
+
     await expect(loadProjectConfig(configPath)).resolves.toEqual({
       name: 'Asmara',
-      factories: ['./pipes/named.mjs'],
+      pipes: [],
     })
+
+    const config = await loadProjectConfig(configPath)
+    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+      localFactoryPath,
+    ])
+
+    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    expect(loaded.map(entry => entry.definition.id)).toEqual(['named-factory'])
   })
 
-  it('loads config and resolves declared relative and absolute factory paths', async () => {
+  it('loads config and resolves declared directory and exact factory paths', async () => {
     const projectRoot = await createFixture('notionflow-project-config-')
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
@@ -53,12 +64,12 @@ describe('projectConfig', () => {
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
-      `export default { factories: ["./pipes/local.mjs", ${JSON.stringify(absoluteFactoryPath)}] };\n`,
+      `export default { pipes: ["./pipes", ${JSON.stringify(absoluteFactoryPath)}] };\n`,
       'utf8',
     )
 
     const config = await loadProjectConfig(configPath)
-    const resolvedFactoryPaths = resolveFactoryPaths(config, projectRoot)
+    const resolvedFactoryPaths = await resolveFactoryPaths(config, projectRoot)
 
     expect(resolvedFactoryPaths).toEqual([
       localFactoryPath,
@@ -70,6 +81,98 @@ describe('projectConfig', () => {
       'local-factory',
       'absolute-factory',
     ])
+  })
+
+  it('supports recursive directory scans with regex filters', async () => {
+    const projectRoot = await createFixture('notionflow-project-config-match-')
+    const alphaFactoryPath = path.join(
+      projectRoot,
+      'factories',
+      'alpha',
+      'one.mjs',
+    )
+    const betaFactoryPath = path.join(
+      projectRoot,
+      'factories',
+      'beta',
+      'two.mjs',
+    )
+    await writeMinimalFactory(alphaFactoryPath, 'alpha-factory')
+    await writeMinimalFactory(betaFactoryPath, 'beta-factory')
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      [
+        'export default {',
+        '  pipes: [',
+        '    { directory: "./factories", recursive: true, match: /^alpha\\/.*\\.mjs$/ },',
+        '  ],',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const config = await loadProjectConfig(configPath)
+    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+      alphaFactoryPath,
+    ])
+
+    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    expect(loaded.map(entry => entry.definition.id)).toEqual(['alpha-factory'])
+  })
+
+  it('accepts legacy factories as an alias for pipes', async () => {
+    const projectRoot = await createFixture('notionflow-project-config-legacy-')
+    const pipesDir = path.join(projectRoot, 'pipes')
+    await mkdir(pipesDir, {recursive: true})
+
+    const legacyFactoryPath = path.join(pipesDir, 'legacy.mjs')
+    await writeMinimalFactory(legacyFactoryPath, 'legacy-factory')
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { factories: ["./pipes/legacy.mjs"] };\n`,
+      'utf8',
+    )
+
+    await expect(loadProjectConfig(configPath)).resolves.toEqual({
+      name: undefined,
+      pipes: ['./pipes/legacy.mjs'],
+    })
+
+    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    expect(loaded.map(entry => entry.definition.id)).toEqual(['legacy-factory'])
+  })
+
+  it('rejects configs that declare both pipes and legacy factories', async () => {
+    const projectRoot = await createFixture('notionflow-project-config-both-')
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { pipes: ["./pipes/alpha.mjs"], factories: ["./pipes/beta.mjs"] };\n`,
+      'utf8',
+    )
+
+    await expect(loadProjectConfig(configPath)).rejects.toThrowError(
+      /Use `pipes` or legacy `factories`, not both/,
+    )
+  })
+
+  it('does not fail when default pipes directory is absent and no pipes are declared', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-default-missing-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
+
+    const config = await loadProjectConfig(configPath)
+    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([])
+    await expect(
+      loadDeclaredFactories({configPath, projectRoot}),
+    ).resolves.toEqual([])
   })
 
   it('loads only config-declared factories and does not scan unlisted files', async () => {
@@ -94,7 +197,7 @@ describe('projectConfig', () => {
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
-      `export default { factories: ["./pipes/listed.mjs"] };\n`,
+      `export default { pipes: ["./pipes/listed.mjs"] };\n`,
       'utf8',
     )
 
@@ -110,14 +213,36 @@ describe('projectConfig', () => {
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
-      `export default { factories: ["./pipes/missing.mjs"] };\n`,
+      `export default { pipes: ["./pipes/missing.mjs"] };\n`,
       'utf8',
     )
 
     await expect(
       loadDeclaredFactories({configPath, projectRoot}),
     ).rejects.toThrowError(
-      /Declared factory file does not exist: \.\/pipes\/missing\.mjs/,
+      /Declared factory path does not exist: \.\/pipes\/missing\.mjs/,
+    )
+
+    await expect(
+      loadDeclaredFactories({configPath, projectRoot}),
+    ).rejects.toThrowError(/Resolved path:/)
+  })
+
+  it('fails with declared directory context when a configured directory is missing', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-missing-directory-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { pipes: [{ directory: "./pipes", recursive: true }] };\n`,
+      'utf8',
+    )
+
+    await expect(
+      loadDeclaredFactories({configPath, projectRoot}),
+    ).rejects.toThrowError(
+      /Declared factory directory does not exist: \.\/pipes/,
     )
 
     await expect(
@@ -140,7 +265,7 @@ describe('projectConfig', () => {
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
-      `export default { factories: ["./pipes/first.mjs", "./pipes/second.mjs"] };\n`,
+      `export default { pipes: ["./pipes/first.mjs", "./pipes/second.mjs"] };\n`,
       'utf8',
     )
 
@@ -168,6 +293,7 @@ async function writeMinimalFactory(
   targetPath: string,
   id: string,
 ): Promise<void> {
+  await mkdir(path.dirname(targetPath), {recursive: true})
   await writeFile(
     targetPath,
     [

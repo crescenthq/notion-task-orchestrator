@@ -16,7 +16,7 @@ async function setupRuntime() {
   process.env.NOTIONFLOW_PROJECT_ROOT = home
   await writeFile(
     path.join(home, 'notionflow.config.ts'),
-    'export default { factories: [] };\n',
+    'export default { pipes: [] };\n',
     'utf8',
   )
   vi.resetModules()
@@ -120,10 +120,9 @@ describe('factoryRuntime (definePipe only)', () => {
     expect(updatedTask?.state).toBe('done')
     expect(updatedTask?.currentStepId).toBeNull()
 
-    const persistedCtx = JSON.parse(updatedTask?.stepVarsJson ?? '{}') as Record<
-      string,
-      unknown
-    >
+    const persistedCtx = JSON.parse(
+      updatedTask?.stepVarsJson ?? '{}',
+    ) as Record<string, unknown>
     expect(persistedCtx.visits).toBe(1)
     expect(persistedCtx.finishedBy).toBe('pipe')
 
@@ -292,7 +291,9 @@ describe('factoryRuntime (definePipe only)', () => {
       .where(eq(schema.runTraces.taskId, doneTask!.id))
     const events = transitionLike(traces)
     expect(
-      events.map(event => `${event.fromStateId}->${event.toStateId}:${event.event}`),
+      events.map(
+        event => `${event.fromStateId}->${event.toStateId}:${event.event}`,
+      ),
     ).toEqual([
       '__pipe_run__->__pipe_feedback__:feedback',
       '__pipe_feedback__->__pipe_done__:done',
@@ -355,7 +356,10 @@ describe('factoryRuntime (definePipe only)', () => {
       .update(schema.tasks)
       .set({
         state: 'queued',
-        stepVarsJson: JSON.stringify({...pausedCtx, human_feedback: 'approved'}),
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'approved',
+        }),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
@@ -381,7 +385,12 @@ describe('factoryRuntime (definePipe only)', () => {
     const factoryId = 'runtime-checkpointed-resume'
     const externalTaskId = 'task-runtime-checkpointed-resume-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+    const canonicalPath = path.join(
+      process.cwd(),
+      'src',
+      'factory',
+      'canonical.ts',
+    )
 
     await writeFile(
       factoryPath,
@@ -482,7 +491,12 @@ export default definePipe({
     const factoryId = 'runtime-checkpoint-mismatch-fallback'
     const externalTaskId = 'task-runtime-checkpoint-mismatch-fallback-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+    const canonicalPath = path.join(
+      process.cwd(),
+      'src',
+      'factory',
+      'canonical.ts',
+    )
 
     await writeFile(
       factoryPath,
@@ -639,7 +653,12 @@ export default definePipe({
     const factoryId = 'runtime-malformed-control-signal'
     const externalTaskId = 'task-malformed-control-signal-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+    const canonicalPath = path.join(
+      process.cwd(),
+      'src',
+      'factory',
+      'canonical.ts',
+    )
 
     await writeFile(
       factoryPath,
@@ -670,7 +689,9 @@ export default definePipe({
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(updatedTask?.state).toBe('failed')
-    expect(updatedTask?.lastError).toContain('malformed await_feedback control signal')
+    expect(updatedTask?.lastError).toContain(
+      'malformed await_feedback control signal',
+    )
   })
 
   it('fails fast when definePipe run exceeds maxTransitionsPerTick', async () => {
@@ -678,7 +699,12 @@ export default definePipe({
     const factoryId = 'runtime-pipe-transition-budget'
     const externalTaskId = 'task-pipe-transition-budget-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-    const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+    const canonicalPath = path.join(
+      process.cwd(),
+      'src',
+      'factory',
+      'canonical.ts',
+    )
 
     await writeFile(
       factoryPath,
@@ -707,7 +733,9 @@ export default definePipe({
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
     expect(updatedTask?.state).toBe('failed')
-    expect(updatedTask?.lastError).toContain('Pipe transition budget exceeded (1)')
+    expect(updatedTask?.lastError).toContain(
+      'Pipe transition budget exceeded (1)',
+    )
   })
 
   it('refuses to run quarantined ownership-mismatch tasks', async () => {
@@ -742,59 +770,60 @@ export default definePipe({
     ).rejects.toThrow(/repair-task --task task-runtime-quarantined-task-1/)
   })
 
-  it(
-    'keeps lease heartbeats active during long definePipe execution',
-    async () => {
-      const {db, paths, runtime, schema, timestamp} = await setupRuntime()
-      const factoryId = 'runtime-lease-heartbeat-pipe'
-      const externalTaskId = 'task-lease-heartbeat-pipe-1'
-      const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
-      const canonicalPath = path.join(process.cwd(), 'src', 'factory', 'canonical.ts')
+  it('keeps lease heartbeats active during long definePipe execution', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-lease-heartbeat-pipe'
+    const externalTaskId = 'task-lease-heartbeat-pipe-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+    const canonicalPath = path.join(
+      process.cwd(),
+      'src',
+      'factory',
+      'canonical.ts',
+    )
 
-      await writeFile(
-        factoryPath,
-        `import {definePipe, end, flow, step} from ${JSON.stringify(canonicalPath)};\n` +
-          `const wait = ms => new Promise(resolve => setTimeout(resolve, ms));\n` +
-          `export default definePipe({\n` +
-          `  id: "${factoryId}",\n` +
-          `  initial: {finished: false},\n` +
-          `  run: flow(\n` +
-          `    step("long-step", async ctx => {\n` +
-          `      await wait(2200);\n` +
-          `      return {...ctx, finished: true};\n` +
-          `    }),\n` +
-          `    end.done(),\n` +
-          `  ),\n` +
-          `});\n`,
-        'utf8',
-      )
+    await writeFile(
+      factoryPath,
+      `import {definePipe, end, flow, step} from ${JSON.stringify(canonicalPath)};\n` +
+        `const wait = ms => new Promise(resolve => setTimeout(resolve, ms));\n` +
+        `export default definePipe({\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: {finished: false},\n` +
+        `  run: flow(\n` +
+        `    step("long-step", async ctx => {\n` +
+        `      await wait(2200);\n` +
+        `      return {...ctx, finished: true};\n` +
+        `    }),\n` +
+        `    end.done(),\n` +
+        `  ),\n` +
+        `});\n`,
+      'utf8',
+    )
 
-      await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
 
-      const firstRun = runtime.runFactoryTaskByExternalId(externalTaskId, {
+    const firstRun = runtime.runFactoryTaskByExternalId(externalTaskId, {
+      leaseMs: 1_000,
+      leaseMode: 'strict',
+      workerId: 'worker-a',
+    })
+
+    await sleep(1_300)
+
+    await expect(
+      runtime.runFactoryTaskByExternalId(externalTaskId, {
         leaseMs: 1_000,
         leaseMode: 'strict',
-        workerId: 'worker-a',
-      })
+        workerId: 'worker-b',
+      }),
+    ).rejects.toThrow(/currently leased by another worker/)
 
-      await sleep(1_300)
+    await firstRun
 
-      await expect(
-        runtime.runFactoryTaskByExternalId(externalTaskId, {
-          leaseMs: 1_000,
-          leaseMode: 'strict',
-          workerId: 'worker-b',
-        }),
-      ).rejects.toThrow(/currently leased by another worker/)
-
-      await firstRun
-
-      const [updatedTask] = await db
-        .select()
-        .from(schema.tasks)
-        .where(eq(schema.tasks.externalTaskId, externalTaskId))
-      expect(updatedTask?.state).toBe('done')
-    },
-    12_000,
-  )
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(updatedTask?.state).toBe('done')
+  }, 12_000)
 })

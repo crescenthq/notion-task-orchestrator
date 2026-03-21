@@ -258,7 +258,7 @@ async function writeVerificationProjectConfig(
 
   const configContent = [
     'export default {',
-    '  factories: [',
+    '  pipes: [',
     factoryEntries,
     '  ],',
     '};',
@@ -375,378 +375,379 @@ let globalWritesBefore: FilesystemSnapshot | null = null
 ;(liveSuiteEnabled ? describe : describe.skip)(
   'Live factory verification',
   () => {
-  beforeAll(async () => {
-    globalWritesBefore = await snapshotGlobalNotionflowWrites()
-    fixture = await createTempProjectFixture('notionflow-live-verify-')
-    await execCli(['init'])
-    await writeVerificationProjectConfig(requireProjectRoot())
-    await seedVerificationWorkflows(requireProjectRoot())
-    const board = await resolveSharedBoardConnection()
-    await execCli(['integrations', 'notion', 'setup', '--url', board.url])
-  }, 120_000)
+    beforeAll(async () => {
+      globalWritesBefore = await snapshotGlobalNotionflowWrites()
+      fixture = await createTempProjectFixture('notionflow-live-verify-')
+      await execCli(['init'])
+      await writeVerificationProjectConfig(requireProjectRoot())
+      await seedVerificationWorkflows(requireProjectRoot())
+      const board = await resolveSharedBoardConnection()
+      await execCli(['integrations', 'notion', 'setup', '--url', board.url])
+    }, 120_000)
 
-  afterAll(async () => {
-    if (artifacts.length > 0) {
-      const summary = {
-        generatedAt: new Date().toISOString(),
-        durationSeconds: Math.floor(
-          (Date.now() - runStartedAt.getTime()) / 1000,
-        ),
-        passedScenarios: artifacts.length,
-        artifacts,
+    afterAll(async () => {
+      if (artifacts.length > 0) {
+        const summary = {
+          generatedAt: new Date().toISOString(),
+          durationSeconds: Math.floor(
+            (Date.now() - runStartedAt.getTime()) / 1000,
+          ),
+          passedScenarios: artifacts.length,
+          artifacts,
+        }
+
+        const stamp = isoStamp(runStartedAt)
+        const outDir = path.resolve('e2e/artifacts')
+        await mkdir(outDir, {recursive: true})
+        const outputPath = path.join(
+          outDir,
+          `factory-live-verification-${stamp}.json`,
+        )
+        await writeFile(
+          outputPath,
+          JSON.stringify(summary, null, 2) + '\n',
+          'utf8',
+        )
+        console.log(`Artifact: ${outputPath}`)
       }
 
-      const stamp = isoStamp(runStartedAt)
-      const outDir = path.resolve('e2e/artifacts')
-      await mkdir(outDir, {recursive: true})
-      const outputPath = path.join(
-        outDir,
-        `factory-live-verification-${stamp}.json`,
-      )
-      await writeFile(
-        outputPath,
-        JSON.stringify(summary, null, 2) + '\n',
-        'utf8',
-      )
-      console.log(`Artifact: ${outputPath}`)
-    }
+      if (globalWritesBefore) {
+        const globalWritesAfter = await snapshotGlobalNotionflowWrites()
+        assertNoNewGlobalNotionflowWrites(globalWritesBefore, globalWritesAfter)
+      }
 
-    if (globalWritesBefore) {
-      const globalWritesAfter = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(globalWritesBefore, globalWritesAfter)
-    }
+      if (fixture) {
+        await fixture.cleanup()
+        fixture = null
+      }
 
-    if (fixture) {
-      await fixture.cleanup()
-      fixture = null
-    }
+      await finishLiveBoardSuite()
+    }, 120_000)
 
-    await finishLiveBoardSuite()
-  }, 120_000)
+    it('A: happy path reaches done', async () => {
+      const scenario = 'A_happy'
+      const factoryId = 'verify-happy'
+      const startedAt = new Date().toISOString()
 
-  it('A: happy path reaches done', async () => {
-    const scenario = 'A_happy'
-    const factoryId = 'verify-happy'
-    const startedAt = new Date().toISOString()
-
-    const taskExternalId = await createTaskAndReadNewExternalId(
-      factoryId,
-      `A happy path ${isoStamp()}`,
-    )
-    const task = await runUntilState(factoryId, taskExternalId, ['done'], {
-      maxTicks: 6,
-    })
-    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
-
-    expect(task.state).toBe('done')
-    expect(events.length).toBeGreaterThanOrEqual(1)
-
-    artifacts.push(
-      summarizeScenario(
-        scenario,
+      const taskExternalId = await createTaskAndReadNewExternalId(
         factoryId,
-        startedAt,
-        new Date().toISOString(),
-        task,
-        run,
-        events,
-        [],
-      ),
-    )
-  })
-
-  it('B: feedback path pauses then resumes to done', async () => {
-    const scenario = 'B_feedback'
-    const factoryId = 'verify-feedback'
-    const startedAt = new Date().toISOString()
-
-    const taskExternalId = await createTaskAndReadNewExternalId(
-      factoryId,
-      `B feedback path ${isoStamp()}`,
-    )
-
-    const paused = await runUntilState(
-      factoryId,
-      taskExternalId,
-      ['feedback'],
-      {
-        maxTicks: 6,
-      },
-    )
-    const token = notionToken()!
-    const feedbackMode = process.env.NOTIONFLOW_VERIFY_FEEDBACK_MODE ?? 'local'
-
-    if (feedbackMode === 'notion-comment') {
-      await notionPostComment(
-        token,
-        taskExternalId,
-        `Automated verification feedback reply ${isoStamp()}`,
+        `A happy path ${isoStamp()}`,
       )
-      await sleep(1500)
-    } else if (feedbackMode === 'local') {
-      const {db} = await openApp({projectRoot: requireProjectRoot()})
-      const existingCtx = paused.stepVarsJson
-        ? (JSON.parse(paused.stepVarsJson) as Record<string, unknown>)
-        : {}
-      const resumedCtx = {
-        ...existingCtx,
-        human_feedback: 'approved-by-local-resume',
-      }
-      await db
-        .update(tasks)
-        .set({
-          state: 'queued',
-          stepVarsJson: JSON.stringify(resumedCtx),
-          waitingSince: null,
-          updatedAt: nowIso(),
-        })
-        .where(eq(tasks.id, paused.id))
-      await notionUpdateTaskPageState(token, taskExternalId, 'queued')
-      try {
-        await notionAppendTaskPageLog(
+      const task = await runUntilState(factoryId, taskExternalId, ['done'], {
+        maxTicks: 6,
+      })
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
+
+      expect(task.state).toBe('done')
+      expect(events.length).toBeGreaterThanOrEqual(1)
+
+      artifacts.push(
+        summarizeScenario(
+          scenario,
+          factoryId,
+          startedAt,
+          new Date().toISOString(),
+          task,
+          run,
+          events,
+          [],
+        ),
+      )
+    })
+
+    it('B: feedback path pauses then resumes to done', async () => {
+      const scenario = 'B_feedback'
+      const factoryId = 'verify-feedback'
+      const startedAt = new Date().toISOString()
+
+      const taskExternalId = await createTaskAndReadNewExternalId(
+        factoryId,
+        `B feedback path ${isoStamp()}`,
+      )
+
+      const paused = await runUntilState(
+        factoryId,
+        taskExternalId,
+        ['feedback'],
+        {
+          maxTicks: 6,
+        },
+      )
+      const token = notionToken()!
+      const feedbackMode =
+        process.env.NOTIONFLOW_VERIFY_FEEDBACK_MODE ?? 'local'
+
+      if (feedbackMode === 'notion-comment') {
+        await notionPostComment(
           token,
           taskExternalId,
-          'Feedback received (local verification mode)',
-          'Feedback was injected locally to resume deterministic verification.',
+          `Automated verification feedback reply ${isoStamp()}`,
         )
-      } catch {
-        // Notion API append logs can occasionally return transient gateway errors.
-        // Behavioral resumption assertions should not depend on this optional side effect.
+        await sleep(1500)
+      } else if (feedbackMode === 'local') {
+        const {db} = await openApp({projectRoot: requireProjectRoot()})
+        const existingCtx = paused.stepVarsJson
+          ? (JSON.parse(paused.stepVarsJson) as Record<string, unknown>)
+          : {}
+        const resumedCtx = {
+          ...existingCtx,
+          human_feedback: 'approved-by-local-resume',
+        }
+        await db
+          .update(tasks)
+          .set({
+            state: 'queued',
+            stepVarsJson: JSON.stringify(resumedCtx),
+            waitingSince: null,
+            updatedAt: nowIso(),
+          })
+          .where(eq(tasks.id, paused.id))
+        await notionUpdateTaskPageState(token, taskExternalId, 'queued')
+        try {
+          await notionAppendTaskPageLog(
+            token,
+            taskExternalId,
+            'Feedback received (local verification mode)',
+            'Feedback was injected locally to resume deterministic verification.',
+          )
+        } catch {
+          // Notion API append logs can occasionally return transient gateway errors.
+          // Behavioral resumption assertions should not depend on this optional side effect.
+        }
+      } else {
+        throw new Error(
+          `Unsupported NOTIONFLOW_VERIFY_FEEDBACK_MODE=${feedbackMode}. Use notion-comment|local`,
+        )
       }
-    } else {
-      throw new Error(
-        `Unsupported NOTIONFLOW_VERIFY_FEEDBACK_MODE=${feedbackMode}. Use notion-comment|local`,
+
+      const task = await runUntilState(factoryId, taskExternalId, ['done'], {
+        maxTicks: 8,
+      })
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
+
+      expect(paused.state).toBe('feedback')
+      expect(task.state).toBe('done')
+      const eventNames = new Set(events.map(e => e.event))
+      expect(eventNames.has('feedback')).toBe(true)
+      expect(eventNames.has('done')).toBe(true)
+      const traceTypes = new Set(events.map(event => event.type))
+      expect(traceTypes.has('await_feedback')).toBe(true)
+      expect(traceTypes.has('resumed')).toBe(true)
+
+      artifacts.push(
+        summarizeScenario(
+          scenario,
+          factoryId,
+          startedAt,
+          new Date().toISOString(),
+          task,
+          run,
+          events,
+          [`feedback mode: ${feedbackMode}`],
+        ),
       )
-    }
-
-    const task = await runUntilState(factoryId, taskExternalId, ['done'], {
-      maxTicks: 8,
     })
-    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
-    expect(paused.state).toBe('feedback')
-    expect(task.state).toBe('done')
-    const eventNames = new Set(events.map(e => e.event))
-    expect(eventNames.has('feedback')).toBe(true)
-    expect(eventNames.has('done')).toBe(true)
-    const traceTypes = new Set(events.map(event => event.type))
-    expect(traceTypes.has('await_feedback')).toBe(true)
-    expect(traceTypes.has('resumed')).toBe(true)
+    it('C: retry exhaustion reaches failed', async () => {
+      const scenario = 'C_retry_failure'
+      const factoryId = 'verify-retry-failure'
+      const startedAt = new Date().toISOString()
 
-    artifacts.push(
-      summarizeScenario(
-        scenario,
+      const taskExternalId = await createTaskAndReadNewExternalId(
         factoryId,
-        startedAt,
-        new Date().toISOString(),
-        task,
-        run,
-        events,
-        [`feedback mode: ${feedbackMode}`],
-      ),
-    )
-  })
-
-  it('C: retry exhaustion reaches failed', async () => {
-    const scenario = 'C_retry_failure'
-    const factoryId = 'verify-retry-failure'
-    const startedAt = new Date().toISOString()
-
-    const taskExternalId = await createTaskAndReadNewExternalId(
-      factoryId,
-      `C retry failure ${isoStamp()}`,
-    )
-    const task = await runUntilState(factoryId, taskExternalId, ['failed'], {
-      maxTicks: 4,
-    })
-    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
-
-    expect(task.state).toBe('failed')
-    expect(events.some(event => event.type === 'step')).toBe(true)
-    const exhaustedEvent = events.find(
-      e => e.reason === 'action.failed.exhausted',
-    )
-    expect(exhaustedEvent).toBeDefined()
-    expect(exhaustedEvent!.type).toBe('step')
-    expect(exhaustedEvent!.attempt).toBeGreaterThanOrEqual(1)
-
-    artifacts.push(
-      summarizeScenario(
-        scenario,
-        factoryId,
-        startedAt,
-        new Date().toISOString(),
-        task,
-        run,
-        events,
-        [],
-      ),
-    )
-  })
-
-  it('D: bounded loop reaches done with loop iterations', async () => {
-    const scenario = 'D_bounded_loop'
-    const factoryId = 'verify-loop'
-    const startedAt = new Date().toISOString()
-
-    const taskExternalId = await createTaskAndReadNewExternalId(
-      factoryId,
-      `D bounded loop ${isoStamp()}`,
-    )
-    const task = await runUntilState(
-      factoryId,
-      taskExternalId,
-      ['done', 'failed'],
-      {
+        `C retry failure ${isoStamp()}`,
+      )
+      const task = await runUntilState(factoryId, taskExternalId, ['failed'], {
         maxTicks: 4,
-      },
-    )
-    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
+      })
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
-    expect(task.state).toBe('done')
-    expect(events.some(e => e.type === 'step')).toBe(true)
+      expect(task.state).toBe('failed')
+      expect(events.some(event => event.type === 'step')).toBe(true)
+      const exhaustedEvent = events.find(
+        e => e.reason === 'action.failed.exhausted',
+      )
+      expect(exhaustedEvent).toBeDefined()
+      expect(exhaustedEvent!.type).toBe('step')
+      expect(exhaustedEvent!.attempt).toBeGreaterThanOrEqual(1)
 
-    const context = (() => {
-      if (!task.stepVarsJson) {
-        return {}
-      }
-      try {
-        return JSON.parse(task.stepVarsJson) as Record<string, unknown>
-      } catch {
-        return {}
-      }
-    })()
-    expect(Number(context['loop_iterations_seen'])).toBe(2)
+      artifacts.push(
+        summarizeScenario(
+          scenario,
+          factoryId,
+          startedAt,
+          new Date().toISOString(),
+          task,
+          run,
+          events,
+          [],
+        ),
+      )
+    })
 
-    artifacts.push(
-      summarizeScenario(
-        scenario,
+    it('D: bounded loop reaches done with loop iterations', async () => {
+      const scenario = 'D_bounded_loop'
+      const factoryId = 'verify-loop'
+      const startedAt = new Date().toISOString()
+
+      const taskExternalId = await createTaskAndReadNewExternalId(
         factoryId,
-        startedAt,
-        new Date().toISOString(),
-        task,
-        run,
-        events,
-        [],
-      ),
-    )
-  })
+        `D bounded loop ${isoStamp()}`,
+      )
+      const task = await runUntilState(
+        factoryId,
+        taskExternalId,
+        ['done', 'failed'],
+        {
+          maxTicks: 4,
+        },
+      )
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
-  it('E: checkpointed resume avoids replay across feedback ticks', async () => {
-    const scenario = 'E_checkpoint_resume'
-    const factoryId = 'verify-resume-budget'
-    const startedAt = new Date().toISOString()
-    const token = notionToken()!
+      expect(task.state).toBe('done')
+      expect(events.some(e => e.type === 'step')).toBe(true)
 
-    const queueWithFeedback = async (
-      taskRow: TaskRow,
-      feedback: string,
-    ): Promise<void> => {
-      const {db} = await openApp({projectRoot: requireProjectRoot()})
-      const existingCtx = taskRow.stepVarsJson
-        ? (JSON.parse(taskRow.stepVarsJson) as Record<string, unknown>)
+      const context = (() => {
+        if (!task.stepVarsJson) {
+          return {}
+        }
+        try {
+          return JSON.parse(task.stepVarsJson) as Record<string, unknown>
+        } catch {
+          return {}
+        }
+      })()
+      expect(Number(context['loop_iterations_seen'])).toBe(2)
+
+      artifacts.push(
+        summarizeScenario(
+          scenario,
+          factoryId,
+          startedAt,
+          new Date().toISOString(),
+          task,
+          run,
+          events,
+          [],
+        ),
+      )
+    })
+
+    it('E: checkpointed resume avoids replay across feedback ticks', async () => {
+      const scenario = 'E_checkpoint_resume'
+      const factoryId = 'verify-resume-budget'
+      const startedAt = new Date().toISOString()
+      const token = notionToken()!
+
+      const queueWithFeedback = async (
+        taskRow: TaskRow,
+        feedback: string,
+      ): Promise<void> => {
+        const {db} = await openApp({projectRoot: requireProjectRoot()})
+        const existingCtx = taskRow.stepVarsJson
+          ? (JSON.parse(taskRow.stepVarsJson) as Record<string, unknown>)
+          : {}
+        await db
+          .update(tasks)
+          .set({
+            state: 'queued',
+            stepVarsJson: JSON.stringify({
+              ...existingCtx,
+              human_feedback: feedback,
+            }),
+            waitingSince: null,
+            updatedAt: nowIso(),
+          })
+          .where(eq(tasks.id, taskRow.id))
+        await notionUpdateTaskPageState(token, taskRow.externalTaskId, 'queued')
+      }
+
+      const taskExternalId = await createTaskAndReadNewExternalId(
+        factoryId,
+        `E checkpoint resume ${isoStamp()}`,
+      )
+
+      const firstPause = await runUntilState(
+        factoryId,
+        taskExternalId,
+        ['feedback'],
+        {
+          maxTicks: 6,
+        },
+      )
+
+      const firstPauseCtx = firstPause.stepVarsJson
+        ? (JSON.parse(firstPause.stepVarsJson) as Record<string, unknown>)
         : {}
-      await db
-        .update(tasks)
-        .set({
-          state: 'queued',
-          stepVarsJson: JSON.stringify({
-            ...existingCtx,
-            human_feedback: feedback,
-          }),
-          waitingSince: null,
-          updatedAt: nowIso(),
-        })
-        .where(eq(tasks.id, taskRow.id))
-      await notionUpdateTaskPageState(token, taskRow.externalTaskId, 'queued')
-    }
+      expect(firstPauseCtx.__nf_checkpoint).toEqual({
+        v: 1,
+        path: [{k: 'flow', at: 1}],
+      })
 
-    const taskExternalId = await createTaskAndReadNewExternalId(
-      factoryId,
-      `E checkpoint resume ${isoStamp()}`,
-    )
+      await queueWithFeedback(firstPause, 'checkpoint-feedback-1')
 
-    const firstPause = await runUntilState(
-      factoryId,
-      taskExternalId,
-      ['feedback'],
-      {
-        maxTicks: 6,
-      },
-    )
-
-    const firstPauseCtx = firstPause.stepVarsJson
-      ? (JSON.parse(firstPause.stepVarsJson) as Record<string, unknown>)
-      : {}
-    expect(firstPauseCtx.__nf_checkpoint).toEqual({
-      v: 1,
-      path: [{k: 'flow', at: 1}],
-    })
-
-    await queueWithFeedback(firstPause, 'checkpoint-feedback-1')
-
-    const secondPause = await runUntilState(
-      factoryId,
-      taskExternalId,
-      ['feedback'],
-      {
-        maxTicks: 6,
-      },
-    )
-
-    const secondPauseCtx = secondPause.stepVarsJson
-      ? (JSON.parse(secondPause.stepVarsJson) as Record<string, unknown>)
-      : {}
-    expect(secondPauseCtx.step_a_runs).toBe(1)
-    expect(secondPauseCtx.step_b_runs).toBe(1)
-    expect(secondPauseCtx.__nf_checkpoint).toEqual({
-      v: 1,
-      path: [{k: 'flow', at: 3}],
-    })
-
-    await queueWithFeedback(secondPause, 'checkpoint-feedback-2')
-
-    const task = await runUntilState(factoryId, taskExternalId, ['done'], {
-      maxTicks: 6,
-    })
-
-    const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
-
-    expect(task.state).toBe('done')
-
-    const doneCtx = task.stepVarsJson
-      ? (JSON.parse(task.stepVarsJson) as Record<string, unknown>)
-      : {}
-    expect(doneCtx.step_a_runs).toBe(1)
-    expect(doneCtx.step_b_runs).toBe(1)
-    expect(doneCtx.first_feedback).toBe('checkpoint-feedback-1')
-    expect(doneCtx.second_feedback).toBe('checkpoint-feedback-2')
-
-    const expectedPath = [
-      '__pipe_run__->__pipe_feedback__',
-      '__pipe_feedback__->__pipe_feedback__',
-      '__pipe_feedback__->__pipe_done__',
-    ]
-    const actualPath = transitionLike(events).map(
-      e => `${e.fromStateId}->${e.toStateId}`,
-    )
-    expect(actualPath).toEqual(expectedPath)
-
-    const distinctTicks = new Set(transitionLike(events).map(e => e.tickId))
-    expect(distinctTicks.size).toBeGreaterThanOrEqual(3)
-
-    artifacts.push(
-      summarizeScenario(
-        scenario,
+      const secondPause = await runUntilState(
         factoryId,
-        startedAt,
-        new Date().toISOString(),
-        task,
-        run,
-        events,
-        ['checkpoint path exact-match', 'no pre-ask replay across ticks'],
-      ),
-    )
-  })
+        taskExternalId,
+        ['feedback'],
+        {
+          maxTicks: 6,
+        },
+      )
+
+      const secondPauseCtx = secondPause.stepVarsJson
+        ? (JSON.parse(secondPause.stepVarsJson) as Record<string, unknown>)
+        : {}
+      expect(secondPauseCtx.step_a_runs).toBe(1)
+      expect(secondPauseCtx.step_b_runs).toBe(1)
+      expect(secondPauseCtx.__nf_checkpoint).toEqual({
+        v: 1,
+        path: [{k: 'flow', at: 3}],
+      })
+
+      await queueWithFeedback(secondPause, 'checkpoint-feedback-2')
+
+      const task = await runUntilState(factoryId, taskExternalId, ['done'], {
+        maxTicks: 6,
+      })
+
+      const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
+
+      expect(task.state).toBe('done')
+
+      const doneCtx = task.stepVarsJson
+        ? (JSON.parse(task.stepVarsJson) as Record<string, unknown>)
+        : {}
+      expect(doneCtx.step_a_runs).toBe(1)
+      expect(doneCtx.step_b_runs).toBe(1)
+      expect(doneCtx.first_feedback).toBe('checkpoint-feedback-1')
+      expect(doneCtx.second_feedback).toBe('checkpoint-feedback-2')
+
+      const expectedPath = [
+        '__pipe_run__->__pipe_feedback__',
+        '__pipe_feedback__->__pipe_feedback__',
+        '__pipe_feedback__->__pipe_done__',
+      ]
+      const actualPath = transitionLike(events).map(
+        e => `${e.fromStateId}->${e.toStateId}`,
+      )
+      expect(actualPath).toEqual(expectedPath)
+
+      const distinctTicks = new Set(transitionLike(events).map(e => e.tickId))
+      expect(distinctTicks.size).toBeGreaterThanOrEqual(3)
+
+      artifacts.push(
+        summarizeScenario(
+          scenario,
+          factoryId,
+          startedAt,
+          new Date().toISOString(),
+          task,
+          run,
+          events,
+          ['checkpoint path exact-match', 'no pre-ask replay across ticks'],
+        ),
+      )
+    })
   },
 )

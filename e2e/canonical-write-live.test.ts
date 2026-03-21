@@ -29,85 +29,85 @@ if (liveSuiteEnabled) {
 ;(liveSuiteEnabled ? describe : describe.skip)(
   'canonical write live e2e',
   () => {
-  let fixture: TempProjectFixture | null = null
+    let fixture: TempProjectFixture | null = null
 
-  afterEach(async () => {
-    if (!fixture) return
-    await fixture.cleanup()
-    fixture = null
-  })
-
-  afterAll(async () => {
-    await finishLiveBoardSuite()
-  })
-
-  it('appends rendered write output to the Notion task page via writePage adapter', async () => {
-    fixture = await createTempProjectFixture('notionflow-write-live-')
-    await execCli(['init'], fixture.projectDir)
-    await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
-      writeLiveConfigSource(),
-      'utf8',
-    )
-    await writeFile(
-      path.join(fixture.projectDir, 'pipes', 'write-live.ts'),
-      writeLiveFactorySource(),
-      'utf8',
-    )
-
-    const board = await resolveSharedBoardConnection()
-    await execCli(
-      ['integrations', 'notion', 'setup', '--url', board.url],
-      fixture.projectDir,
-    )
-
-    const created = await execCli(
-      [
-        'integrations',
-        'notion',
-        'create-task',
-        '--factory',
-        'write-live',
-        '--title',
-        'Canonical write live e2e task',
-        '--status',
-        'queue',
-      ],
-      fixture.projectDir,
-    )
-    const taskExternalId = extractTaskExternalId(created.stdout)
-    const token = notionToken()
-    if (!token) {
-      throw new Error('NOTION_API_TOKEN is required for live write e2e')
-    }
-
-    const marker = `canonical-write-live-${Date.now()}`
-    const writePipe = definePipe({
-      id: 'write-live-e2e',
-      initial: {score: 9},
-      run: write<{score: number}>(ctx => ({
-        markdown: `## ${marker}\n\nscore=${ctx.score}`,
-      })),
+    afterEach(async () => {
+      if (!fixture) return
+      await fixture.cleanup()
+      fixture = null
     })
 
-    const result = await writePipe.run({
-      ctx: {score: 9},
-      runId: `run-${Date.now()}`,
-      tickId: `tick-${Date.now()}`,
-      task: {
-        id: taskExternalId,
-        title: 'Canonical write live e2e task',
-      },
-      writePage: async output => {
-        const markdown = typeof output === 'string' ? output : output.markdown
-        await notionAppendMarkdownToPage(token, taskExternalId, markdown)
-      },
+    afterAll(async () => {
+      await finishLiveBoardSuite()
     })
 
-    expect(result).toEqual({score: 9})
-    const body = await waitForPageBodyContains(token, taskExternalId, marker)
-    expect(body).toContain('score=9')
-  }, 180_000)
+    it('appends rendered write output to the Notion task page via writePage adapter', async () => {
+      fixture = await createTempProjectFixture('notionflow-write-live-')
+      await execCli(['init'], fixture.projectDir)
+      await writeFile(
+        path.join(fixture.projectDir, 'notionflow.config.ts'),
+        writeLiveConfigSource(),
+        'utf8',
+      )
+      await writeFile(
+        path.join(fixture.projectDir, 'pipes', 'write-live.ts'),
+        writeLiveFactorySource(),
+        'utf8',
+      )
+
+      const board = await resolveSharedBoardConnection()
+      await execCli(
+        ['integrations', 'notion', 'setup', '--url', board.url],
+        fixture.projectDir,
+      )
+
+      const created = await execCli(
+        [
+          'integrations',
+          'notion',
+          'create-task',
+          '--factory',
+          'write-live',
+          '--title',
+          'Canonical write live e2e task',
+          '--status',
+          'queue',
+        ],
+        fixture.projectDir,
+      )
+      const taskExternalId = extractTaskExternalId(created.stdout)
+      const token = notionToken()
+      if (!token) {
+        throw new Error('NOTION_API_TOKEN is required for live write e2e')
+      }
+
+      const marker = `canonical-write-live-${Date.now()}`
+      const writePipe = definePipe({
+        id: 'write-live-e2e',
+        initial: {score: 9},
+        run: write<{score: number}>(ctx => ({
+          markdown: `## ${marker}\n\nscore=${ctx.score}`,
+        })),
+      })
+
+      const result = await writePipe.run({
+        ctx: {score: 9},
+        runId: `run-${Date.now()}`,
+        tickId: `tick-${Date.now()}`,
+        task: {
+          id: taskExternalId,
+          title: 'Canonical write live e2e task',
+        },
+        writePage: async output => {
+          const markdown = typeof output === 'string' ? output : output.markdown
+          await notionAppendMarkdownToPage(token, taskExternalId, markdown)
+        },
+      })
+
+      expect(result).toEqual({score: 9})
+      const body = await waitForPageBodyContains(token, taskExternalId, marker)
+      expect(body).toContain('score=9')
+    }, 180_000)
   },
 )
 
@@ -194,7 +194,7 @@ function extractTaskExternalId(stdout: string): string {
 function writeLiveConfigSource(): string {
   return [
     'export default {',
-    '  factories: ["./pipes/write-live.ts"],',
+    '  pipes: ["./pipes/write-live.ts"],',
     '};',
     '',
   ].join('\n')

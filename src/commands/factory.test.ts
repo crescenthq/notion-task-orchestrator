@@ -18,12 +18,14 @@ describe('factory command', () => {
   })
 
   it('creates a scaffold that does not import notionflow from the project tree', async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), 'notionflow-factory-'))
+    const projectRoot = await mkdtemp(
+      path.join(tmpdir(), 'notionflow-factory-'),
+    )
     tempDirs.push(projectRoot)
 
     await writeFile(
       path.join(projectRoot, 'notionflow.config.ts'),
-      'export default { factories: [] }\n',
+      'export default { pipes: [] }\n',
       'utf8',
     )
     process.chdir(projectRoot)
@@ -54,6 +56,8 @@ describe('factory command', () => {
     )
     expect(scaffold).not.toContain("from 'notionflow'")
     expect(scaffold).toContain('export default {')
-    expect(scaffold).toContain("run: async ({ctx}) => ({...ctx, result: 'ok'}),")
+    expect(scaffold).toContain(
+      "run: async ({ctx}) => ({...ctx, result: 'ok'}),",
+    )
   })
 })
