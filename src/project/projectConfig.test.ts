@@ -51,6 +51,30 @@ describe('projectConfig', () => {
     expect(loaded.map(entry => entry.definition.id)).toEqual(['named-factory'])
   })
 
+  it('treats explicit empty pipes as default top-level discovery', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-empty-pipes-',
+    )
+    const pipesDir = path.join(projectRoot, 'pipes')
+    await mkdir(pipesDir, {recursive: true})
+
+    const defaultFactoryPath = path.join(pipesDir, 'default.mjs')
+    await writeMinimalFactory(defaultFactoryPath, 'default-factory')
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, `export default { pipes: [] };\n`, 'utf8')
+
+    const config = await loadProjectConfig(configPath)
+    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+      defaultFactoryPath,
+    ])
+
+    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    expect(loaded.map(entry => entry.definition.id)).toEqual([
+      'default-factory',
+    ])
+  })
+
   it('loads config and resolves declared directory and exact factory paths', async () => {
     const projectRoot = await createFixture('notionflow-project-config-')
     const pipesDir = path.join(projectRoot, 'pipes')
@@ -116,14 +140,10 @@ describe('projectConfig', () => {
     expect(loaded.map(entry => entry.definition.id)).toEqual(['alpha-factory'])
   })
 
-  it('accepts legacy factories as an alias for pipes', async () => {
-    const projectRoot = await createFixture('notionflow-project-config-legacy-')
-    const pipesDir = path.join(projectRoot, 'pipes')
-    await mkdir(pipesDir, {recursive: true})
-
-    const legacyFactoryPath = path.join(pipesDir, 'legacy.mjs')
-    await writeMinimalFactory(legacyFactoryPath, 'legacy-factory')
-
+  it('rejects configs that use the removed factories key', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-factories-',
+    )
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
@@ -131,26 +151,8 @@ describe('projectConfig', () => {
       'utf8',
     )
 
-    await expect(loadProjectConfig(configPath)).resolves.toEqual({
-      name: undefined,
-      pipes: ['./pipes/legacy.mjs'],
-    })
-
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
-    expect(loaded.map(entry => entry.definition.id)).toEqual(['legacy-factory'])
-  })
-
-  it('rejects configs that declare both pipes and legacy factories', async () => {
-    const projectRoot = await createFixture('notionflow-project-config-both-')
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
-    await writeFile(
-      configPath,
-      `export default { pipes: ["./pipes/alpha.mjs"], factories: ["./pipes/beta.mjs"] };\n`,
-      'utf8',
-    )
-
     await expect(loadProjectConfig(configPath)).rejects.toThrowError(
-      /Use `pipes` or legacy `factories`, not both/,
+      /`factories` is no longer supported; use `pipes`/,
     )
   })
 

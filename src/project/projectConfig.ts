@@ -5,34 +5,23 @@ import {z} from 'zod'
 import {loadFactoryFromPath} from '../core/factory'
 import type {LoadedFactoryDefinition} from '../core/factory'
 
-const factoryDeclarationSchema = z.string().trim().min(1)
+const pipeDeclarationSchema = z.string().trim().min(1)
 
-const projectConfigInputSchema = z
-  .object({
-    name: z.string().trim().min(1).optional(),
-    pipes: z.array(factoryDeclarationSchema).optional(),
-    factories: z.array(factoryDeclarationSchema).optional(),
-  })
-  .superRefine((config, ctx) => {
-    if (config.pipes && config.factories) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['factories'],
-        message: 'Use `pipes` or legacy `factories`, not both',
-      })
-    }
-  })
+const projectConfigInputSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  pipes: z.array(pipeDeclarationSchema).optional(),
+})
 
 const projectConfigSchema = projectConfigInputSchema.transform(config => ({
   name: config.name,
-  pipes: config.pipes ?? config.factories ?? [],
+  pipes: config.pipes ?? [],
 }))
 
 const DEFAULT_FACTORY_DIRECTORY = './pipes'
 const FACTORY_MODULE_FILE_PATTERN =
   /^(?!.*\.d\.(?:cts|mts|ts)$).+\.(?:cts|mts|ts|cjs|mjs|js)$/
 
-export type FactoryDeclaration = z.output<typeof factoryDeclarationSchema>
+export type PipeDeclaration = z.output<typeof pipeDeclarationSchema>
 export type ProjectConfigInput = z.input<typeof projectConfigInputSchema>
 export type ProjectConfig = z.output<typeof projectConfigSchema>
 
@@ -57,10 +46,10 @@ export class ProjectConfigLoadError extends Error {
   }
 }
 
-class FactoryDeclarationResolutionError extends Error {
+class PipeDeclarationResolutionError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = 'FactoryDeclarationResolutionError'
+    this.name = 'PipeDeclarationResolutionError'
   }
 }
 
@@ -83,6 +72,16 @@ export async function loadProjectConfig(
     const reason = error instanceof Error ? error.message : String(error)
     throw new ProjectConfigLoadError(
       `Failed to load project config module: ${resolvedConfigPath}\n${reason}`,
+      resolvedConfigPath,
+    )
+  }
+
+  if (hasDeprecatedFactoriesKey(loaded)) {
+    throw new ProjectConfigLoadError(
+      [
+        `Invalid project config: ${resolvedConfigPath}`,
+        'factories: `factories` is no longer supported; use `pipes`',
+      ].join('\n'),
       resolvedConfigPath,
     )
   }
@@ -128,7 +127,7 @@ export async function loadDeclaredFactories(options: {
       options.projectRoot,
     )
   } catch (error) {
-    if (error instanceof FactoryDeclarationResolutionError) {
+    if (error instanceof PipeDeclarationResolutionError) {
       throw new ProjectConfigLoadError(error.message, resolvedConfigPath)
     }
 
@@ -201,12 +200,12 @@ async function resolveDeclaredFactoryPaths(
   const declarations =
     config.pipes.length > 0
       ? config.pipes
-      : ([DEFAULT_FACTORY_DIRECTORY] satisfies FactoryDeclaration[])
+      : ([DEFAULT_FACTORY_DIRECTORY] satisfies PipeDeclaration[])
   const allowMissingDefaultDirectory = config.pipes.length === 0
 
   const resolvedEntries: ResolvedFactoryPath[] = []
   for (const declaration of declarations) {
-    const resolvedDeclaration = await resolveFactoryDeclaration(
+    const resolvedDeclaration = await resolvePipeDeclaration(
       declaration,
       projectRoot,
       {
@@ -222,8 +221,8 @@ async function resolveDeclaredFactoryPaths(
   return dedupeResolvedFactoryPaths(resolvedEntries)
 }
 
-async function resolveFactoryDeclaration(
-  declaration: FactoryDeclaration,
+async function resolvePipeDeclaration(
+  declaration: PipeDeclaration,
   projectRoot: string,
   options: {allowMissing: boolean},
 ): Promise<ResolvedFactoryPath[]> {
@@ -233,7 +232,7 @@ async function resolveFactoryDeclaration(
   if (targetType === 'missing') {
     if (options.allowMissing) return []
 
-    throw new FactoryDeclarationResolutionError(
+    throw new PipeDeclarationResolutionError(
       [
         `Declared factory path does not exist: ${declaration}`,
         `Resolved path: ${resolvedPath}`,
@@ -246,7 +245,7 @@ async function resolveFactoryDeclaration(
   }
 
   if (targetType !== 'file') {
-    throw new FactoryDeclarationResolutionError(
+    throw new PipeDeclarationResolutionError(
       [
         `Declared factory path is not a file or directory: ${declaration}`,
         `Resolved path: ${resolvedPath}`,
@@ -335,6 +334,14 @@ function dedupeResolvedFactoryPaths(
   }
 
   return uniqueEntries
+}
+
+function hasDeprecatedFactoriesKey(value: unknown): boolean {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  return Object.prototype.hasOwnProperty.call(value, 'factories')
 }
 
 function toPortableRelativePath(from: string, to: string): string {
