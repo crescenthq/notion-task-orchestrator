@@ -7,10 +7,12 @@ import type {LoadedFactoryDefinition} from '../core/factory'
 
 const pipeDeclarationSchema = z.string().trim().min(1)
 
-const projectConfigInputSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  pipes: z.array(pipeDeclarationSchema).optional(),
-})
+const projectConfigInputSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    pipes: z.array(pipeDeclarationSchema).optional(),
+  })
+  .strict()
 
 const projectConfigSchema = projectConfigInputSchema.transform(config => ({
   name: config.name,
@@ -72,16 +74,6 @@ export async function loadProjectConfig(
     const reason = error instanceof Error ? error.message : String(error)
     throw new ProjectConfigLoadError(
       `Failed to load project config module: ${resolvedConfigPath}\n${reason}`,
-      resolvedConfigPath,
-    )
-  }
-
-  if (hasDeprecatedFactoriesKey(loaded)) {
-    throw new ProjectConfigLoadError(
-      [
-        `Invalid project config: ${resolvedConfigPath}`,
-        'factories: `factories` is no longer supported; use `pipes`',
-      ].join('\n'),
       resolvedConfigPath,
     )
   }
@@ -334,14 +326,6 @@ function dedupeResolvedFactoryPaths(
   }
 
   return uniqueEntries
-}
-
-function hasDeprecatedFactoriesKey(value: unknown): boolean {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  return Object.prototype.hasOwnProperty.call(value, 'factories')
 }
 
 function toPortableRelativePath(from: string, to: string): string {

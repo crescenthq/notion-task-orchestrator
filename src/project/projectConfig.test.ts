@@ -152,7 +152,7 @@ describe('projectConfig', () => {
     )
 
     await expect(loadProjectConfig(configPath)).rejects.toThrowError(
-      /`factories` is no longer supported; use `pipes`/,
+      /Unrecognized key: "factories"/,
     )
   })
 
