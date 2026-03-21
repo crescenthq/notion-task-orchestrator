@@ -1,0 +1,27 @@
+docs/cli-reference.md
+  7592245944e13602 34-40,69-70,201,206-218
+README.md
+  7592245944e13602 4,8-9,15,20-26,30,76-108,134-142
+docs/architecture.md
+  7592245944e13602 3-4,26,51-52,54-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "271d5acf4e532b84b79786147c8b56a01188082c",
+  "prompts": {
+    "7592245944e13602": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d10e9-fcc8-7a80-8144-e45f91dcc027",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 101,
+      "total_deletions": 7,
+      "accepted_lines": 101,
+      "overriden_lines": 0
+    }
+  }
+}
