@@ -9,8 +9,11 @@ Workspace-Backed Pipe Execution Progress:
   - US-002: Extended runtime path support in `src/config/paths.ts` and `src/app/context.ts` so `.notionflow` now provisions dedicated directories for managed mirrors, workspace manifests, and per-run worktrees.
   - US-002: Added `src/core/workspaceRuntime.ts` to validate workspace repo sources, create or refresh managed bare mirrors, materialize run-scoped git worktrees, and persist workspace manifests with root/cwd/ref metadata.
   - US-002: Added unit coverage in `src/core/workspaceRuntime.test.ts` for project-repo mode, explicit repo mode, invalid repo sources, and unresolved refs.
+  - US-003: Updated `src/core/pipeRuntime.ts` so `runPipeTaskByExternalId` resolves the active project config from the runtime project root, provisions the run workspace keyed by `runId`, and does so immediately before `pipeDefinition.run(...)` executes.
+  - US-003: Updated `src/core/pipeRuntime.test.ts` to run against temporary git-backed projects and added coverage that verifies workspace manifests/worktrees exist before pipe execution and that project-repo workspaces map monorepo `projectRoot` paths to the correct workspace `cwd`.
 - Notes:
   - Verification:
-    - `npm run check`
-    - `npx vitest run src/project/projectConfig.test.ts`
-    - `npx vitest run src/core/workspaceRuntime.test.ts`
+    - `npm run check` (pass)
+    - `npx vitest run src/project/projectConfig.test.ts` (pass)
+    - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
+    - `npx vitest run src/core/pipeRuntime.test.ts` (pass)

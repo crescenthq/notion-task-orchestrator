@@ -1,4 +1,12 @@
-import {mkdtemp, rm, writeFile} from 'node:fs/promises'
+import {execFile} from 'node:child_process'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {eq} from 'drizzle-orm'
@@ -9,16 +17,23 @@ const homes: string[] = []
 const originalHome = process.env.HOME
 const originalProjectRoot = process.env.NOTIONFLOW_PROJECT_ROOT
 
-async function setupRuntime() {
+async function setupRuntime(options: {projectSubdir?: string} = {}) {
   const home = await mkdtemp(path.join(tmpdir(), 'notionflow-runtime-test-'))
   homes.push(home)
+  const projectRoot = options.projectSubdir
+    ? path.join(home, options.projectSubdir)
+    : home
+
+  await initGitRepo(home)
   process.env.HOME = home
-  process.env.NOTIONFLOW_PROJECT_ROOT = home
+  process.env.NOTIONFLOW_PROJECT_ROOT = projectRoot
+  await mkdir(projectRoot, {recursive: true})
   await writeFile(
-    path.join(home, 'notionflow.config.ts'),
+    path.join(projectRoot, 'notionflow.config.ts'),
     'export default { pipes: [] };\n',
     'utf8',
   )
+  await commitAll(home, 'initial runtime project')
   vi.resetModules()
 
   const [{nowIso, openApp}, {paths}, runtime, schema] = await Promise.all([
@@ -30,7 +45,7 @@ async function setupRuntime() {
 
   const {db} = await openApp()
   const timestamp = nowIso()
-  return {db, paths, runtime, schema, timestamp}
+  return {db, paths, runtime, schema, timestamp, projectRoot, repoRoot: home}
 }
 
 async function insertQueuedTask(input: {
@@ -208,6 +223,74 @@ describe('pipeRuntime (definePipe only)', () => {
     expect(adapter.appendLog).toHaveBeenCalled()
   })
 
+  it('provisions a workspace before direct pipe execution and keys it by run id', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-workspace-provisioning'
+    const externalTaskId = 'task-runtime-workspace-provisioning-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `import {existsSync, readFileSync} from "node:fs";
+import path from "node:path";
+
+export default {
+  id: "${factoryId}",
+  initial: { checks: 0 },
+  run: async ({ ctx, runId }) => {
+    const projectRoot = process.env.NOTIONFLOW_PROJECT_ROOT;
+    const manifestPath = path.join(
+      projectRoot,
+      ".notionflow",
+      "workspace-manifests",
+      \`\${runId}.json\`,
+    );
+    const workspaceRoot = path.join(
+      projectRoot,
+      ".notionflow",
+      "workspaces",
+      runId,
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    return {
+      ...ctx,
+      checks: Number(ctx.checks ?? 0) + 1,
+      manifestExistsBeforeRun: existsSync(manifestPath),
+      workspaceExistsBeforeRun: existsSync(workspaceRoot),
+      workspaceRoot,
+      manifestRunId: manifest.runId,
+    };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    const persistedCtx = JSON.parse(
+      updatedTask?.stepVarsJson ?? '{}',
+    ) as Record<string, unknown>
+
+    const [run] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, updatedTask!.id))
+
+    expect(persistedCtx.manifestExistsBeforeRun).toBe(true)
+    expect(persistedCtx.workspaceExistsBeforeRun).toBe(true)
+    expect(persistedCtx.workspaceRoot).toBe(
+      path.join(paths.workspacesDir, run!.id),
+    )
+    expect(persistedCtx.manifestRunId).toBe(run!.id)
+    expect(await readdir(paths.workspacesDir)).toEqual([run!.id])
+  })
+
   it('persists direct pipe feedback state and resumes from persisted context', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-direct-pipe-feedback'
@@ -302,6 +385,54 @@ describe('pipeRuntime (definePipe only)', () => {
     const traceTypes = new Set(traces.map(trace => trace.type))
     expect(traceTypes.has('await_feedback')).toBe(true)
     expect(traceTypes.has('resumed')).toBe(true)
+  })
+
+  it('maps default project workspaces to the project-root-relative cwd for monorepos', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime({
+      projectSubdir: path.join('apps', 'web'),
+    })
+    const factoryId = 'runtime-monorepo-project-workspace'
+    const externalTaskId = 'task-runtime-monorepo-project-workspace-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: { ok: false },
+  run: async ({ ctx }) => ({ ...ctx, ok: true }),
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    const [run] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, updatedTask!.id))
+
+    const manifestPath = path.join(
+      paths.workspaceManifestsDir,
+      `${run!.id}.json`,
+    )
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<
+      string,
+      string
+    >
+
+    expect(manifest.root).toBe(path.join(paths.workspacesDir, run!.id))
+    expect(manifest.relativeCwd).toBe(path.join('apps', 'web'))
+    expect(manifest.cwd).toBe(path.join(manifest.root, 'apps', 'web'))
+    expect(
+      await readFile(path.join(manifest.cwd, 'notionflow.config.ts'), 'utf8'),
+    ).toContain('export default')
   })
 
   it('coerces unbranded control signals emitted by direct pipe factories', async () => {
@@ -827,3 +958,28 @@ export default definePipe({
     expect(updatedTask?.state).toBe('done')
   }, 12_000)
 })
+
+async function initGitRepo(repoRoot: string): Promise<void> {
+  await runGit(['init'], repoRoot)
+  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
+  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+}
+
+async function commitAll(repoRoot: string, message: string): Promise<string> {
+  await runGit(['add', '.'], repoRoot)
+  await runGit(['commit', '-m', message], repoRoot)
+  return runGit(['rev-parse', '--verify', 'HEAD'], repoRoot)
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
+}

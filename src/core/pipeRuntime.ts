@@ -15,7 +15,11 @@ import {
   type ResolvedProjectConfig,
   resolveProjectConfig,
 } from '../project/discoverConfig'
-import {loadDeclaredPipes} from '../project/projectConfig'
+import {
+  loadDeclaredPipes,
+  loadProjectConfig,
+  resolveWorkspaceConfig,
+} from '../project/projectConfig'
 import {formatStatusLabel} from '../services/statusIcons'
 import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
 import {parseRunTrace, type RunTraceReasonCode} from './runTraces'
@@ -25,6 +29,7 @@ import {
   type TaskBoardAdapter,
   type TaskBoardState,
 } from './taskBoardAdapter'
+import {provisionRunWorkspace} from './workspaceRuntime'
 
 type JsonObject = Record<string, unknown>
 
@@ -191,6 +196,39 @@ function normalizeRuntimeRunOptions(
   return {maxTransitionsPerTick, leaseMs, leaseMode, workerId}
 }
 
+function resolveRuntimeStartDir(options: RuntimeRunOptions): string {
+  if (options.startDir !== undefined) {
+    return options.startDir
+  }
+
+  const projectRootOverride = process.env.NOTIONFLOW_PROJECT_ROOT?.trim()
+  return projectRootOverride && projectRootOverride.length > 0
+    ? projectRootOverride
+    : process.cwd()
+}
+
+async function provisionRuntimeWorkspace(options: {
+  paths: Awaited<ReturnType<typeof openApp>>['paths']
+  projectConfig: ResolvedProjectConfig | null
+  runId: string
+}): Promise<void> {
+  if (!options.projectConfig) return
+
+  const config = await loadProjectConfig(options.projectConfig.configPath)
+  const workspace = await resolveWorkspaceConfig({
+    config,
+    projectRoot: options.projectConfig.projectRoot,
+    configPath: options.projectConfig.configPath,
+  })
+
+  await provisionRunWorkspace({
+    paths: options.paths,
+    projectRoot: options.projectConfig.projectRoot,
+    workspace,
+    runId: options.runId,
+  })
+}
+
 function leaseExpiryIso(leaseMs: number): string {
   return new Date(Date.now() + leaseMs).toISOString()
 }
@@ -261,7 +299,7 @@ export async function runPipeTaskByExternalId(
   options: RuntimeRunOptions = {},
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options)
-  const startDir = options.startDir ?? process.cwd()
+  const startDir = resolveRuntimeStartDir(options)
   const {db, paths} = await openApp({
     startDir,
     configPath: options.configPath,
@@ -819,6 +857,12 @@ export async function runPipeTaskByExternalId(
 
     let result: unknown
     try {
+      await provisionRuntimeWorkspace({
+        paths,
+        projectConfig: resolvedProjectConfig,
+        runId,
+      })
+
       const runPipe = async (
         checkpoint: Checkpoint | undefined,
       ): Promise<unknown> =>
