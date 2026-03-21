@@ -1,0 +1,45 @@
+docs/factory-authoring.md
+  ecd7373dadb76681 269,285-287
+notionflow.config.ts
+  ecd7373dadb76681 3
+e2e/local-project-docs-quickstart-live.test.ts
+  ecd7373dadb76681 80,209-211
+skills/add-factory/SKILL.md
+  ecd7373dadb76681 287-289,295-298,303,383-384
+src/project/projectConfig.ts
+  ecd7373dadb76681 3,8-11,14-19,21-38,40-42,44-46,49,54-56,69-72,76,118,121-123,132,134-145,149,155,165,175,177,194,205-453
+docs/architecture.md
+  ecd7373dadb76681 30,32-36,38
+docs/cli-reference.md
+  ecd7373dadb76681 131-133
+skills/setup/SKILL.md
+  ecd7373dadb76681 87-89,95,154-156,159-160
+example-factories/README.md
+  ecd7373dadb76681 53-54,127
+example-factories/notionflow.config.ts
+  ecd7373dadb76681 3
+README.md
+  ecd7373dadb76681 16-17,36,64-83,85,87-90
+src/project/projectConfig.test.ts
+  ecd7373dadb76681 22,28,30,32-33,37-39,42,44-51,54,67,72,86-119,121-123,126-177,200,216-238,245,268,296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "d404549411f0513745ad8c6eb87498ab22eca367",
+  "prompts": {
+    "ecd7373dadb76681": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d0fc6-cd1f-7652-a04c-78d0cc3f11fc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 633,
+      "total_deletions": 179,
+      "accepted_lines": 540,
+      "overriden_lines": 0
+    }
+  }
+}
