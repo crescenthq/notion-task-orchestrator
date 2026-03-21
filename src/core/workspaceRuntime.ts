@@ -48,6 +48,12 @@ export type CleanupRunWorkspaceOptions = {
   runId: string
 }
 
+export type LoadRunWorkspaceForResumeOptions = {
+  paths: RuntimePaths
+  projectRoot: string
+  runId: string
+}
+
 export type PruneWorkspaceArtifactsOptions = {
   paths: RuntimePaths
   projectRoot: string
@@ -183,6 +189,82 @@ export async function cleanupRunWorkspace(
   return true
 }
 
+export async function loadRunWorkspaceForResume(
+  options: LoadRunWorkspaceForResumeOptions,
+): Promise<ProvisionedRunWorkspace> {
+  const projectRoot = path.resolve(options.projectRoot)
+  const runId = normalizeRunId(options.runId)
+  await ensureWorkspaceRuntimeDirs(options.paths)
+
+  const manifestPath = path.join(
+    options.paths.workspaceManifestsDir,
+    `${runId}.json`,
+  )
+  const manifest = await loadRunWorkspaceManifest(manifestPath)
+  if (!manifest) {
+    throw new WorkspaceProvisionError(
+      [
+        `Run workspace manifest is missing for resumed run \`${runId}\`.`,
+        `runId: ${runId}`,
+        `manifestPath: ${manifestPath}`,
+        'Resume requires the original workspace manifest; restore it or start a new run instead.',
+      ].join('\n'),
+    )
+  }
+
+  if (!(await pathExists(manifest.root))) {
+    throw new WorkspaceProvisionError(
+      [
+        `Run workspace is missing for resumed run \`${runId}\`.`,
+        `runId: ${runId}`,
+        `worktreePath: ${manifest.root}`,
+        'Resume requires the original workspace; restore it or start a new run instead.',
+      ].join('\n'),
+    )
+  }
+
+  const root = await resolveWorktreeRoot(manifest.root, projectRoot)
+  const relativeCwd = toRelativeWorkspacePath(root, manifest.cwd)
+  if (relativeCwd !== manifest.relativeCwd) {
+    throw new WorkspaceProvisionError(
+      [
+        `Run workspace cwd changed for resumed run \`${runId}\`.`,
+        `runId: ${runId}`,
+        `worktreePath: ${root}`,
+        `manifestCwd: ${manifest.relativeCwd}`,
+        `currentCwd: ${relativeCwd}`,
+        'Resume requires the original workspace layout; restore it or start a new run instead.',
+      ].join('\n'),
+    )
+  }
+
+  await assertWorkspaceDirectory(manifest.cwd, {
+    relativeCwd: manifest.relativeCwd,
+    root,
+  })
+
+  const ref = await resolveWorktreeHead(root, projectRoot)
+  if (ref !== manifest.ref) {
+    throw new WorkspaceProvisionError(
+      [
+        `Run workspace ref changed for resumed run \`${runId}\`.`,
+        `runId: ${runId}`,
+        `worktreePath: ${root}`,
+        `manifestRef: ${manifest.ref}`,
+        `currentRef: ${ref}`,
+        'Resume requires the original workspace checkout; restore it or start a new run instead.',
+      ].join('\n'),
+    )
+  }
+
+  return {
+    ...manifest,
+    root,
+    ref,
+    manifestPath,
+  }
+}
+
 export async function validateWorkspaceSetup(options: {
   projectRoot: string
   workspace: ResolvedWorkspaceConfig
@@ -302,7 +384,7 @@ async function ensureGitCliAvailable(projectRoot: string): Promise<void> {
 
 async function loadRunWorkspaceManifest(
   manifestPath: string,
-): Promise<{mirrorPath: string; root: string} | null> {
+): Promise<RunWorkspaceManifest | null> {
   if (!(await pathExists(manifestPath))) {
     return null
   }
@@ -311,18 +393,32 @@ async function loadRunWorkspaceManifest(
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
     if (
       !isRecord(manifest) ||
+      manifest.version !== WORKSPACE_MANIFEST_VERSION ||
+      typeof manifest.runId !== 'string' ||
+      manifest.runId.trim().length === 0 ||
+      (manifest.source !== 'project' && manifest.source !== 'repo') ||
+      typeof manifest.repo !== 'string' ||
+      manifest.repo.trim().length === 0 ||
+      typeof manifest.requestedRef !== 'string' ||
+      manifest.requestedRef.trim().length === 0 ||
+      typeof manifest.ref !== 'string' ||
+      manifest.ref.trim().length === 0 ||
+      (manifest.cleanup !== 'on-success' && manifest.cleanup !== 'never') ||
       typeof manifest.mirrorPath !== 'string' ||
       manifest.mirrorPath.trim().length === 0 ||
       typeof manifest.root !== 'string' ||
-      manifest.root.trim().length === 0
+      manifest.root.trim().length === 0 ||
+      typeof manifest.cwd !== 'string' ||
+      manifest.cwd.trim().length === 0 ||
+      typeof manifest.relativeCwd !== 'string' ||
+      manifest.relativeCwd.trim().length === 0 ||
+      typeof manifest.createdAt !== 'string' ||
+      manifest.createdAt.trim().length === 0
     ) {
-      throw new Error('workspace manifest is missing required mirrorPath/root')
+      throw new Error('workspace manifest is missing required fields')
     }
 
-    return {
-      mirrorPath: manifest.mirrorPath,
-      root: manifest.root,
-    }
+    return manifest as RunWorkspaceManifest
   } catch (error) {
     const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(

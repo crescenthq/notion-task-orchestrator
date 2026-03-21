@@ -36,6 +36,7 @@ import {
 } from './taskBoardAdapter'
 import {
   cleanupRunWorkspace,
+  loadRunWorkspaceForResume,
   type ProvisionedRunWorkspace,
   pruneWorkspaceArtifacts,
   provisionRunWorkspace,
@@ -248,6 +249,19 @@ async function provisionRuntimeWorkspace(options: {
     paths: options.paths,
     projectRoot,
   })
+  if (options.resume) {
+    const provisioned = await loadRunWorkspaceForResume({
+      paths: options.paths,
+      projectRoot,
+      runId: options.runId,
+    })
+
+    return {
+      cleanup: provisioned.cleanup,
+      workspace: createPipeWorkspaceHandle(provisioned),
+    }
+  }
+
   const workspace = options.projectConfig
     ? await resolveConfiguredRuntimeWorkspace(options.projectConfig)
     : createDefaultRuntimeWorkspace(projectRoot)

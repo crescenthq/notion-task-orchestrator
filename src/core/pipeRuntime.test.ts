@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -694,6 +695,139 @@ export default {
       path.join(paths.workspacesDir, feedbackRun!.id),
     )
     expect(doneCtx.markerPersisted).toBe(true)
+  })
+
+  it('resumes from the persisted workspace manifest even if config changes while waiting', async () => {
+    const {db, paths, runtime, schema, timestamp, projectRoot, repoRoot} =
+      await setupRuntime({
+        projectSubdir: path.join('packages', 'app'),
+        configSource: 'export default { pipes: [] };\n',
+      })
+    const canonicalRepoRoot = await realpath(repoRoot)
+    const factoryId = 'runtime-resume-persisted-manifest'
+    const externalTaskId = 'task-runtime-resume-persisted-manifest-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+    const alternateRepo = await mkdtemp(
+      path.join(tmpdir(), 'notionflow-runtime-alt-workspace-'),
+    )
+    homes.push(alternateRepo)
+
+    await initGitRepo(alternateRepo)
+    await writeFile(path.join(alternateRepo, 'README.md'), 'alternate\n', 'utf8')
+    await commitAll(alternateRepo, 'alternate workspace repo')
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: { attempts: 0 },
+  run: async ({ ctx, runId, workspace }) => {
+    const attempts = Number(ctx.attempts ?? 0) + 1;
+    if (!ctx.human_feedback) {
+      return {
+        type: "await_feedback",
+        prompt: "resume me",
+        ctx: {
+          ...ctx,
+          attempts,
+          firstRunId: runId,
+          firstWorkspaceRoot: workspace.root,
+          firstWorkspaceRepo: workspace.source.repo,
+        },
+      };
+    }
+
+    return {
+      type: "end",
+      status: "done",
+      ctx: {
+        ...ctx,
+        attempts,
+        resumedRunId: runId,
+        resumedWorkspaceRoot: workspace.root,
+        resumedWorkspaceRepo: workspace.source.repo,
+      },
+    };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [pausedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(pausedTask?.state).toBe('feedback')
+
+    const [feedbackRun] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, pausedTask!.id))
+    const pausedCtx = JSON.parse(pausedTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+
+    await writeFile(
+      path.join(projectRoot, 'notionflow.config.ts'),
+      [
+        'export default {',
+        '  pipes: [],',
+        '  workspace: {',
+        `    repo: ${JSON.stringify(`file://${alternateRepo}`)},`,
+        '    cleanup: "never",',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'approved',
+        }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [doneTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(doneTask?.state).toBe('done')
+
+    const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(doneCtx.firstRunId).toBe(feedbackRun?.id)
+    expect(doneCtx.resumedRunId).toBe(feedbackRun?.id)
+    expect(doneCtx.firstWorkspaceRoot).toBe(
+      path.join(paths.workspacesDir, feedbackRun!.id),
+    )
+    expect(doneCtx.resumedWorkspaceRoot).toBe(
+      path.join(paths.workspacesDir, feedbackRun!.id),
+    )
+    expect(doneCtx.firstWorkspaceRepo).toBe(canonicalRepoRoot)
+    expect(doneCtx.resumedWorkspaceRepo).toBe(canonicalRepoRoot)
+
+    await expect(pathExists(path.join(paths.workspacesDir, feedbackRun!.id))).resolves.toBe(false)
+    await expect(
+      pathExists(
+        path.join(paths.workspaceManifestsDir, `${feedbackRun!.id}.json`),
+      ),
+    ).resolves.toBe(false)
   })
 
   it('fails resumed runs when their original workspace is missing', async () => {
