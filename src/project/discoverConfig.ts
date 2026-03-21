@@ -1,7 +1,10 @@
 import {access, stat} from 'node:fs/promises'
 import path from 'node:path'
 
-const PROJECT_CONFIG_FILE = 'pipes.config.ts'
+const PROJECT_CONFIG_FILES = [
+  'pipes.config.ts',
+  'notionflow.config.ts',
+] as const
 
 export type ResolvedProjectConfig = {
   projectRoot: string
@@ -51,7 +54,7 @@ export async function resolveProjectConfig(
   }
 
   throw new ProjectConfigResolutionError(
-    'Could not find pipes.config.ts by walking up from the current directory.',
+    `Could not find ${PROJECT_CONFIG_FILES.join(' or ')} by walking up from the current directory.`,
     {startDir},
   )
 }
@@ -62,8 +65,8 @@ export async function discoverProjectConfig(
   let currentDir = path.resolve(startDir)
 
   while (true) {
-    const candidate = path.join(currentDir, PROJECT_CONFIG_FILE)
-    if (await pathExists(candidate)) {
+    const candidate = await findProjectConfigInDir(currentDir)
+    if (candidate) {
       return {
         projectRoot: currentDir,
         configPath: candidate,
@@ -77,6 +80,17 @@ export async function discoverProjectConfig(
 
     currentDir = parentDir
   }
+}
+
+async function findProjectConfigInDir(dir: string): Promise<string | null> {
+  for (const configFile of PROJECT_CONFIG_FILES) {
+    const candidate = path.join(dir, configFile)
+    if (await pathExists(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {

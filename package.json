@@ -5,6 +5,7 @@
   "license": "MIT",
   "author": "Kamal <https://github.com/Kamalnrf>",
   "bin": {
+    "notionflow": "./dist/cli.js",
     "pipes": "./dist/cli.js"
   },
   "type": "module",
