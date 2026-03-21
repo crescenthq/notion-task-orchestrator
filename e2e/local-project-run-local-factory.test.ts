@@ -8,7 +8,9 @@ import {nowIso, openApp} from '../src/app/context'
 import {boards, runTraces, tasks, workflows} from '../src/db/schema'
 import {
   assertNoNewGlobalNotionflowWrites,
+  commitAll,
   createTempProjectFixture,
+  initGitRepo,
   snapshotGlobalNotionflowWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
@@ -30,6 +32,7 @@ describe('local project run command', () => {
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
+    await initGitRepo(fixture.projectDir)
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'smoke.ts')
     const canonicalModuleUrl = pathToFileURL(
@@ -45,6 +48,7 @@ describe('local project run command', () => {
       configSource('./pipes/smoke.ts'),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'local run fixture')
 
     const externalTaskId = `task-${crypto.randomUUID()}`
     await insertQueuedTask(fixture.projectDir, externalTaskId, 'smoke')
@@ -59,6 +63,7 @@ describe('local project run command', () => {
       factorySource(canonicalModuleUrl, 'failed'),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'update local run fixture')
     await resetTaskToQueued(fixture.projectDir, externalTaskId)
 
     await execCli(['run', '--task', externalTaskId], fixture.projectDir)
@@ -75,6 +80,7 @@ describe('local project run command', () => {
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
+    await initGitRepo(fixture.projectDir)
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'ask-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
@@ -90,6 +96,7 @@ describe('local project run command', () => {
       configSource('./pipes/ask-resume.ts'),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'ask resume fixture')
 
     const externalTaskId = `task-${crypto.randomUUID()}`
     await insertQueuedTask(fixture.projectDir, externalTaskId, 'ask-resume')
@@ -137,6 +144,7 @@ describe('local project run command', () => {
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
+    await initGitRepo(fixture.projectDir)
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'pipe-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
@@ -152,6 +160,7 @@ describe('local project run command', () => {
       configSource('./pipes/pipe-resume.ts'),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'direct pipe resume fixture')
 
     const externalTaskId = `task-${crypto.randomUUID()}`
     await insertQueuedTask(fixture.projectDir, externalTaskId, 'pipe-resume')

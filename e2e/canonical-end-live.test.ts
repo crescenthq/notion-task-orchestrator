@@ -7,7 +7,9 @@ import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {notionGetPage, pageState} from '../src/services/notion'
 import {
+  commitAll,
   createTempProjectFixture,
+  initGitRepo,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
@@ -39,6 +41,7 @@ if (liveSuiteEnabled) {
   it('syncs terminal done/blocked/failed states to Notion task State', async () => {
     fixture = await createTempProjectFixture('notionflow-end-live-')
     await execCli(['init'], fixture.projectDir)
+    await initGitRepo(fixture.projectDir)
 
     const canonicalModuleUrl = pathToFileURL(
       path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
@@ -67,6 +70,7 @@ if (liveSuiteEnabled) {
       ),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'canonical end live fixture')
 
     const board = await resolveSharedBoardConnection()
     await execCli(

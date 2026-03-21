@@ -17,6 +17,9 @@ import {
   resolveProjectConfig,
 } from '../project/discoverConfig'
 import {
+  DEFAULT_WORKSPACE_CLEANUP,
+  DEFAULT_WORKSPACE_CWD,
+  DEFAULT_WORKSPACE_REF,
   loadDeclaredPipes,
   loadProjectConfig,
   type ResolvedWorkspaceConfig,
@@ -214,6 +217,22 @@ function resolveRuntimeStartDir(options: RuntimeRunOptions): string {
     : process.cwd()
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function pruneWorkspaceArtifactsBestEffort(options: {
+  paths: Awaited<ReturnType<typeof openApp>>['paths']
+  projectRoot: string
+}): Promise<void> {
+  try {
+    await pruneWorkspaceArtifacts(options)
+  } catch (error) {
+    const message = getErrorMessage(error)
+    console.log(`[warn] failed to prune workspace artifacts: ${message}`)
+  }
+}
+
 async function provisionRuntimeWorkspace(options: {
   paths: Awaited<ReturnType<typeof openApp>>['paths']
   projectConfig: ResolvedProjectConfig | null
@@ -225,15 +244,10 @@ async function provisionRuntimeWorkspace(options: {
 }> {
   const projectRoot =
     options.projectConfig?.projectRoot ?? options.paths.projectRoot
-  try {
-    await pruneWorkspaceArtifacts({
-      paths: options.paths,
-      projectRoot,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.log(`[warn] failed to prune workspace artifacts: ${message}`)
-  }
+  await pruneWorkspaceArtifactsBestEffort({
+    paths: options.paths,
+    projectRoot,
+  })
   const workspace = options.projectConfig
     ? await resolveConfiguredRuntimeWorkspace(options.projectConfig)
     : createDefaultRuntimeWorkspace(projectRoot)
@@ -269,9 +283,10 @@ function createDefaultRuntimeWorkspace(
   return {
     source: 'project',
     repo: projectRoot,
-    ref: 'HEAD',
-    cwd: '.',
-    cleanup: 'on-success',
+    checkoutBase: '.',
+    ref: DEFAULT_WORKSPACE_REF,
+    cwd: DEFAULT_WORKSPACE_CWD,
+    cleanup: DEFAULT_WORKSPACE_CLEANUP,
   }
 }
 

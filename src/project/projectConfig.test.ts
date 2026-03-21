@@ -43,7 +43,6 @@ describe('projectConfig', () => {
       name: 'Asmara',
       pipes: [],
       workspace: {
-        source: 'project',
         ref: 'HEAD',
         cwd: '.',
         cleanup: 'on-success',
@@ -78,13 +77,14 @@ describe('projectConfig', () => {
     ).resolves.toEqual({
       source: 'project',
       repo: canonicalRepoRoot,
+      checkoutBase: 'packages/app',
       ref: 'HEAD',
       cwd: '.',
       cleanup: 'on-success',
     })
   })
 
-  it('parses string workspace shorthand for explicit local repo paths', async () => {
+  it('rejects string workspace shorthand for explicit local repo paths', async () => {
     const projectRoot = await createFixture(
       'notionflow-project-config-workspace-local-',
     )
@@ -96,23 +96,9 @@ describe('projectConfig', () => {
     )
 
     const config = await loadProjectConfig(configPath)
-    expect(config.workspace).toEqual({
-      source: 'repo',
-      repo: '../service-repo',
-      ref: 'HEAD',
-      cwd: '.',
-      cleanup: 'on-success',
-    })
-
     await expect(
       resolveWorkspaceConfig({config, projectRoot, configPath}),
-    ).resolves.toEqual({
-      source: 'repo',
-      repo: path.resolve(projectRoot, '../service-repo'),
-      ref: 'HEAD',
-      cwd: '.',
-      cleanup: 'on-success',
-    })
+    ).rejects.toThrowError(/explicit workspace overrides must use a git URL/)
   })
 
   it('parses string workspace shorthand for remote repo URLs', async () => {
@@ -132,6 +118,7 @@ describe('projectConfig', () => {
     ).resolves.toEqual({
       source: 'repo',
       repo: 'git@github.com:acme/service.git',
+      checkoutBase: '.',
       ref: 'HEAD',
       cwd: '.',
       cleanup: 'on-success',
@@ -161,7 +148,6 @@ describe('projectConfig', () => {
 
     await expect(loadProjectConfig(configPath)).resolves.toMatchObject({
       workspace: {
-        source: 'repo',
         repo: 'https://github.com/acme/service.git',
         ref: 'main',
         cwd: 'packages/api',
@@ -198,7 +184,6 @@ describe('projectConfig', () => {
 
     const config = await loadProjectConfig(configPath)
     expect(config.workspace).toEqual({
-      source: 'project',
       ref: 'feature/demo',
       cwd: 'apps/frontend',
       cleanup: 'never',
@@ -209,6 +194,7 @@ describe('projectConfig', () => {
     ).resolves.toEqual({
       source: 'project',
       repo: canonicalRepoRoot,
+      checkoutBase: 'packages/web',
       ref: 'feature/demo',
       cwd: 'apps/frontend',
       cleanup: 'never',

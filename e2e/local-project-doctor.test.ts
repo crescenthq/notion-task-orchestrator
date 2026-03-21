@@ -92,7 +92,7 @@ describe('local project doctor', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('reports explicit workspace overrides from projects outside git repos', async () => {
+  it('reports explicit workspace URL overrides from projects outside git repos', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     const sourceRepo = await createTempProjectFixture('notionflow-e2e-source-')
     fixtures.push(sourceRepo)
@@ -112,7 +112,7 @@ describe('local project doctor', () => {
       path.join(project.projectDir, 'notionflow.config.ts'),
       [
         'export default {',
-        `  workspace: ${JSON.stringify(sourceRepo.projectDir)},`,
+        `  workspace: ${JSON.stringify(`file://${await realpath(sourceRepo.projectDir)}`)},`,
         '};',
         '',
       ].join('\n'),
@@ -124,7 +124,7 @@ describe('local project doctor', () => {
       'Workspace execution: explicit workspace override',
     )
     expect(doctorOutput).toContain(
-      `Workspace repo: ${await realpath(sourceRepo.projectDir)}`,
+      `Workspace repo: file://${await realpath(sourceRepo.projectDir)}`,
     )
     expect(doctorOutput).toContain('Workspace cwd: .')
     expect(

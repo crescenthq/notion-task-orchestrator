@@ -102,10 +102,8 @@ if (liveSuiteEnabled) {
       )
       expect(tick.stdout).toContain('Sync complete')
 
-      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
-
       await expect(
-        readTaskState(fixture.projectDir, taskExternalId),
+        waitForTaskState(fixture.projectDir, taskExternalId, 'done'),
       ).resolves.toBe('done')
 
       const after = await snapshotGlobalNotionflowWrites()
@@ -204,6 +202,30 @@ async function readTaskState(
   }
 
   return task.state
+}
+
+async function waitForTaskState(
+  projectRoot: string,
+  taskExternalId: string,
+  expectedState: string,
+): Promise<string> {
+  const maxAttempts = 12
+  const delayMs = 1_000
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const state = await readTaskState(projectRoot, taskExternalId)
+    if (state === expectedState) {
+      return state
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+
+  throw new Error(
+    `Timed out waiting for task ${taskExternalId} state=${expectedState}`,
+  )
 }
 
 function docsConfigSource(): string {

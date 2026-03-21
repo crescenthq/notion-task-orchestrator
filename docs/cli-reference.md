@@ -66,8 +66,7 @@ workspace prerequisites without creating a run worktree.
 `notionflow.config.ts` supports three workspace forms:
 
 1. Omit `workspace` to use the git repo containing the resolved project root.
-2. Set `workspace` to a string for an explicit local repo path or remote repo
-   URL.
+2. Set `workspace` to a string for an explicit git URL.
 3. Set `workspace` to an object when you need `repo`, `ref`, `cwd`, or
    `cleanup` overrides.
 
@@ -75,7 +74,7 @@ Examples:
 
 ```ts
 export default {
-  workspace: '../service-repo',
+  workspace: 'git@github.com:acme/service.git',
 }
 ```
 

@@ -15,7 +15,9 @@ import {
 } from '../src/services/notion'
 import {
   assertNoNewGlobalNotionflowWrites,
+  commitAll,
   createTempProjectFixture,
+  initGitRepo,
   snapshotGlobalNotionflowWrites,
   type FilesystemSnapshot,
   type TempProjectFixture,
@@ -377,7 +379,9 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     globalWritesBefore = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture('notionflow-live-verify-')
     await execCli(['init'])
+    await initGitRepo(requireProjectRoot())
     await writeVerificationProjectConfig(requireProjectRoot())
+    await commitAll(requireProjectRoot(), 'live verification fixture')
     await seedVerificationWorkflows(requireProjectRoot())
     const board = await resolveSharedBoardConnection()
     await execCli(['integrations', 'notion', 'setup', '--url', board.url])

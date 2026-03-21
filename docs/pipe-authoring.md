@@ -194,13 +194,13 @@ const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
   },
 })
 
-const runPlanning = step('run-planning', async ctx => {
+const runPlanning = step('run-planning', async (ctx, input) => {
   const repo = await selectRepo.invoke({
     prompt: 'Select repository for rollout',
   })
   if (!repo.ok) return {...ctx, failure: repo.error.message}
 
-  const status = await gitStatus.invoke({cwd: ctx.workspace.cwd})
+  const status = await gitStatus.invoke({cwd: input.workspace.cwd})
   if (!status.ok) return {...ctx, failure: status.error.message}
 
   return {

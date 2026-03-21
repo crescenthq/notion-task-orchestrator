@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process'
 import {mkdtemp, readdir, rm, stat} from 'node:fs/promises'
 import type {Dirent} from 'node:fs'
 import os from 'node:os'
@@ -27,6 +28,20 @@ export async function createTempProjectFixture(
       await rm(projectDir, {recursive: true, force: true})
     },
   }
+}
+
+export async function initGitRepo(projectDir: string): Promise<void> {
+  await runGit(['init'], projectDir)
+  await runGit(['config', 'user.name', 'NotionFlow E2E'], projectDir)
+  await runGit(['config', 'user.email', 'notionflow-e2e@example.com'], projectDir)
+}
+
+export async function commitAll(
+  projectDir: string,
+  message: string,
+): Promise<void> {
+  await runGit(['add', '.'], projectDir)
+  await runGit(['commit', '-m', message], projectDir)
 }
 
 export async function snapshotGlobalNotionflowWrites(): Promise<FilesystemSnapshot> {
@@ -109,4 +124,17 @@ async function walk(
     const fileStat = await stat(absPath)
     snapshot.set(relPath, {mtimeMs: fileStat.mtimeMs, size: fileStat.size})
   }
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }

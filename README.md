@@ -100,13 +100,13 @@ import {defineConfig} from 'notionflow'
 export default defineConfig({})
 ```
 
-2. Use a string to point at an explicit local repo path or remote repo URL.
+2. Use a string to point at an explicit git URL.
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  workspace: '../service-repo',
+  workspace: 'git@github.com:acme/service.git',
 })
 ```
 

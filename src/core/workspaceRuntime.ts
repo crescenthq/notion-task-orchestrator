@@ -69,20 +69,18 @@ export class WorkspaceProvisionError extends Error {
   }
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function provisionRunWorkspace(
   options: ProvisionRunWorkspaceOptions,
 ): Promise<ProvisionedRunWorkspace> {
   const projectRoot = path.resolve(options.projectRoot)
-  const canonicalProjectRoot = await realpath(projectRoot).catch(
-    () => projectRoot,
-  )
   const runId = normalizeRunId(options.runId)
   await ensureWorkspaceRuntimeDirs(options.paths)
 
-  const sourceRepo = await resolveWorkspaceSourceRepo({
-    repo: options.workspace.repo,
-    projectRoot,
-  })
+  const sourceRepo = options.workspace.repo
   const mirrorPath = path.join(
     options.paths.workspaceMirrorsDir,
     `${buildManagedMirrorName(sourceRepo)}.git`,
@@ -114,8 +112,6 @@ export async function provisionRunWorkspace(
   const root = await resolveWorktreeRoot(worktreePath, projectRoot)
   const {cwd, relativeCwd} = resolveWorkspaceCwd({
     worktreeRoot: root,
-    projectRoot: canonicalProjectRoot,
-    repoRoot: sourceRepo,
     workspace: options.workspace,
   })
   await assertWorkspaceDirectory(cwd, {
@@ -192,36 +188,21 @@ export async function validateWorkspaceSetup(options: {
   workspace: ResolvedWorkspaceConfig
 }): Promise<ValidatedWorkspaceSetup> {
   const projectRoot = path.resolve(options.projectRoot)
-  const canonicalProjectRoot = await realpath(projectRoot).catch(
-    () => projectRoot,
-  )
 
   await ensureGitCliAvailable(projectRoot)
 
-  const sourceRepo = await resolveWorkspaceSourceRepo({
-    repo: options.workspace.repo,
-    projectRoot,
-  })
+  const relativeCwd = resolveValidatedRelativeWorkspaceCwd(options.workspace)
 
-  const relativeCwd = resolveValidatedRelativeWorkspaceCwd({
-    repoRoot:
-      options.workspace.source === 'project'
-        ? sourceRepo
-        : undefined,
-    projectRoot: canonicalProjectRoot,
-    workspace: options.workspace,
-  })
-
-  if (looksLikeRemoteRepoSpecifier(sourceRepo)) {
+  if (options.workspace.source === 'repo') {
     const ref = await resolveRemoteWorkspaceRef({
       requestedRef: options.workspace.ref,
-      sourceRepo,
+      sourceRepo: options.workspace.repo,
       projectRoot,
     })
 
     return {
       source: options.workspace.source,
-      repo: sourceRepo,
+      repo: options.workspace.repo,
       repoKind: 'remote',
       requestedRef: options.workspace.ref,
       ref,
@@ -231,11 +212,11 @@ export async function validateWorkspaceSetup(options: {
 
   const ref = await resolveLocalWorkspaceRef({
     requestedRef: options.workspace.ref,
-    sourceRepo,
+    sourceRepo: options.workspace.repo,
     projectRoot,
   })
   await assertWorkspaceDirectoryAtRef({
-    repoRoot: sourceRepo,
+    repoRoot: options.workspace.repo,
     ref,
     relativeCwd,
     projectRoot,
@@ -243,7 +224,7 @@ export async function validateWorkspaceSetup(options: {
 
   return {
     source: options.workspace.source,
-    repo: sourceRepo,
+    repo: options.workspace.repo,
     repoKind: 'local',
     requestedRef: options.workspace.ref,
     ref,
@@ -343,7 +324,7 @@ async function loadRunWorkspaceManifest(
       root: manifest.root,
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to load run workspace manifest: ${manifestPath}`,
@@ -373,32 +354,6 @@ async function listReferencedWorkspaceRunIds(
   )
 }
 
-async function resolveWorkspaceSourceRepo(options: {
-  repo: string
-  projectRoot: string
-}): Promise<string> {
-  if (looksLikeRemoteRepoSpecifier(options.repo)) {
-    return options.repo
-  }
-
-  try {
-    const repoRoot = await runGit(
-      ['-C', options.repo, 'rev-parse', '--show-toplevel'],
-      options.projectRoot,
-    )
-    return await realpath(repoRoot).catch(() => path.resolve(repoRoot))
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    throw new WorkspaceProvisionError(
-      [
-        `Workspace source is not a readable git repo: ${options.repo}`,
-        `projectRoot: ${options.projectRoot}`,
-        `git: ${reason}`,
-      ].join('\n'),
-    )
-  }
-}
-
 async function resolveLocalWorkspaceRef(options: {
   requestedRef: string
   sourceRepo: string
@@ -416,7 +371,7 @@ async function resolveLocalWorkspaceRef(options: {
       options.projectRoot,
     )
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
@@ -436,7 +391,7 @@ async function resolveRemoteWorkspaceRef(options: {
     ['ls-remote', options.sourceRepo, 'HEAD'],
     options.projectRoot,
   ).catch(error => {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Workspace source is not a reachable git repo: ${options.sourceRepo}`,
@@ -506,7 +461,7 @@ async function ensureManagedMirror(options: {
       )
       return
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new WorkspaceProvisionError(
         [
           `Failed to create managed mirror for workspace source: ${options.sourceRepo}`,
@@ -526,7 +481,7 @@ async function ensureManagedMirror(options: {
       throw new Error(`expected bare repository, received ${bareValue}`)
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Managed mirror path is invalid: ${options.mirrorPath}`,
@@ -563,7 +518,7 @@ async function ensureManagedMirror(options: {
         options.projectRoot,
       )
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new WorkspaceProvisionError(
         [
           `Failed to configure managed mirror remote for workspace source: ${options.sourceRepo}`,
@@ -580,7 +535,7 @@ async function ensureManagedMirror(options: {
       options.projectRoot,
     )
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to update managed mirror for workspace source: ${options.sourceRepo}`,
@@ -601,7 +556,7 @@ async function pruneManagedMirror(options: {
       options.projectRoot,
     )
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to prune managed workspace registrations.`,
@@ -630,7 +585,7 @@ async function resolveMirrorRef(options: {
       options.projectRoot,
     )
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
@@ -678,7 +633,7 @@ async function ensureManagedWorktree(options: {
       )
       return
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new WorkspaceProvisionError(
         [
           `Failed to create run workspace worktree.`,
@@ -728,7 +683,7 @@ async function listManagedWorktrees(
     )
     return new Set(canonicalPaths)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to inspect managed worktrees.`,
@@ -777,7 +732,7 @@ async function removeManagedWorktree(options: {
         options.projectRoot,
       )
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new WorkspaceProvisionError(
         [
           `Failed to remove run workspace worktree.`,
@@ -806,7 +761,7 @@ async function resolveWorktreeRoot(
     )
     return path.resolve(worktreePath)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Run workspace is not a valid git worktree: ${worktreePath}`,
@@ -826,7 +781,7 @@ async function resolveWorktreeHead(
       projectRoot,
     )
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Failed to resolve run workspace HEAD: ${worktreePath}`,
@@ -836,18 +791,13 @@ async function resolveWorktreeHead(
   }
 }
 
-function resolveValidatedRelativeWorkspaceCwd(options: {
-  repoRoot?: string
-  projectRoot: string
-  workspace: ResolvedWorkspaceConfig
-}): string {
-  const worktreeRoot =
-    options.repoRoot ?? path.resolve(path.sep, '__notionflow__', 'workspace')
+function resolveValidatedRelativeWorkspaceCwd(
+  workspace: ResolvedWorkspaceConfig,
+): string {
+  const worktreeRoot = path.resolve(path.sep, '__notionflow__', 'workspace')
   const {relativeCwd} = resolveWorkspaceCwd({
     worktreeRoot,
-    projectRoot: options.projectRoot,
-    repoRoot: options.repoRoot ?? worktreeRoot,
-    workspace: options.workspace,
+    workspace,
   })
 
   return toPortableWorkspacePath(relativeCwd)
@@ -873,7 +823,7 @@ async function assertWorkspaceDirectoryAtRef(options: {
       throw new Error(`expected tree, received ${objectType}`)
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Workspace cwd does not exist inside the requested ref: ${options.relativeCwd}`,
@@ -887,48 +837,16 @@ async function assertWorkspaceDirectoryAtRef(options: {
 
 function resolveWorkspaceCwd(options: {
   worktreeRoot: string
-  projectRoot: string
-  repoRoot: string
   workspace: ResolvedWorkspaceConfig
 }): {cwd: string; relativeCwd: string} {
-  const basePath =
-    options.workspace.source === 'project'
-      ? resolveProjectWorkspaceBasePath({
-          worktreeRoot: options.worktreeRoot,
-          projectRoot: options.projectRoot,
-          repoRoot: options.repoRoot,
-        })
-      : options.worktreeRoot
-
+  const basePath = path.resolve(
+    options.worktreeRoot,
+    options.workspace.checkoutBase,
+  )
   const cwd = path.resolve(basePath, options.workspace.cwd)
   const relativeCwd = toRelativeWorkspacePath(options.worktreeRoot, cwd)
 
   return {cwd, relativeCwd}
-}
-
-function resolveProjectWorkspaceBasePath(options: {
-  worktreeRoot: string
-  projectRoot: string
-  repoRoot: string
-}): string {
-  const relativeProjectRoot = path.relative(
-    options.repoRoot,
-    options.projectRoot,
-  )
-  if (
-    relativeProjectRoot.startsWith('..') ||
-    path.isAbsolute(relativeProjectRoot)
-  ) {
-    throw new WorkspaceProvisionError(
-      [
-        'Project workspace root must stay inside the resolved git repo.',
-        `projectRoot: ${options.projectRoot}`,
-        `repoRoot: ${options.repoRoot}`,
-      ].join('\n'),
-    )
-  }
-
-  return path.resolve(options.worktreeRoot, relativeProjectRoot)
 }
 
 async function assertWorkspaceDirectory(
@@ -941,7 +859,7 @@ async function assertWorkspaceDirectory(
       throw new Error('target exists but is not a directory')
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
         `Workspace cwd does not exist inside the checked out repo: ${options.relativeCwd}`,
@@ -1001,12 +919,6 @@ function sanitizePathSegment(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
   return cleaned.length > 0 ? cleaned : 'repo'
-}
-
-function looksLikeRemoteRepoSpecifier(repo: string): boolean {
-  return (
-    /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
-  )
 }
 
 function parseGitRemoteHashes(output: string): string[] {

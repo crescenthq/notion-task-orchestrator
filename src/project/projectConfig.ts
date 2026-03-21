@@ -1,6 +1,6 @@
 import {execFile} from 'node:child_process'
 import path from 'node:path'
-import {access, constants, readdir, stat} from 'node:fs/promises'
+import {access, constants, readdir, realpath, stat} from 'node:fs/promises'
 import {pathToFileURL} from 'node:url'
 import {z} from 'zod'
 import {loadPipeFromPath} from '../core/pipe'
@@ -37,6 +37,9 @@ const projectConfigSchema = projectConfigInputSchema.transform(config => ({
 }))
 
 const DEFAULT_PIPE_DIRECTORY = './pipes'
+export const DEFAULT_WORKSPACE_REF = 'HEAD'
+export const DEFAULT_WORKSPACE_CWD = '.'
+export const DEFAULT_WORKSPACE_CLEANUP = 'on-success' as const
 const PIPE_MODULE_FILE_PATTERN =
   /^(?!.*\.d\.(?:cts|mts|ts)$).+\.(?:cts|mts|ts|cjs|mjs|js)$/
 
@@ -47,26 +50,21 @@ export type WorkspaceCleanupPolicy = z.output<
 export type WorkspaceConfigInput = z.input<typeof workspaceConfigInputSchema>
 export type ProjectConfigInput = z.input<typeof projectConfigInputSchema>
 export type ProjectConfig = z.output<typeof projectConfigSchema>
-export type ProjectWorkspaceConfig = {
-  source: 'project'
+export type WorkspaceConfig = {
+  repo?: string
   ref: string
   cwd: string
   cleanup: WorkspaceCleanupPolicy
 }
-export type ExplicitWorkspaceConfig = {
-  source: 'repo'
+export type ResolvedWorkspaceSource = 'project' | 'repo'
+export type ResolvedWorkspaceConfig = {
+  source: ResolvedWorkspaceSource
   repo: string
+  checkoutBase: string
   ref: string
   cwd: string
   cleanup: WorkspaceCleanupPolicy
 }
-export type WorkspaceConfig = ProjectWorkspaceConfig | ExplicitWorkspaceConfig
-export type ResolvedProjectWorkspaceConfig = ProjectWorkspaceConfig & {
-  repo: string
-}
-export type ResolvedWorkspaceConfig =
-  | ResolvedProjectWorkspaceConfig
-  | ExplicitWorkspaceConfig
 
 export type LoadedDeclaredPipe = {
   declaredSource: string
@@ -100,6 +98,10 @@ export function defineConfig(config: ProjectConfigInput): ProjectConfigInput {
   return config
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function loadProjectConfig(
   configPath: string,
 ): Promise<ProjectConfig> {
@@ -112,7 +114,7 @@ export async function loadProjectConfig(
     const mod = await import(configModuleUrl.href)
     loaded = (mod as {default?: unknown}).default
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new ProjectConfigLoadError(
       `Failed to load project config module: ${resolvedConfigPath}\n${reason}`,
       resolvedConfigPath,
@@ -140,23 +142,20 @@ export async function resolveWorkspaceConfig(options: {
 }): Promise<ResolvedWorkspaceConfig> {
   const resolvedProjectRoot = path.resolve(options.projectRoot)
   const resolvedConfigPath = path.resolve(options.configPath)
-
-  if (options.config.workspace.source === 'repo') {
-    return {
-      ...options.config.workspace,
-      repo: resolveWorkspaceRepoSpecifier(
-        options.config.workspace.repo,
-        resolvedProjectRoot,
-      ),
-    }
-  }
+  const explicitRepo = options.config.workspace.repo
+  const resolvedLocation = explicitRepo
+    ? resolveExplicitWorkspaceLocation(explicitRepo, resolvedConfigPath)
+    : await resolveProjectWorkspaceLocation({
+        projectRoot: resolvedProjectRoot,
+        configPath: resolvedConfigPath,
+      })
 
   return {
-    ...options.config.workspace,
-    repo: await resolveProjectRepoRoot({
-      projectRoot: resolvedProjectRoot,
-      configPath: resolvedConfigPath,
-    }),
+    source: explicitRepo ? 'repo' : 'project',
+    ref: options.config.workspace.ref,
+    cwd: options.config.workspace.cwd,
+    cleanup: options.config.workspace.cleanup,
+    ...resolvedLocation,
   }
 }
 
@@ -233,7 +232,7 @@ export async function loadDeclaredPipes(options: {
         throw error
       }
 
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new ProjectConfigLoadError(
         [
           `Failed loading declared pipe path: ${declaredSource}`,
@@ -399,44 +398,29 @@ function normalizeWorkspaceConfig(
   workspace: WorkspaceConfigInput | undefined,
 ): WorkspaceConfig {
   if (typeof workspace === 'string') {
-    return {
-      source: 'repo',
-      repo: workspace,
-      ref: 'HEAD',
-      cwd: '.',
-      cleanup: 'on-success',
-    }
+    return createWorkspaceConfig({repo: workspace})
   }
 
   if (!workspace) {
-    return {
-      source: 'project',
-      ref: 'HEAD',
-      cwd: '.',
-      cleanup: 'on-success',
-    }
+    return createWorkspaceConfig()
   }
 
-  const ref = workspace.ref ?? 'HEAD'
-  const cwd = workspace.cwd ?? '.'
-  const cleanup = workspace.cleanup ?? 'on-success'
+  return createWorkspaceConfig(workspace)
+}
 
-  if (workspace.repo) {
-    return {
-      source: 'repo',
-      repo: workspace.repo,
-      ref,
-      cwd,
-      cleanup,
-    }
-  }
-
-  return {
-    source: 'project',
-    ref,
-    cwd,
-    cleanup,
-  }
+function createWorkspaceConfig(workspace: Partial<WorkspaceConfig> = {}) {
+  return workspace.repo
+    ? {
+        repo: workspace.repo,
+        ref: workspace.ref ?? DEFAULT_WORKSPACE_REF,
+        cwd: workspace.cwd ?? DEFAULT_WORKSPACE_CWD,
+        cleanup: workspace.cleanup ?? DEFAULT_WORKSPACE_CLEANUP,
+      }
+    : {
+        ref: workspace.ref ?? DEFAULT_WORKSPACE_REF,
+        cwd: workspace.cwd ?? DEFAULT_WORKSPACE_CWD,
+        cleanup: workspace.cleanup ?? DEFAULT_WORKSPACE_CLEANUP,
+      }
 }
 
 function formatProjectConfigIssues(error: z.ZodError): string {
@@ -497,7 +481,7 @@ async function resolveProjectRepoRoot(options: {
 
     return path.resolve(repoRoot)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new ProjectConfigLoadError(
       [
         `Invalid project config: ${options.configPath}`,
@@ -510,18 +494,83 @@ async function resolveProjectRepoRoot(options: {
   }
 }
 
-function resolveWorkspaceRepoSpecifier(
-  repo: string,
-  projectRoot: string,
-): string {
-  if (looksLikeRemoteRepoSpecifier(repo)) {
+async function resolveProjectWorkspaceLocation(options: {
+  projectRoot: string
+  configPath: string
+}): Promise<{
+  repo: string
+  checkoutBase: string
+}> {
+  const repo = await resolveProjectRepoRoot(options)
+  const canonicalRepo = await realpath(repo).catch(() => repo)
+  const canonicalProjectRoot = await realpath(options.projectRoot).catch(
+    () => options.projectRoot,
+  )
+  return {
+    repo: canonicalRepo,
+    checkoutBase: resolveWorkspaceCheckoutBase({
+      repoRoot: canonicalRepo,
+      projectRoot: canonicalProjectRoot,
+      configPath: options.configPath,
+    }),
+  }
+}
+
+function resolveExplicitWorkspaceLocation(repo: string, configPath: string): {
+  repo: string
+  checkoutBase: string
+} {
+  return {
+    repo: assertWorkspaceRepoUrl(repo, configPath),
+    checkoutBase: '.',
+  }
+}
+
+function resolveWorkspaceCheckoutBase(options: {
+  repoRoot: string
+  projectRoot: string
+  configPath: string
+}): string {
+  const relativeProjectRoot = path.relative(
+    options.repoRoot,
+    options.projectRoot,
+  )
+  if (
+    relativeProjectRoot.startsWith('..') ||
+    path.isAbsolute(relativeProjectRoot)
+  ) {
+    throw new ProjectConfigLoadError(
+      [
+        `Invalid project config: ${options.configPath}`,
+        'workspace: resolved project root must stay inside the resolved git repo',
+        `projectRoot: ${options.projectRoot}`,
+        `repoRoot: ${options.repoRoot}`,
+      ].join('\n'),
+      options.configPath,
+    )
+  }
+
+  return relativeProjectRoot.length > 0
+    ? toPortableRelativePath(options.repoRoot, options.projectRoot)
+    : '.'
+}
+
+function assertWorkspaceRepoUrl(repo: string, configPath: string): string {
+  if (looksLikeGitUrl(repo)) {
     return repo
   }
 
-  return path.resolve(projectRoot, repo)
+  throw new ProjectConfigLoadError(
+    [
+      `Invalid project config: ${configPath}`,
+      'workspace: explicit workspace overrides must use a git URL',
+      `repo: ${repo}`,
+    ].join('\n'),
+    configPath,
+  )
 }
 
-function looksLikeRemoteRepoSpecifier(repo: string): boolean {
+function looksLikeGitUrl(repo: string): boolean {
   return (
     /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
   )

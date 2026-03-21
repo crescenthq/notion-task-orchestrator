@@ -117,6 +117,7 @@ describe('workspaceRuntime', () => {
       'utf8',
     )
     const featureHead = await commitAll(sourceRepo, 'feature branch update')
+    const sourceRepoUrl = `file://${await realpath(sourceRepo)}`
 
     const projectRoot = await createFixture(
       'notionflow-workspace-runtime-explicit-',
@@ -127,7 +128,7 @@ describe('workspaceRuntime', () => {
       [
         'export default {',
         '  workspace: {',
-        `    repo: ${JSON.stringify(sourceRepo)},`,
+        `    repo: ${JSON.stringify(sourceRepoUrl)},`,
         '    ref: "feature/demo",',
         '    cwd: "packages/api",',
         '  },',
@@ -157,7 +158,7 @@ describe('workspaceRuntime', () => {
     )
     expect(provisioned.cwd).toBe(path.join(provisioned.root, 'packages', 'api'))
     expect(provisioned.relativeCwd).toBe(path.join('packages', 'api'))
-    expect(provisioned.repo).toBe(await realpath(sourceRepo))
+    expect(provisioned.repo).toBe(sourceRepoUrl)
     expect(provisioned.requestedRef).toBe('feature/demo')
     expect(provisioned.ref).toBe(featureHead)
     expect(
@@ -264,9 +265,10 @@ describe('workspaceRuntime', () => {
     )
     const invalidRepo = path.join(projectRoot, 'not-a-repo')
     await mkdir(invalidRepo, {recursive: true})
+    const invalidRepoUrl = `file://${invalidRepo}`
 
     const runtimePaths = resolveRuntimePaths(projectRoot)
-    const workspace = createExplicitWorkspaceConfig(invalidRepo)
+    const workspace = createExplicitWorkspaceConfig(invalidRepoUrl)
 
     await expect(
       provisionRunWorkspace({
@@ -275,7 +277,7 @@ describe('workspaceRuntime', () => {
         workspace,
         runId: 'run-invalid-repo',
       }),
-    ).rejects.toThrowError(/Workspace source is not a readable git repo/)
+    ).rejects.toThrowError(/Failed to create managed mirror/)
 
     await expect(
       provisionRunWorkspace({
@@ -285,7 +287,7 @@ describe('workspaceRuntime', () => {
         runId: 'run-invalid-repo',
       }),
     ).rejects.toThrowError(
-      new RegExp(invalidRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      new RegExp(invalidRepoUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     )
   })
 
@@ -307,7 +309,7 @@ describe('workspaceRuntime', () => {
         paths: runtimePaths,
         projectRoot,
         workspace: {
-          ...createExplicitWorkspaceConfig(sourceRepo),
+          ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
           ref: 'missing-ref',
         },
         runId: 'run-invalid-ref',
@@ -449,11 +451,8 @@ async function createFixture(prefix: string): Promise<string> {
 function createExplicitWorkspaceConfig(repo: string): ResolvedWorkspaceConfig {
   return {
     source: 'repo',
-    repo:
-      /^[a-z][a-z\d+.-]*:\/\//i.test(repo) ||
-      /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
-        ? repo
-        : path.resolve(repo),
+    repo,
+    checkoutBase: '.',
     ref: 'HEAD',
     cwd: '.',
     cleanup: 'on-success',
