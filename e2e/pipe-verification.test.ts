@@ -145,7 +145,7 @@ async function createTaskAndReadNewExternalId(
     'create-task',
     '--title',
     title,
-    '--factory',
+    '--pipe',
     factoryId,
     '--status',
     'queue',
@@ -170,7 +170,7 @@ async function createTaskAndReadNewExternalId(
   }
 
   throw new Error(
-    `Unable to detect newly created task for shared board factory=${factoryId}`,
+    `Unable to detect newly created task for shared board pipe=${factoryId}`,
   )
 }
 
@@ -220,7 +220,7 @@ async function runTick(
   factoryId: string,
   maxTransitionsPerTick?: number,
 ): Promise<void> {
-  const args = ['tick', '--factory', factoryId]
+  const args = ['tick', '--pipe', factoryId]
   if (typeof maxTransitionsPerTick === 'number') {
     args.push('--max-transitions-per-tick', String(maxTransitionsPerTick))
   }
@@ -258,7 +258,7 @@ async function writeVerificationProjectConfig(
 
   const configContent = [
     'export default {',
-    '  factories: [',
+    '  pipes: [',
     factoryEntries,
     '  ],',
     '};',
@@ -372,9 +372,7 @@ const verificationFactories = [
 let fixture: TempProjectFixture | null = null
 let globalWritesBefore: FilesystemSnapshot | null = null
 
-;(liveSuiteEnabled ? describe : describe.skip)(
-  'Live factory verification',
-  () => {
+;(liveSuiteEnabled ? describe : describe.skip)('Live pipe verification', () => {
   beforeAll(async () => {
     globalWritesBefore = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture('notionflow-live-verify-')
@@ -401,7 +399,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
       await mkdir(outDir, {recursive: true})
       const outputPath = path.join(
         outDir,
-        `factory-live-verification-${stamp}.json`,
+        `pipe-live-verification-${stamp}.json`,
       )
       await writeFile(
         outputPath,
@@ -748,5 +746,4 @@ let globalWritesBefore: FilesystemSnapshot | null = null
       ),
     )
   })
-  },
-)
+})

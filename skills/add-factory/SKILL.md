@@ -1,16 +1,16 @@
 ---
 name: add-factory
 description:
-  Create a TypeScript state-machine factory with inline agent functions. Use
-  when the user wants to create a factory, build a multi-agent pipeline, or
-  chain states into a workflow.
+  Create a TypeScript state-machine pipe with inline agent functions. Use when
+  the user wants to create a pipe, build a multi-agent pipeline, or chain states
+  into a workflow.
 ---
 
-# Create a TypeScript Factory
+# Create a TypeScript Pipe
 
-A factory is a TypeScript state machine. Each state has an inline `agent`
-function that runs your logic, and an `on` map that routes to the next state
-based on the result.
+A pipe is a TypeScript state machine. Each state has an inline `agent` function
+that runs your logic, and an `on` map that routes to the next state based on the
+result.
 
 **Principle:** One file, all logic inline. No separate executor scripts. No
 YAML. No global install step — factories are local files declared in
@@ -18,16 +18,16 @@ YAML. No global install step — factories are local files declared in
 
 ## Phase 1 — Design
 
-Use AskUserQuestion: "What kind of factory do you want to create?"
+Use AskUserQuestion: "What kind of pipe do you want to create?"
 
 Offer templates as starting points:
 
-- **Code factory** — plan → implement → review → done
-- **Content factory** — research → write → review → publish
-- **Bug fix factory** — triage → investigate → fix → verify
+- **Code pipe** — plan → implement → review → done
+- **Content pipe** — research → write → review → publish
+- **Bug fix pipe** — triage → investigate → fix → verify
 - **Custom** — describe your own states and logic
 
-Use AskUserQuestion: "What should this factory be called? (e.g. code-factory,
+Use AskUserQuestion: "What should this pipe be called? (e.g. code-pipe,
 content-pipeline)"
 
 Map out the states: what each state does, what agent logic it runs, and what
@@ -36,18 +36,18 @@ success/failure routes it needs.
 ## Phase 2 — Scaffold
 
 ```bash
-npx notionflow factory create --id <factory-id>
+npx notionflow pipe create --id <pipe-id>
 ```
 
-This creates `./pipes/<factory-id>.ts` relative to the project root (the
-directory containing `notionflow.config.ts`). Edit the file directly — it's just
+This creates `./pipes/<pipe-id>.ts` relative to the project root (the directory
+containing `notionflow.config.ts`). Edit the file directly — it's just
 TypeScript.
 
-## Phase 3 — Write the Factory
+## Phase 3 — Write the Pipe
 
-The factory is an `export default` object with:
+The pipe is an `export default` object with:
 
-- `id` — matches the factory ID
+- `id` — matches the pipe ID
 - `start` — initial state ID
 - `context` — initial context object (shared across all states)
 - `states` — record of state definitions
@@ -219,7 +219,7 @@ const proc = spawn(
 )
 ```
 
-### Full Example (content factory)
+### Full Example (content pipe)
 
 ```ts
 import {agent} from 'notionflow'
@@ -246,7 +246,7 @@ const review = agent(async ({task, ctx}) => {
 })
 
 export default {
-  id: 'content-factory',
+  id: 'content-pipe',
   start: 'research',
   context: {sources: '', draft: '', qualityScore: 0},
   states: {
@@ -284,19 +284,20 @@ export default {
 
 ## Phase 4 — Register
 
-After `factory create` writes the file, declare it in `notionflow.config.ts` so
-NotionFlow loads it:
+After `pipe create` writes the file under `pipes/`, NotionFlow loads it
+automatically in the default project layout. You only need `pipes` in
+`notionflow.config.ts` when you want custom locations or filtering:
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ['./pipes/<factory-id>.ts'],
+  pipes: ['./pipes', './manual/<pipe-id>.ts'],
 })
 ```
 
-Relative paths resolve from the project root (the directory containing
-`notionflow.config.ts`). Add one entry per factory.
+Relative file and directory declarations resolve from the project root (the
+directory containing `notionflow.config.ts`).
 
 NotionFlow discovers `notionflow.config.ts` by walking up parent directories
 from the current working directory. Use `--config <path>` on any command to
@@ -307,8 +308,8 @@ override config resolution explicitly.
 ```bash
 # Create a test task in Queue state
 npx notionflow integrations notion create-task \
-  --board <factory-id> --title "Test: <short description>" \
-  --factory <factory-id> --status queue
+  --board <pipe-id> --title "Test: <short description>" \
+  --pipe <pipe-id> --status queue
 
 # Run it
 npx notionflow tick
@@ -318,7 +319,7 @@ Watch the output. Each state should transition and log to Notion.
 
 ### Testing human feedback
 
-If a factory state returns `status: "feedback"`:
+If a pipe state returns `status: "feedback"`:
 
 1. Create a task with an ambiguous or vague title
 2. Run `npx notionflow tick`
@@ -341,21 +342,21 @@ If a factory state returns `status: "feedback"`:
 
 ```bash
 npx notionflow doctor
-npx notionflow factory list
+npx notionflow pipe list
 ```
 
 ## CLI Cheat Sheet
 
 ```bash
-# Scaffold a new factory file
-npx notionflow factory create --id <id>
+# Scaffold a new pipe file
+npx notionflow pipe create --id <id>
 
 # List loaded factories (reads from notionflow.config.ts)
-npx notionflow factory list
+npx notionflow pipe list
 
 # Create and run tasks
 npx notionflow integrations notion create-task \
-  --board <id> --title "..." --factory <id> --status queue
+  --board <id> --title "..." --pipe <id> --status queue
 npx notionflow tick
 
 # Run a specific task directly (bypasses sync)
@@ -367,21 +368,21 @@ npx notionflow doctor
 
 ## Modifying Later
 
-- **Edit logic:** Open `./pipes/<factory-id>.ts`, change the inline agent
-  function. No re-install needed — NotionFlow reads the file on each run via
+- **Edit logic:** Open `./pipes/<pipe-id>.ts`, change the inline agent function.
+  No re-install needed — NotionFlow reads the file on each run via
   `notionflow.config.ts`.
 - **Add a state:** Add the state to `states`, wire up `on` maps in affected
   states, save the file.
 - **Change routing:** Update `select` or `orchestrate.agent` return value,
   update `on` map, save the file.
-- **Add another factory:** Run `npx notionflow factory create --id <new-id>`,
-  write the factory, add the path to the `factories` array in
-  `notionflow.config.ts`.
+- **Add another pipe:** Run `npx notionflow pipe create --id <new-id>`, write
+  the pipe. No config edit is needed unless the new file lives outside the
+  default top-level `pipes/` directory.
 
 ## Common Gotchas
 
 **Cross-file runtime imports are rejected** Agent functions (`agent`, `select`,
-guard functions) must be defined in the same factory file. Importing them from
+guard functions) must be defined in the same pipe file. Importing them from
 another module causes a load-time validation error. Shared helpers declared in
 the same file are fine.
 
@@ -400,6 +401,6 @@ original comment — are detected.
 **`action` states require both `on.done` and `on.failed`** Both routes must be
 declared. The runtime rejects factories missing either route at load time.
 
-**Factory not loading** Check that the path in `notionflow.config.ts` matches
-the actual file location. Paths are relative to the project root. Run
+**Pipe not loading** Check that the path in `notionflow.config.ts` matches the
+actual file location. Paths are relative to the project root. Run
 `npx notionflow doctor` to confirm the config is resolved correctly.

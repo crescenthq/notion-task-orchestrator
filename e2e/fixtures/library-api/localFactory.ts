@@ -6,12 +6,9 @@ export default definePipe({
   initial: {score: 0},
   run: flow(
     scoreTask,
-    decide(
-      chooseRoute,
-      {
-        done: end.done(),
-        retry: flow(scoreTask, end.done()),
-      },
-    ),
+    decide(chooseRoute, {
+      done: end.done(),
+      retry: flow(scoreTask, end.done()),
+    }),
   ),
 })

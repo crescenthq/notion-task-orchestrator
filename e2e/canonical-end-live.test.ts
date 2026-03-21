@@ -23,9 +23,7 @@ if (liveSuiteEnabled) {
   registerLiveBoardSuite()
 }
 
-;(liveSuiteEnabled ? describe : describe.skip)(
-  'canonical end live e2e',
-  () => {
+;(liveSuiteEnabled ? describe : describe.skip)('canonical end live e2e', () => {
   let fixture: TempProjectFixture | null = null
 
   afterEach(async () => {
@@ -43,7 +41,7 @@ if (liveSuiteEnabled) {
     await execCli(['init'], fixture.projectDir)
 
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     const pipesDir = path.join(fixture.projectDir, 'pipes')
     await mkdir(pipesDir, {recursive: true})
@@ -87,7 +85,7 @@ if (liveSuiteEnabled) {
           'integrations',
           'notion',
           'create-task',
-          '--factory',
+          '--pipe',
           factoryId,
           '--title',
           `Canonical end live ${status} ${Date.now()}`,
@@ -104,8 +102,7 @@ if (liveSuiteEnabled) {
       expect(syncedState).toBe(status)
     }
   }, 240_000)
-  },
-)
+})
 
 async function waitForPageState(
   token: string,
@@ -155,7 +152,7 @@ function terminalFactorySource(
 function projectConfigSource(factoryPaths: string[]): string {
   return [
     'export default {',
-    '  factories: [',
+    '  pipes: [',
     ...factoryPaths.map(factoryPath => `    ${JSON.stringify(factoryPath)},`),
     '  ],',
     '};',

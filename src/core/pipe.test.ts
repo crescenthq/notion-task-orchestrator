@@ -2,7 +2,7 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
-import {isPipeFactoryDefinition, loadFactoryFromPath} from './factory'
+import {isPipeModuleDefinition, loadPipeFromPath} from './pipe'
 
 const createdDirs: string[] = []
 
@@ -12,14 +12,14 @@ async function createTempDir(): Promise<string> {
   return dir
 }
 
-describe('loadFactoryFromPath', () => {
+describe('loadPipeFromPath', () => {
   afterEach(async () => {
     for (const dir of createdDirs.splice(0, createdDirs.length)) {
       await rm(dir, {recursive: true, force: true})
     }
   })
 
-  it('loads a module with default exported definePipe factory object', async () => {
+  it('loads a module with default exported definePipe pipe object', async () => {
     const dir = await createTempDir()
     const filePath = path.join(dir, 'pipe-factory.mjs')
 
@@ -29,12 +29,12 @@ describe('loadFactoryFromPath', () => {
       'utf8',
     )
 
-    const loaded = await loadFactoryFromPath(filePath)
+    const loaded = await loadPipeFromPath(filePath)
     expect(loaded.definition.id).toBe('pipe-factory')
-    expect(isPipeFactoryDefinition(loaded.definition)).toBe(true)
+    expect(isPipeModuleDefinition(loaded.definition)).toBe(true)
   })
 
-  it('loads a module with optional factory name metadata', async () => {
+  it('loads a module with optional pipe name metadata', async () => {
     const dir = await createTempDir()
     const filePath = path.join(dir, 'named-factory.mjs')
 
@@ -44,12 +44,12 @@ describe('loadFactoryFromPath', () => {
       'utf8',
     )
 
-    const loaded = await loadFactoryFromPath(filePath)
+    const loaded = await loadPipeFromPath(filePath)
     expect(loaded.definition.name).toBe('Named Factory')
-    expect(isPipeFactoryDefinition(loaded.definition)).toBe(true)
+    expect(isPipeModuleDefinition(loaded.definition)).toBe(true)
   })
 
-  it('rejects modules that do not export a definePipe factory object shape', async () => {
+  it('rejects modules that do not export a definePipe pipe object shape', async () => {
     const dir = await createTempDir()
     const filePath = path.join(dir, 'legacy-factory.mjs')
 
@@ -59,8 +59,8 @@ describe('loadFactoryFromPath', () => {
       'utf8',
     )
 
-    await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
-      /Module must export a definePipe factory with shape \{ id, initial, run \}/,
+    await expect(loadPipeFromPath(filePath)).rejects.toThrow(
+      /Module must export a definePipe pipe with shape \{ id, initial, run \}/,
     )
   })
 
@@ -68,14 +68,10 @@ describe('loadFactoryFromPath', () => {
     const dir = await createTempDir()
     const filePath = path.join(dir, 'missing-default.mjs')
 
-    await writeFile(
-      filePath,
-      `export const x = 1;\n`,
-      'utf8',
-    )
+    await writeFile(filePath, `export const x = 1;\n`, 'utf8')
 
-    await expect(loadFactoryFromPath(filePath)).rejects.toThrow(
-      /Module must export a factory object as default export/,
+    await expect(loadPipeFromPath(filePath)).rejects.toThrow(
+      /Module must export a pipe object as default export/,
     )
   })
 })

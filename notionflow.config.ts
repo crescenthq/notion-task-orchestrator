@@ -1,5 +1,3 @@
 import {defineConfig} from 'notionflow'
 
-export default defineConfig({
-  factories: [],
-})
+export default defineConfig({})

@@ -57,9 +57,9 @@ describe('CLI bootstrap flow', () => {
     expect(init.status).toBe(0)
     expect(init.stdout).toContain('NotionFlow project initialized')
 
-    const listFactories = runCli(['factory', 'list'], home, {}, project)
-    expect(listFactories.status).toBe(0)
-    expect(listFactories.stdout).toContain('No factories configured')
+    const listPipes = runCli(['pipe', 'list'], home, {}, project)
+    expect(listPipes.status).toBe(0)
+    expect(listPipes.stdout).toContain('No pipes configured')
   })
 
   it('rejects removed legacy commands', () => {
@@ -92,7 +92,7 @@ describe('CLI bootstrap flow', () => {
 
     writeFileSync(
       path.join(project, 'notionflow.config.ts'),
-      'export default { factories: [] };\n',
+      'export default { pipes: [] };\n',
       'utf8',
     )
 
@@ -116,7 +116,7 @@ describe('CLI bootstrap flow', () => {
     createdProjects.push(project)
 
     const configPath = path.join(project, 'notionflow.config.ts')
-    writeFileSync(configPath, 'export default { factories: [] };\n', 'utf8')
+    writeFileSync(configPath, 'export default { pipes: [] };\n', 'utf8')
     writeFileSync(
       path.join(project, '.env'),
       'NOTION_API_TOKEN=test-token\n',

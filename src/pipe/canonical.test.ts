@@ -267,15 +267,12 @@ describe('checkpoint-aware resume behavior', () => {
     }
 
     const select = vi.fn((ctx: DecideCheckpointCtx) => ctx.route)
-    const run = decide<DecideCheckpointCtx, 'approve'>(
-      select,
-      {
-        approve: ask<DecideCheckpointCtx>('approve-now', (ctx, reply) => ({
-          ...ctx,
-          approved: reply === 'yes',
-        })),
-      },
-    )
+    const run = decide<DecideCheckpointCtx, 'approve'>(select, {
+      approve: ask<DecideCheckpointCtx>('approve-now', (ctx, reply) => ({
+        ...ctx,
+        approved: reply === 'yes',
+      })),
+    })
 
     const first = await run({
       ctx: {route: 'approve'},
@@ -458,10 +455,7 @@ describe('canonical ask primitive', () => {
       feedback: ' APPROVE ',
     })
 
-    expect(parse).toHaveBeenCalledWith(
-      {attempts: 0, trail: []},
-      'APPROVE',
-    )
+    expect(parse).toHaveBeenCalledWith({attempts: 0, trail: []}, 'APPROVE')
     expect(result).toEqual({
       attempts: 0,
       trail: [],
@@ -584,12 +578,9 @@ describe('canonical decide primitive', () => {
   })
 
   it('returns deterministic failed end signal when selection is unmapped', async () => {
-    const result = await decide<DecideCtx, string>(
-      () => 'unknown',
-      {
-        approve: end.done<DecideCtx>('approved'),
-      },
-    )(decideBaseInput)
+    const result = await decide<DecideCtx, string>(() => 'unknown', {
+      approve: end.done<DecideCtx>('approved'),
+    })(decideBaseInput)
 
     expect(result).toEqual({
       type: 'end',
@@ -742,7 +733,10 @@ describe('canonical loop primitive', () => {
       message: 'Loop exhausted before completion',
       ctx: {
         iterations: 100,
-        trail: Array.from({length: 100}, (_, index) => `iteration-${index + 1}`),
+        trail: Array.from(
+          {length: 100},
+          (_, index) => `iteration-${index + 1}`,
+        ),
       },
     })
     expect(body).toHaveBeenCalledTimes(100)

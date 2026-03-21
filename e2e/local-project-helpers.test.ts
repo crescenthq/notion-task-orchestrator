@@ -48,9 +48,9 @@ async function execCli(args: string[], cwd: string): Promise<void> {
       process.execPath,
       ['--import', tsxLoaderPath, cliPath, ...args],
       {
-      cwd,
-      stdio: 'pipe',
-      env: process.env,
+        cwd,
+        stdio: 'pipe',
+        env: process.env,
       },
     )
 

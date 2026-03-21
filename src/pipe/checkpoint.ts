@@ -30,9 +30,7 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null
 }
 
-function parseCheckpointSegment(
-  value: unknown,
-): CheckpointSegment | undefined {
+function parseCheckpointSegment(value: unknown): CheckpointSegment | undefined {
   if (!isRecord(value) || typeof value.k !== 'string') {
     return undefined
   }
@@ -83,7 +81,9 @@ export function parseCheckpoint(
     )
   }
   if (!Array.isArray(value.path)) {
-    return fail(`Malformed checkpoint at ${options.location}: path must be an array`)
+    return fail(
+      `Malformed checkpoint at ${options.location}: path must be an array`,
+    )
   }
 
   const path: CheckpointSegment[] = []

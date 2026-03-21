@@ -29,7 +29,9 @@ describe('runTraces', () => {
       ...baseTrace(),
       toStateId: null,
     }
-    expect(() => parseRunTrace(candidate)).toThrow('step traces require toStateId')
+    expect(() => parseRunTrace(candidate)).toThrow(
+      'step traces require toStateId',
+    )
   })
 
   it('rejects retry traces with invalid attempt counters', () => {
@@ -63,7 +65,7 @@ describe('runTraces', () => {
         attempt: 0,
         loopIteration: 0,
         status: 'running',
-        message: 'Factory: demo',
+        message: 'Pipe: demo',
         payloadJson: null,
         timestamp: now,
       },
@@ -153,7 +155,7 @@ describe('runTraces', () => {
         attempt: 0,
         loopIteration: 0,
         status: 'done',
-        message: 'Factory reached terminal done state.',
+        message: 'Pipe reached terminal done state.',
         payloadJson: null,
         timestamp: now,
       },

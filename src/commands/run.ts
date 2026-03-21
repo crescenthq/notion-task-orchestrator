@@ -1,18 +1,18 @@
 import {defineCommand} from 'citty'
 import {
-  runFactoryTaskByExternalId,
+  runPipeTaskByExternalId,
   type RuntimeRunOptions,
-} from '../core/factoryRuntime'
+} from '../core/pipeRuntime'
 
 export async function runTaskByExternalId(
   taskExternalId: string,
   options: RuntimeRunOptions = {},
 ): Promise<void> {
-  await runFactoryTaskByExternalId(taskExternalId, options)
+  await runPipeTaskByExternalId(taskExternalId, options)
 }
 
 export const runCmd = defineCommand({
-  meta: {name: 'run', description: '[common] Run a factory for one task'},
+  meta: {name: 'run', description: '[common] Run a pipe for one task'},
   args: {
     task: {type: 'string', required: true},
     config: {type: 'string', required: false},

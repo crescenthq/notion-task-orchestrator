@@ -102,7 +102,12 @@ export declare function ask<C, R = never, E = PipeError>(
   parse: AskParse<C, R, E>,
 ): Step<C, R, E>
 
-export declare function decide<C, K extends string, R = PipeServices, E = PipeError>(
+export declare function decide<
+  C,
+  K extends string,
+  R = PipeServices,
+  E = PipeError,
+>(
   select: (ctx: C) => K | Effect.Effect<K, E, R>,
   branches: Record<K, Step<C, R, E>>,
   options?: {otherwise?: Step<C, R, E>},

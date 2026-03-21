@@ -58,12 +58,12 @@ describe('createNotionTaskBoardAdapter', () => {
       'Step A',
     )
 
-    await adapter.appendLog(ref, 'Run started', 'Factory: demo')
+    await adapter.appendLog(ref, 'Run started', 'Pipe: demo')
     expect(appendLogSpy).toHaveBeenCalledWith(
       token,
       'task-1',
       'Run started',
-      'Factory: demo',
+      'Pipe: demo',
     )
 
     await adapter.appendPageContent(ref, '# Demo output')
@@ -74,6 +74,10 @@ describe('createNotionTaskBoardAdapter', () => {
     )
 
     await adapter.postComment(ref, 'Need approval')
-    expect(postCommentSpy).toHaveBeenCalledWith(token, 'task-1', 'Need approval')
+    expect(postCommentSpy).toHaveBeenCalledWith(
+      token,
+      'task-1',
+      'Need approval',
+    )
   })
 })

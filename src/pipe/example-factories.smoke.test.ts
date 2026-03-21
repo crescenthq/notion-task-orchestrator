@@ -31,7 +31,9 @@ function expectAwaitFeedback(value: unknown): AwaitFeedbackSignal {
     typeof value.prompt !== 'string' ||
     !isRecord(value.ctx)
   ) {
-    throw new Error(`Expected await_feedback signal, got: ${JSON.stringify(value)}`)
+    throw new Error(
+      `Expected await_feedback signal, got: ${JSON.stringify(value)}`,
+    )
   }
 
   return value as AwaitFeedbackSignal
@@ -52,7 +54,7 @@ function expectEnd(value: unknown): EndSignal {
   return value as EndSignal
 }
 
-describe('example factories smoke', () => {
+describe('example pipes smoke', () => {
   it('runs expressive-primitives through the approve path', async () => {
     const writes: PageOutput[] = []
 
@@ -70,9 +72,9 @@ describe('example factories smoke', () => {
     expect(end.status).toBe('done')
     expect(end.ctx.decision).toBe('approve')
     expect(writes).toHaveLength(1)
-    expect(typeof writes[0] === 'string' ? writes[0] : writes[0]?.markdown).toContain(
-      'Expressive Primitive Demo',
-    )
+    expect(
+      typeof writes[0] === 'string' ? writes[0] : writes[0]?.markdown,
+    ).toContain('Expressive Primitive Demo')
   })
 
   it('runs shared-helper-demo to completion', async () => {

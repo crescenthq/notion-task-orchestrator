@@ -1,10 +1,10 @@
-# Example Factories
+# Example Pipes
 
 A standalone example NotionFlow project demonstrating project-local
-architecture. Contains five factories and a shared helper module to show
-real-world patterns.
+architecture. Contains five pipes and a shared helper module to show real-world
+patterns.
 
-## Included factories
+## Included Pipes
 
 - `intent` — captures and refines user intent
 - `expressive-primitives` — deterministic pipe flow using `step`, `ask`,
@@ -40,7 +40,7 @@ shell:
 export NOTION_API_TOKEN=secret_...
 ```
 
-`NOTION_API_TOKEN` is required for `doctor`, `notion:connect`,
+`NOTION_API_TOKEN` is required for `doctor`, `notion:setup`,
 `notion:create-task`, `notion:sync`, `notion:repair-task`, and `tick`. The token
 must have access to the Notion workspace you will write tasks to.
 
@@ -50,69 +50,69 @@ must have access to the Notion workspace you will write tasks to.
 npm run doctor
 ```
 
-Expected output: all checks pass, factory files resolved from
-`notionflow.config.ts`.
+Expected output: all checks pass, pipe files resolved from the default top-level
+`pipes/` discovery.
 
 ### 4. Connect the shared board and seed a task
 
 Connect the example project to the shared Notion board first:
 
 ```bash
-npm run notion:connect -- --url "<notion-database-url>"
+npm run notion:setup -- --url "<notion-database-url>"
 ```
 
-Then seed a queued task for the `shared-helper-demo` workflow.
+Then seed a queued task for the `shared-helper-demo` pipe.
 
 ```bash
-npm run notion:create-task -- --factory shared-helper-demo --title "Run shared helper demo" --status queue
+npm run notion:create-task -- --pipe shared-helper-demo --title "Run shared helper demo" --status queue
 ```
 
-If a task becomes quarantined because its `Factory` property was changed in
-Notion, restore the original `Factory` value and repair it explicitly:
+If a task becomes quarantined because its `Pipe` property was changed in Notion,
+restore the original `Pipe` value and repair it explicitly:
 
 ```bash
 npm run notion:repair-task -- --task "<page-id>"
 ```
 
-### 5. Run a factory tick
+### 5. Run a pipe tick
 
 ```bash
 npm run tick:demo
 ```
 
-This picks up the next queued task for the `shared-helper-demo` factory and
+This picks up the next queued task for the `shared-helper-demo` pipe and
 advances it one tick.
 
-To tick any factory by name:
+To tick any pipe by name:
 
 ```bash
-npm run tick -- --factory intent
+npm run tick -- --pipe intent
 ```
 
 The expressive primitive demo can be run directly:
 
 ```bash
-npm run tick -- --factory expressive-primitives
+npm run tick -- --pipe expressive-primitives
 ```
 
 ## Available scripts
 
-| Script | Command | Description |
-| --- | --- | --- |
-| `doctor` | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts` | Validate config and factory resolution |
-| `notion:connect` | `tsx ../src/cli.ts integrations notion connect --config ./notionflow.config.ts` | Register the shared Notion board used by this example |
-| `notion:sync` | `tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts` | Pull tasks and feedback from the shared Notion board |
-| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a task in the shared board for a declared factory |
-| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts` | Re-queue a quarantined task after restoring `Factory` |
-| `tick` | `tsx ../src/cli.ts tick --config ./notionflow.config.ts` | Sync and run queued work across all factories |
-| `tick:demo` | `tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts` | Sync and run queued work for `shared-helper-demo` |
-| `check` | `tsc --noEmit` | Type-check all factory files |
+| Script               | Command                                                                             | Description                                           |
+| -------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `doctor`             | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts`                          | Validate config and pipe resolution                   |
+| `notion:setup`       | `tsx ../src/cli.ts integrations notion setup --config ./notionflow.config.ts`       | Register the shared Notion board used by this example |
+| `notion:sync`        | `tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts`        | Pull tasks and feedback from the shared Notion board  |
+| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a task in the shared board for a declared pipe |
+| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts` | Re-queue a quarantined task after restoring `Pipe`    |
+| `tick`               | `tsx ../src/cli.ts tick --config ./notionflow.config.ts`                            | Sync and run queued work across all pipes             |
+| `tick:demo`          | `tsx ../src/cli.ts tick --pipe shared-helper-demo --config ./notionflow.config.ts`  | Sync and run queued work for `shared-helper-demo`     |
+| `check`              | `tsc --noEmit`                                                                      | Type-check all pipe files                             |
 
 ## Common command examples
 
 ```bash
-npm run notion:connect -- --url "<notion-database-url>"
-npm run notion:create-task -- --factory shared-helper-demo --title "Run shared helper demo" --status queue
+npm run notion:setup -- --url "<notion-database-url>"
+npm run notion:create-task -- --pipe shared-helper-demo --title "Run shared helper demo" --status queue
 npm run notion:sync
 npm run notion:repair-task -- --task "<page-id>"
 ```
@@ -124,7 +124,7 @@ Use `tick` when you want to sync and immediately run queued work. Use
 
 ```
 example-factories/
-  notionflow.config.ts        # Explicit factory declarations
+  notionflow.config.ts        # Uses default top-level pipes/ discovery
   package.json                # Standalone package with runnable scripts
   pipes/
     intent.ts

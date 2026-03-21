@@ -6,7 +6,7 @@ import {
   flow,
   step,
   write,
-} from '../../src/factory/canonical'
+} from '../../src/pipe/canonical'
 
 type RoundSummary = {
   question: string
@@ -33,7 +33,9 @@ const RESPONSES = [
 
 const chooseAnswer = (question: string, round: number): string => {
   const seed = question.length + round
-  return RESPONSES[Math.abs(seed) % RESPONSES.length] ?? 'Reply hazy, try again.'
+  return (
+    RESPONSES[Math.abs(seed) % RESPONSES.length] ?? 'Reply hazy, try again.'
+  )
 }
 
 const conversationStep = ask<Magic8Context>(

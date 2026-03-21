@@ -21,7 +21,7 @@ describe('notion command shared board registration', () => {
     await cleanupNotionCommandTestEnv()
   })
 
-  it('setup --url registers the shared board locally and refreshes Factory schema options', async () => {
+  it('setup --url registers the shared board locally and refreshes Pipe schema options', async () => {
     const {projectRoot} = await setupSharedBoardProject({registerBoard: false})
 
     mockNotionService(() => ({
@@ -204,7 +204,7 @@ describe('notion command shared board registration', () => {
         properties: {
           State: {type: 'select'},
           Status: {type: 'select'},
-          Factory: {type: 'rich_text'},
+          Pipe: {type: 'rich_text'},
         },
       })),
     }))
@@ -218,7 +218,7 @@ describe('notion command shared board registration', () => {
     ).rejects.toThrow(/Shared Notion board schema is invalid/)
   })
 
-  it('create-task requires a factory and writes to the registered shared board', async () => {
+  it('create-task requires a pipe and writes to the registered shared board', async () => {
     const {db} = await setupSharedBoardProject()
 
     mockNotionService(() => ({
@@ -226,7 +226,7 @@ describe('notion command shared board registration', () => {
         id: 'page-created-1',
         url: 'https://notion.so/page-created-1',
       })),
-      notionWaitForTaskFactory: vi.fn(async () => undefined),
+      notionWaitForTaskPipe: vi.fn(async () => undefined),
       notionEnsureBoardSchema: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -237,7 +237,7 @@ describe('notion command shared board registration', () => {
     const {SHARED_NOTION_BOARD_ID} = await import('./notion')
 
     await runNotionSubcommand('create-task', {
-      factory: 'alpha',
+      pipe: 'alpha',
       title: 'Shared board task',
       status: 'queue',
     })
@@ -252,10 +252,10 @@ describe('notion command shared board registration', () => {
       {
         title: 'Shared board task',
         state: 'Queue',
-        factoryId: 'alpha',
+        pipeId: 'alpha',
       },
     )
-    expect(vi.mocked(notionService.notionWaitForTaskFactory)).toHaveBeenCalledWith(
+    expect(vi.mocked(notionService.notionWaitForTaskPipe)).toHaveBeenCalledWith(
       'test-token',
       'page-created-1',
       'alpha',
@@ -297,20 +297,20 @@ describe('notion command shared board registration', () => {
 
     await expect(
       runNotionSubcommand('create-task', {
-        factory: 'alpha',
+        pipe: 'alpha',
         title: 'Broken board task',
         status: 'queue',
       }),
     ).rejects.toThrow(/Shared Notion board schema is invalid/)
   })
 
-  it('sync imports only tasks for the selected factory from the shared board', async () => {
+  it('sync imports only tasks for the selected pipe from the shared board', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const queryAllPages = vi.fn(async () => [
       buildNotionPage('page-alpha', 'Alpha task', 'Queue', 'alpha'),
       buildNotionPage('page-beta', 'Beta task', 'Queue', 'beta'),
-      buildNotionPage('page-missing', 'Missing factory', 'Queue'),
-      buildNotionPage('page-unknown', 'Unknown factory', 'Queue', 'gamma'),
+      buildNotionPage('page-missing', 'Missing pipe', 'Queue'),
+      buildNotionPage('page-unknown', 'Unknown pipe', 'Queue', 'gamma'),
     ])
 
     mockNotionService(() => ({
@@ -326,7 +326,7 @@ describe('notion command shared board registration', () => {
 
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
-      factoryId: 'alpha',
+      pipeId: 'alpha',
       configPath: path.join(projectRoot, 'notionflow.config.ts'),
       startDir: projectRoot,
       runQueued: false,
@@ -362,7 +362,7 @@ describe('notion command shared board registration', () => {
           properties: {
             State: {type: 'select'},
             Status: {type: 'rich_text'},
-            Factory: {type: 'select'},
+            Pipe: {type: 'select'},
           },
         })),
         notionQueryAllDataSourcePages: vi.fn(async () => []),
@@ -384,7 +384,7 @@ describe('notion command shared board registration', () => {
     ).not.toHaveBeenCalled()
   })
 
-  it('sync --factory quarantines tasks whose remote Factory drifted away', async () => {
+  it('sync --pipe quarantines tasks whose remote Pipe drifted away', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -423,7 +423,7 @@ describe('notion command shared board registration', () => {
     const notionService = await import('../services/notion')
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
-      factoryId: 'alpha',
+      pipeId: 'alpha',
       configPath: path.join(projectRoot, 'notionflow.config.ts'),
       startDir: projectRoot,
       runQueued: false,
@@ -441,9 +441,9 @@ describe('notion command shared board registration', () => {
 
     expect(drifted?.workflowId).toBe('alpha')
     expect(drifted?.state).toBe('blocked')
-    expect(drifted?.lastError).toContain('factory_mismatch:')
+    expect(drifted?.lastError).toContain('pipe_mismatch:')
     expect(drifted?.lastError).toContain(
-      'You may have changed the Factory property by mistake.',
+      'You may have changed the Pipe property by mistake.',
     )
 
     expect(queued?.workflowId).toBe('alpha')
@@ -455,8 +455,8 @@ describe('notion command shared board registration', () => {
     ).toHaveBeenCalledWith(
       'test-token',
       'page-alpha-drifted',
-      'Factory property changed',
-      expect.stringContaining('Restore Factory to `alpha`'),
+      'Pipe property changed',
+      expect.stringContaining('Restore Pipe to `alpha`'),
     )
   })
 
@@ -592,7 +592,7 @@ describe('notion command shared board registration', () => {
     })
   })
 
-  it('sync paginates shared-board pages and imports later matching factory tasks', async () => {
+  it('sync paginates shared-board pages and imports later matching pipe tasks', async () => {
     const projectRoot = await createProjectFixture()
     process.chdir(projectRoot)
     process.env.NOTION_API_TOKEN = 'test-token'
@@ -624,7 +624,7 @@ describe('notion command shared board registration', () => {
 
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
-      factoryId: 'alpha',
+      pipeId: 'alpha',
       configPath: path.join(projectRoot, 'notionflow.config.ts'),
       startDir: projectRoot,
       runQueued: false,
@@ -640,7 +640,7 @@ describe('notion command shared board registration', () => {
     expect(rows[0]?.externalTaskId).toBe('page-alpha-51')
   })
 
-  it('quarantines ownership mismatches and invalid factories during sync', async () => {
+  it('quarantines ownership mismatches and invalid pipes during sync', async () => {
     const projectRoot = await createProjectFixture()
     process.chdir(projectRoot)
     process.env.NOTION_API_TOKEN = 'test-token'
@@ -736,18 +736,18 @@ describe('notion command shared board registration', () => {
 
     expect(mismatch?.workflowId).toBe('alpha')
     expect(mismatch?.state).toBe('blocked')
-    expect(mismatch?.lastError).toContain('factory_mismatch:')
+    expect(mismatch?.lastError).toContain('pipe_mismatch:')
 
     expect(missing?.workflowId).toBe('alpha')
     expect(missing?.state).toBe('blocked')
-    expect(missing?.lastError).toContain('factory_invalid: missing Factory')
+    expect(missing?.lastError).toContain('pipe_invalid: missing Pipe')
 
     expect(undeclared?.workflowId).toBe('alpha')
     expect(undeclared?.state).toBe('blocked')
     expect(undeclared?.lastError).toContain(
-      'factory_invalid: undeclared Factory gamma',
+      'pipe_invalid: undeclared Pipe gamma',
     )
-    expect(mismatch?.lastError).toContain('Restore Factory to `alpha`')
+    expect(mismatch?.lastError).toContain('Restore Pipe to `alpha`')
   })
 
   it('keeps ownership-quarantined tasks blocked until explicitly repaired', async () => {
@@ -771,7 +771,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'factory_mismatch: shared-board Factory changed from alpha to beta. You may have changed the Factory property by mistake. Restore Factory to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-quarantined`.',
+        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-quarantined`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -812,7 +812,7 @@ describe('notion command shared board registration', () => {
     expect(taskRow?.lastError).toContain('repair-task --task page-quarantined')
   })
 
-  it('repairs a quarantined task after Factory is restored', async () => {
+  it('repairs a quarantined task after Pipe is restored', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -828,7 +828,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'factory_invalid: Missing Factory on shared-board page. You may have changed the Factory property by mistake. Restore Factory to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair`.',
+        'pipe_invalid: Missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -870,12 +870,12 @@ describe('notion command shared board registration', () => {
     ).toHaveBeenCalledWith(
       'test-token',
       'page-repair',
-      'Factory quarantine cleared',
-      'Factory restored to alpha. Task re-queued after explicit repair.',
+      'Pipe quarantine cleared',
+      'Pipe restored to alpha. Task re-queued after explicit repair.',
     )
   })
 
-  it('repair-task fails when Factory is still wrong and leaves task blocked', async () => {
+  it('repair-task fails when Pipe is still wrong and leaves task blocked', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -891,7 +891,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'factory_mismatch: shared-board Factory changed from alpha to beta. You may have changed the Factory property by mistake. Restore Factory to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-wrong`.',
+        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-wrong`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -916,16 +916,14 @@ describe('notion command shared board registration', () => {
         configPath: path.join(projectRoot, 'notionflow.config.ts'),
         startDir: projectRoot,
       }),
-    ).rejects.toThrow(
-      /still quarantined because its shared-board Factory is beta/,
-    )
+    ).rejects.toThrow(/still quarantined because its shared-board Pipe is beta/)
 
     const [taskRow] = await db
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-wrong'))
     expect(taskRow?.state).toBe('blocked')
-    expect(taskRow?.lastError).toContain('factory_mismatch:')
+    expect(taskRow?.lastError).toContain('pipe_mismatch:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()
@@ -934,7 +932,7 @@ describe('notion command shared board registration', () => {
     ).not.toHaveBeenCalled()
   })
 
-  it('repair-task fails when Factory is missing and leaves task blocked', async () => {
+  it('repair-task fails when Pipe is missing and leaves task blocked', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -950,7 +948,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'factory_invalid: missing Factory on shared-board page. You may have changed the Factory property by mistake. Restore Factory to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-missing`.',
+        'pipe_invalid: missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-missing`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -972,14 +970,14 @@ describe('notion command shared board registration', () => {
         task: 'page-repair-missing',
         config: path.join(projectRoot, 'notionflow.config.ts'),
       }),
-    ).rejects.toThrow(/Restore Factory to `alpha` in Notion first/)
+    ).rejects.toThrow(/Restore Pipe to `alpha` in Notion first/)
 
     const [taskRow] = await db
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-missing'))
     expect(taskRow?.state).toBe('blocked')
-    expect(taskRow?.lastError).toContain('factory_invalid:')
+    expect(taskRow?.lastError).toContain('pipe_invalid:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()

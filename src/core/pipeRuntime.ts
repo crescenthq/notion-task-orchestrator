@@ -1,30 +1,30 @@
 import {access} from 'node:fs/promises'
 import path from 'node:path'
 import {and, eq, isNull, lte, or} from 'drizzle-orm'
+import {createNotionTaskBoardAdapter} from '../adapters/notion'
 import {nowIso, openApp} from '../app/context'
 import {notionToken} from '../config/env'
-import {createNotionTaskBoardAdapter} from '../adapters/notion'
-import {loadFactoryFromPath, type PipeFactoryDefinition} from './factory'
-import {boards, runTraces, runs, tasks} from '../db/schema'
+import {boards, runs, runTraces, tasks} from '../db/schema'
 import {
-  resolveProjectConfig,
+  type Checkpoint,
+  CheckpointMismatchError,
+  parseCheckpoint,
+} from '../pipe/checkpoint'
+import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
+import {
   type ResolvedProjectConfig,
+  resolveProjectConfig,
 } from '../project/discoverConfig'
-import {loadDeclaredFactories} from '../project/projectConfig'
-import {parseRunTrace, RunTraceReasonCode} from './runTraces'
+import {loadDeclaredPipes} from '../project/projectConfig'
+import {formatStatusLabel} from '../services/statusIcons'
+import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
+import {parseRunTrace, type RunTraceReasonCode} from './runTraces'
 import {
-  nullTaskBoardAdapter,
   type BoardTaskRef,
+  nullTaskBoardAdapter,
   type TaskBoardAdapter,
   type TaskBoardState,
 } from './taskBoardAdapter'
-import {formatStatusLabel} from '../services/statusIcons'
-import {
-  CheckpointMismatchError,
-  parseCheckpoint,
-  type Checkpoint,
-} from '../factory/checkpoint'
-import {brandControlSignal, hasControlSignalBrand} from '../factory/controlSignal'
 
 type JsonObject = Record<string, unknown>
 
@@ -59,7 +59,7 @@ const PIPE_BLOCKED_STATE_ID = '__pipe_blocked__'
 const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
-const OWNERSHIP_QUARANTINE_PREFIXES = ['factory_mismatch:', 'factory_invalid:']
+const OWNERSHIP_QUARANTINE_PREFIXES = ['pipe_mismatch:', 'pipe_invalid:']
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -69,8 +69,7 @@ function isPipeControlSignalType(
   value: unknown,
 ): value is JsonObject & {type: 'await_feedback' | 'end'} {
   return (
-    isRecord(value) &&
-    (value.type === 'await_feedback' || value.type === 'end')
+    isRecord(value) && (value.type === 'await_feedback' || value.type === 'end')
   )
 }
 
@@ -196,12 +195,12 @@ function leaseExpiryIso(leaseMs: number): string {
   return new Date(Date.now() + leaseMs).toISOString()
 }
 
-async function resolveInstalledFactoryPath(
-  factoryId: string,
+async function resolveInstalledPipePath(
+  pipeId: string,
   workflowsDir: string,
 ): Promise<string> {
   const candidates = ['.ts', '.mts', '.js', '.mjs', '.cts', '.cjs'].map(ext =>
-    path.join(workflowsDir, `${factoryId}${ext}`),
+    path.join(workflowsDir, `${pipeId}${ext}`),
   )
   for (const candidate of candidates) {
     try {
@@ -212,42 +211,42 @@ async function resolveInstalledFactoryPath(
     }
   }
   throw new Error(
-    `Factory module not found for \`${factoryId}\`. Expected one of: ${candidates.join(', ')}`,
+    `Pipe module not found for \`${pipeId}\`. Expected one of: ${candidates.join(', ')}`,
   )
 }
 
-async function resolveFactoryPathById(options: {
-  factoryId: string
+async function resolvePipePathById(options: {
+  pipeId: string
   projectConfig: ResolvedProjectConfig | null
   workflowsDir: string
 }): Promise<string> {
   if (options.projectConfig) {
-    const declaredFactories = await loadDeclaredFactories({
+    const declaredPipes = await loadDeclaredPipes({
       configPath: options.projectConfig.configPath,
       projectRoot: options.projectConfig.projectRoot,
     })
-    if (declaredFactories.length > 0) {
-      const declaredFactory = declaredFactories.find(
-        entry => entry.definition.id === options.factoryId,
+    if (declaredPipes.length > 0) {
+      const declaredPipe = declaredPipes.find(
+        entry => entry.definition.id === options.pipeId,
       )
-      if (declaredFactory) {
-        return declaredFactory.resolvedPath
+      if (declaredPipe) {
+        return declaredPipe.resolvedPath
       }
 
-      const availableFactoryIds = declaredFactories
+      const availablePipeIds = declaredPipes
         .map(entry => entry.definition.id)
         .sort()
       throw new Error(
         [
-          `Factory \`${options.factoryId}\` is not declared in project config.`,
+          `Pipe \`${options.pipeId}\` is not declared in project config.`,
           `Config path: ${options.projectConfig.configPath}`,
-          `Available factories: ${availableFactoryIds.join(', ') || '<none>'}`,
+          `Available pipes: ${availablePipeIds.join(', ') || '<none>'}`,
         ].join('\n'),
       )
     }
   }
 
-  return resolveInstalledFactoryPath(options.factoryId, options.workflowsDir)
+  return resolveInstalledPipePath(options.pipeId, options.workflowsDir)
 }
 
 function getTaskSelector(task: {boardId: string; externalTaskId: string}) {
@@ -257,13 +256,16 @@ function getTaskSelector(task: {boardId: string; externalTaskId: string}) {
   )
 }
 
-export async function runFactoryTaskByExternalId(
+export async function runPipeTaskByExternalId(
   taskExternalId: string,
   options: RuntimeRunOptions = {},
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options)
   const startDir = options.startDir ?? process.cwd()
-  const {db, paths} = await openApp({startDir, configPath: options.configPath})
+  const {db, paths} = await openApp({
+    startDir,
+    configPath: options.configPath,
+  })
   const resolvedProjectConfig = await resolveProjectConfig({
     startDir,
     configPath: options.configPath,
@@ -276,8 +278,8 @@ export async function runFactoryTaskByExternalId(
   if (isOwnershipQuarantined(task.lastError)) {
     throw new Error(
       [
-        `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Factory mismatch is resolved: ${task.lastError}`,
-        `Restore the original Factory in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
+        `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Pipe mismatch is resolved: ${task.lastError}`,
+        `Restore the original Pipe in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
       ].join(' '),
     )
   }
@@ -293,7 +295,9 @@ export async function runFactoryTaskByExternalId(
   }
 
   if (!options.taskBoardAdapter && board?.adapter === 'notion' && !token) {
-    console.log('[warn] NOTION_API_TOKEN missing; using null task board adapter')
+    console.log(
+      '[warn] NOTION_API_TOKEN missing; using null task board adapter',
+    )
   }
 
   const boardAdapter =
@@ -330,13 +334,13 @@ export async function runFactoryTaskByExternalId(
     }
   }
 
-  const factoryPath = await resolveFactoryPathById({
-    factoryId: task.workflowId,
+  const pipePath = await resolvePipePathById({
+    pipeId: task.workflowId,
     projectConfig: resolvedProjectConfig,
     workflowsDir: paths.workflowsDir,
   })
-  const {definition} = await loadFactoryFromPath(factoryPath)
-  const pipeDefinition: PipeFactoryDefinition = definition
+  const {definition} = await loadPipeFromPath(pipePath)
+  const pipeDefinition: PipeModuleDefinition = definition
 
   let taskTitle = task.externalTaskId
   let taskContext = ''
@@ -359,15 +363,14 @@ export async function runFactoryTaskByExternalId(
     .find(line => line.length > 0)
   const taskPrompt = promptLine ?? taskTitle
 
-  let defaultContext: JsonObject
-  let initialStateId: string
   if (!isRecord(pipeDefinition.initial)) {
     throw new Error(
-      `Factory \`${definition.id}\` must define an object context for runtime persistence`,
+      `Pipe \`${definition.id}\` must define an object context for runtime persistence`,
     )
   }
-  defaultContext = pipeDefinition.initial
-  initialStateId = PIPE_RUNNING_STATE_ID
+
+  const defaultContext: JsonObject = pipeDefinition.initial
+  const initialStateId: string = PIPE_RUNNING_STATE_ID
 
   let ctx: JsonObject = {
     ...defaultContext,
@@ -383,7 +386,7 @@ export async function runFactoryTaskByExternalId(
       if (isRecord(persisted)) ctx = mergeContext(ctx, persisted)
     } catch {
       console.log(
-        '[warn] failed to parse persisted factory context; using defaults',
+        '[warn] failed to parse persisted pipe context; using defaults',
       )
     }
   }
@@ -398,7 +401,9 @@ export async function runFactoryTaskByExternalId(
     persistedCheckpointValue !== null &&
     !persistedCheckpoint
   ) {
-    console.log('[warn] invalid persisted checkpoint; falling back to full replay')
+    console.log(
+      '[warn] invalid persisted checkpoint; falling back to full replay',
+    )
   }
   ctx = omitCheckpointContextKey(ctx)
 
@@ -552,7 +557,9 @@ export async function runFactoryTaskByExternalId(
     }
   }
 
-  const onPipeStepStart = async (event: PipeStepLifecycleEvent): Promise<void> => {
+  const onPipeStepStart = async (
+    event: PipeStepLifecycleEvent,
+  ): Promise<void> => {
     if (leaseRenewalError) {
       throw leaseRenewalError
     }
@@ -613,14 +620,14 @@ export async function runFactoryTaskByExternalId(
       status,
       message:
         status === 'done'
-          ? 'Factory reached terminal done state.'
+          ? 'Pipe reached terminal done state.'
           : String(ctx.last_error ?? 'no detail'),
     })
     await syncBoardState(status)
     await syncBoardLog(
       status === 'done' ? 'Task complete' : `Task ${status}`,
       status === 'done'
-        ? 'Factory reached terminal done state.'
+        ? 'Pipe reached terminal done state.'
         : String(ctx.last_error ?? 'no detail'),
     )
   }
@@ -754,13 +761,13 @@ export async function runFactoryTaskByExternalId(
   await syncBoardState('running')
   await syncBoardLog(
     resumed ? `Resuming from state ${currentStateId}` : 'Run started',
-    `Factory: ${definition.id}`,
+    `Pipe: ${definition.id}`,
   )
   await persistRunTrace({
     type: 'started',
     stateId: currentStateId,
     status: 'running',
-    message: `Factory: ${definition.id}`,
+    message: `Pipe: ${definition.id}`,
   })
   if (resumed) {
     await persistRunTrace({
@@ -795,7 +802,7 @@ export async function runFactoryTaskByExternalId(
   const parsePipeContext = (value: unknown, label: string): JsonObject => {
     if (!isRecord(value)) {
       throw new Error(
-        `Pipe factory \`${definition.id}\` emitted non-object context for ${label}`,
+        `Pipe \`${definition.id}\` emitted non-object context for ${label}`,
       )
     }
     return value
@@ -812,7 +819,9 @@ export async function runFactoryTaskByExternalId(
 
     let result: unknown
     try {
-      const runPipe = async (checkpoint: Checkpoint | undefined): Promise<unknown> =>
+      const runPipe = async (
+        checkpoint: Checkpoint | undefined,
+      ): Promise<unknown> =>
         pipeDefinition.run({
           ctx,
           feedback,
@@ -854,10 +863,15 @@ export async function runFactoryTaskByExternalId(
       const signalCheckpoint = parseCheckpoint(result.checkpoint, {
         location: 'await_feedback signal',
       })
-      ctx = mergeContext(omitCheckpointContextKey(parsePipeContext(result.ctx, 'await_feedback')), {
-        [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
-        [PIPE_CHECKPOINT_KEY]: signalCheckpoint ?? null,
-      })
+      ctx = mergeContext(
+        omitCheckpointContextKey(
+          parsePipeContext(result.ctx, 'await_feedback'),
+        ),
+        {
+          [PIPE_FEEDBACK_PROMPT_KEY]: result.prompt,
+          [PIPE_CHECKPOINT_KEY]: signalCheckpoint ?? null,
+        },
+      )
       await persistStepTrace(
         currentStateId,
         PIPE_FEEDBACK_STATE_ID,
@@ -911,7 +925,9 @@ export async function runFactoryTaskByExternalId(
     }
 
     if (isPipeEndSignal(result)) {
-      ctx = omitCheckpointContextKey(parsePipeContext(result.ctx, `end.${result.status}`))
+      ctx = omitCheckpointContextKey(
+        parsePipeContext(result.ctx, `end.${result.status}`),
+      )
       if (result.message) {
         ctx = mergeContext(ctx, {last_error: result.message})
       }
@@ -955,7 +971,7 @@ export async function runFactoryTaskByExternalId(
 
     if (isMalformedPipeControlSignal(result)) {
       throw new Error(
-        `Pipe factory \`${definition.id}\` emitted malformed ${String(result.type)} control signal`,
+        `Pipe \`${definition.id}\` emitted malformed ${String(result.type)} control signal`,
       )
     }
 

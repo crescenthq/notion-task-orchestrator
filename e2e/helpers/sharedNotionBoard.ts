@@ -68,7 +68,9 @@ async function archivePersistedBoard(token: string): Promise<void> {
   await clearPersistedBoardState()
 }
 
-async function archiveBoardIfPresent(board: SharedBoardConnection): Promise<void> {
+async function archiveBoardIfPresent(
+  board: SharedBoardConnection,
+): Promise<void> {
   const token = notionToken()
   if (!token) return
 

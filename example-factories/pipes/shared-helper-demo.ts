@@ -1,4 +1,11 @@
-import {decide, definePipe, end, flow, loop, write} from '../../src/factory/canonical'
+import {
+  decide,
+  definePipe,
+  end,
+  flow,
+  loop,
+  write,
+} from '../../src/pipe/canonical'
 import {
   chooseRoute,
   enrichContext,

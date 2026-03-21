@@ -1,4 +1,4 @@
-# Factory Authoring Guide
+# Pipe Authoring Guide
 
 ## Canonical Authoring Model
 
@@ -20,13 +20,13 @@ Reference contract:
 
 Quick try-it path: [`scratchpad-playground.md`](./scratchpad-playground.md).
 
-## Minimal Factory Shape
+## Minimal Pipe Shape
 
 ```ts
 import {definePipe, end, flow, step} from 'notionflow'
 
 export default definePipe({
-  id: 'my-factory',
+  id: 'my-pipe',
   initial: {completed: false},
   run: flow(
     step('complete', ctx => ({...ctx, completed: true})),
@@ -130,7 +130,7 @@ Feedback sources consumed by `ask`:
 
 Typical Notion loop:
 
-1. `notionflow tick --factory <factory-id>` pauses task in `feedback`.
+1. `notionflow tick --pipe <pipe-id>` pauses task in `feedback`.
 2. Human replies in Notion comments.
 3. `notionflow integrations notion sync --run` detects new comments, stores
    `human_feedback`, re-queues the task, and runs queued work.
@@ -260,20 +260,20 @@ const betaPlanner = defineAgent<{prompt: string}, {text: string}>({
 npx notionflow init
 ```
 
-2. Scaffold a factory.
+2. Scaffold a pipe.
 
 ```bash
-npx notionflow factory create --id my-factory --skip-notion-board
+npx notionflow pipe create --id my-pipe --skip-notion-board
 ```
 
-3. Declare factory file in `notionflow.config.ts`.
+3. Optional: set project name or customize pipe discovery in
+   `notionflow.config.ts`.
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
   name: 'Asmara Tasks',
-  factories: ['./pipes/my-factory.ts'],
 })
 ```
 
@@ -281,6 +281,10 @@ If you want `notionflow integrations notion setup` to create a human-friendly
 shared tasks database title, set `name` in `defineConfig(...)`. If `name` is
 omitted, NotionFlow falls back to a title derived from the project directory
 name.
+
+`pipe create` writes to `pipes/`, so the default project layout does not need
+any `pipes` entry. Add `pipes` only when you want custom locations or explicit
+directory scans.
 
 4. Validate context and auth.
 
@@ -291,14 +295,14 @@ npx notionflow doctor
 5. Run work via queue or direct task execution.
 
 ```bash
-npx notionflow tick --factory <factory-id>
+npx notionflow tick --pipe <pipe-id>
 npx notionflow run --task <notion_page_id>
 ```
 
 ## Authoring Tips
 
 - Keep context JSON-serializable
-- Keep factory `id` stable once tasks are in-flight
+- Keep pipe `id` stable once tasks are in-flight
 - Use `flow(...)` as the default composition style
 - Return explicit `end.*` outcomes for deterministic terminals
 - Treat agent invocation failures (`result.ok === false`) as explicit workflow
@@ -334,7 +338,7 @@ export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```bash
 npm run test:e2e -- e2e/local-project-docs-quickstart-live.test.ts
 npm run test:e2e -- e2e/canonical-write-live.test.ts e2e/canonical-end-live.test.ts e2e/example-factories-live.test.ts
-npm run test:e2e -- e2e/factory-verification.test.ts
+npm run test:e2e -- e2e/pipe-verification.test.ts
 ```
 
 3. Expected outputs.
@@ -342,6 +346,6 @@ npm run test:e2e -- e2e/factory-verification.test.ts
 - Quickstart test prints `Project root:`, `Config path:`, `Task created:`, and
   `Sync complete:`
 - Verification suite prints
-  `Artifact: .../e2e/artifacts/factory-live-verification-<timestamp>.json`
+  `Artifact: .../e2e/artifacts/pipe-live-verification-<timestamp>.json`
 - Artifact JSON includes `passedScenarios` and per-scenario terminal
   `finalState` entries

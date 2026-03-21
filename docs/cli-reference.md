@@ -9,7 +9,7 @@ Top-level commands:
 - `tick`
 - `run`
 - `status`
-- `factory`
+- `pipe`
 - `integrations`
 
 ## Project Context Resolution
@@ -20,7 +20,7 @@ directories from the current working directory.
 Supported `--config <path>` override:
 
 - `doctor`
-- `factory create`
+- `pipe create`
 - `run`
 - `tick`
 - `integrations notion setup`
@@ -71,7 +71,7 @@ Options:
 
 - `--config <path>`
 - `--board <id>`
-- `--factory <id>`
+- `--pipe <id>`
 - `--loop`
 - `--interval-ms <n>`
 - `--max-transitions-per-tick <n>`
@@ -116,24 +116,27 @@ Print local task record as JSON.
 notionflow status --task <notion_page_id>
 ```
 
-## Factory Commands
+## Pipe Commands
 
-### `factory create`
+### `pipe create`
 
-Create a local factory scaffold.
+Create a local pipe scaffold.
 
 ```bash
-notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
+notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
 ```
 
-Writes `pipes/<factory-id>.ts` in the resolved project root.
+Writes `pipes/<pipe-id>.ts` in the resolved project root.
 
-### `factory list`
+Files under the top-level `pipes/` directory load automatically unless
+`notionflow.config.ts` overrides `pipes`.
 
-List known factories from runtime DB.
+### `pipe list`
+
+List known pipes from runtime DB.
 
 ```bash
-notionflow factory list
+notionflow pipe list
 ```
 
 ## Integrations: Notion
@@ -155,7 +158,7 @@ notionflow integrations notion setup [--url <notion-database-url>] [--config <pa
 
 ### `integrations notion repair-task`
 
-Clear ownership quarantine after restoring the `Factory` property in Notion.
+Clear ownership quarantine after restoring the `Pipe` property in Notion.
 
 ```bash
 notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
@@ -166,7 +169,7 @@ notionflow integrations notion repair-task --task <notion_page_id> [--config <pa
 Create a Notion task and upsert local state.
 
 ```bash
-notionflow integrations notion create-task --factory <factory-id> --title "Task" [--status <state>] [--config <path>]
+notionflow integrations notion create-task --pipe <pipe-id> --title "Task" [--status <state>] [--config <path>]
 ```
 
 ### `integrations notion sync`
@@ -174,7 +177,7 @@ notionflow integrations notion create-task --factory <factory-id> --title "Task"
 Sync tasks from registered Notion boards.
 
 ```bash
-notionflow integrations notion sync [--config <path>] [--factory <factory-id>] [--run]
+notionflow integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
 ```
 
 Extra option when `--run` is set:
@@ -195,9 +198,9 @@ All runtime artifacts are project-local:
 
 ```bash
 notionflow init
-notionflow factory create --id demo --skip-notion-board
+notionflow pipe create --id demo --skip-notion-board
 notionflow doctor
 notionflow integrations notion setup
-notionflow integrations notion create-task --factory demo --title "Try demo" --status queue
-notionflow tick --factory demo
+notionflow integrations notion create-task --pipe demo --title "Try demo" --status queue
+notionflow tick --pipe demo
 ```

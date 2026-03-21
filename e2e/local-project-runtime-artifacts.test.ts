@@ -26,8 +26,8 @@ describe('local project runtime artifacts', () => {
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
-    await execCli(['factory', 'list'], fixture.projectDir)
-    await execCli(['factory', 'list'], fixture.projectDir)
+    await execCli(['pipe', 'list'], fixture.projectDir)
+    await execCli(['pipe', 'list'], fixture.projectDir)
 
     const runtimeDir = path.join(fixture.projectDir, '.notionflow')
     await expect(
@@ -60,9 +60,9 @@ async function execCli(args: string[], cwd: string): Promise<void> {
       process.execPath,
       ['--import', tsxLoaderPath, cliPath, ...args],
       {
-      cwd,
-      stdio: 'pipe',
-      env: process.env,
+        cwd,
+        stdio: 'pipe',
+        env: process.env,
       },
     )
 

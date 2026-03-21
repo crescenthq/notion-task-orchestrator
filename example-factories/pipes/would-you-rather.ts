@@ -7,7 +7,7 @@ import {
   loop,
   step,
   write,
-} from '../../src/factory/canonical'
+} from '../../src/pipe/canonical'
 
 type RatherQuestion = {
   prompt: string
@@ -130,7 +130,9 @@ export default definePipe({
       body: flow(selectQuestion, captureChoice, applyChoice),
       until: ctx => Boolean(ctx.complete),
       max: 3,
-      onExhausted: end.failed('No valid A/B choice received before loop exhaustion.'),
+      onExhausted: end.failed(
+        'No valid A/B choice received before loop exhaustion.',
+      ),
     }),
     write(ctx => ({
       markdown: [

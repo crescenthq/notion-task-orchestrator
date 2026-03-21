@@ -21,19 +21,22 @@ Applicable commands also support `--config <path>` for explicit resolution.
 ## Runtime Layers
 
 1. CLI command layer
-2. Factory execution/runtime layer
+2. Pipe execution/runtime layer
 3. Project-local persistence layer
 4. Notion adapter layer
 
-## Factory Loading Model
+## Pipe Loading Model
 
-Factories are loaded only from explicit path declarations in
-`notionflow.config.ts`.
+Factories default to top-level `./pipes` discovery.
 
-- no implicit glob scan
+`notionflow.config.ts` can override discovery with exact file paths or directory
+paths.
+
+- no repo-wide implicit glob scan
+- default `./pipes` scan is top-level only
 - relative declarations resolve from project root
-- missing declaration paths fail fast
-- duplicate factory IDs fail fast with conflicting path diagnostics
+- missing explicit declaration paths fail fast
+- duplicate pipe IDs fail fast with conflicting path diagnostics
 
 ## Runtime Persistence
 
@@ -79,4 +82,4 @@ Package root exports typed authoring primitives:
 - `definePipe`
 - canonical primitives (`flow`, `step`, `ask`, `decide`, `loop`, `write`, `end`)
 
-This allows reusable shared modules and deterministic factory authoring.
+This allows reusable shared modules and deterministic pipe authoring.

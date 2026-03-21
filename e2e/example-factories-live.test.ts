@@ -25,9 +25,7 @@ if (liveSuiteEnabled) {
   registerLiveBoardSuite()
 }
 
-;(liveSuiteEnabled ? describe : describe.skip)(
-  'example factories live e2e',
-  () => {
+;(liveSuiteEnabled ? describe : describe.skip)('example pipes live e2e', () => {
   let fixture: TempProjectFixture | null = null
 
   afterEach(async () => {
@@ -73,7 +71,7 @@ if (liveSuiteEnabled) {
         'integrations',
         'notion',
         'create-task',
-        '--factory',
+        '--pipe',
         'shared-helper-demo',
         '--title',
         'Shared helper example live task',
@@ -92,8 +90,7 @@ if (liveSuiteEnabled) {
     const after = await snapshotGlobalNotionflowWrites()
     assertNoNewGlobalNotionflowWrites(before, after)
   }, 180_000)
-  },
-)
+})
 
 async function execCli(
   args: string[],
@@ -166,7 +163,7 @@ async function readTaskState(
 function exampleConfigSource(factoryPath: string): string {
   return [
     'export default {',
-    `  factories: [${JSON.stringify(factoryPath)}],`,
+    `  pipes: [${JSON.stringify(factoryPath)}],`,
     '};',
     '',
   ].join('\n')

@@ -29,86 +29,83 @@ if (liveSuiteEnabled) {
 ;(liveSuiteEnabled ? describe : describe.skip)(
   'docs quickstart live smoke',
   () => {
-  let fixture: TempProjectFixture | null = null
+    let fixture: TempProjectFixture | null = null
 
-  afterEach(async () => {
-    if (fixture) {
-      await fixture.cleanup()
-      fixture = null
-    }
-  })
+    afterEach(async () => {
+      if (fixture) {
+        await fixture.cleanup()
+        fixture = null
+      }
+    })
 
-  afterAll(async () => {
-    await finishLiveBoardSuite()
-  })
+    afterAll(async () => {
+      await finishLiveBoardSuite()
+    })
 
-  it('runs init -> factory create -> doctor -> tick in local project mode', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
-    fixture = await createTempProjectFixture('notionflow-docs-live-')
+    it('runs init -> pipe create -> doctor -> tick in local project mode', async () => {
+      const before = await snapshotGlobalNotionflowWrites()
+      fixture = await createTempProjectFixture('notionflow-docs-live-')
 
-    await execCli(['init'], fixture.projectDir)
-    await ensureNotionflowDependencyAvailable(fixture.projectDir)
-    await execCli(
-      ['factory', 'create', '--id', 'docs-live'],
-      fixture.projectDir,
-    )
+      await execCli(['init'], fixture.projectDir)
+      await ensureNotionflowDependencyAvailable(fixture.projectDir)
+      await execCli(['pipe', 'create', '--id', 'docs-live'], fixture.projectDir)
 
-    await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
-      docsConfigSource(),
-      'utf8',
-    )
-    await writeFile(
-      path.join(fixture.projectDir, 'pipes', 'docs-live.ts'),
-      docsFactorySource(),
-      'utf8',
-    )
+      await writeFile(
+        path.join(fixture.projectDir, 'notionflow.config.ts'),
+        docsConfigSource(),
+        'utf8',
+      )
+      await writeFile(
+        path.join(fixture.projectDir, 'pipes', 'docs-live.ts'),
+        docsFactorySource(),
+        'utf8',
+      )
 
-    const doctor = await execCli(['doctor'], fixture.projectDir)
-    const resolvedProjectRoot = await realpath(fixture.projectDir)
-    expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
-    expect(doctor.stdout).toContain(
-      `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
-    )
+      const doctor = await execCli(['doctor'], fixture.projectDir)
+      const resolvedProjectRoot = await realpath(fixture.projectDir)
+      expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
+      expect(doctor.stdout).toContain(
+        `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
+      )
 
-    const board = await resolveSharedBoardConnection()
-    await execCli(
-      ['integrations', 'notion', 'setup', '--url', board.url],
-      fixture.projectDir,
-    )
-    await ensureWorkflowRegistered(fixture.projectDir, 'docs-live')
+      const board = await resolveSharedBoardConnection()
+      await execCli(
+        ['integrations', 'notion', 'setup', '--url', board.url],
+        fixture.projectDir,
+      )
+      await ensureWorkflowRegistered(fixture.projectDir, 'docs-live')
 
-    const created = await execCli(
-      [
-        'integrations',
-        'notion',
-        'create-task',
-        '--factory',
-        'docs-live',
-        '--title',
-        'Docs quickstart live task',
-        '--status',
-        'queue',
-      ],
-      fixture.projectDir,
-    )
-    const taskExternalId = extractTaskExternalId(created.stdout)
+      const created = await execCli(
+        [
+          'integrations',
+          'notion',
+          'create-task',
+          '--pipe',
+          'docs-live',
+          '--title',
+          'Docs quickstart live task',
+          '--status',
+          'queue',
+        ],
+        fixture.projectDir,
+      )
+      const taskExternalId = extractTaskExternalId(created.stdout)
 
-    const tick = await execCli(
-      ['tick', '--factory', 'docs-live'],
-      fixture.projectDir,
-    )
-    expect(tick.stdout).toContain('Sync complete')
+      const tick = await execCli(
+        ['tick', '--pipe', 'docs-live'],
+        fixture.projectDir,
+      )
+      expect(tick.stdout).toContain('Sync complete')
 
-    await execCli(['run', '--task', taskExternalId], fixture.projectDir)
+      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
 
-    await expect(
-      readTaskState(fixture.projectDir, taskExternalId),
-    ).resolves.toBe('done')
+      await expect(
+        readTaskState(fixture.projectDir, taskExternalId),
+      ).resolves.toBe('done')
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
-  }, 180_000)
+      const after = await snapshotGlobalNotionflowWrites()
+      assertNoNewGlobalNotionflowWrites(before, after)
+    }, 180_000)
   },
 )
 
@@ -206,9 +203,9 @@ async function readTaskState(
 
 function docsConfigSource(): string {
   return [
-    'export default {',
-    '  factories: ["./pipes/docs-live.ts"],',
-    '};',
+    'import {defineConfig} from "notionflow";',
+    '',
+    'export default defineConfig({});',
     '',
   ].join('\n')
 }

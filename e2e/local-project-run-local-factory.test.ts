@@ -25,7 +25,7 @@ describe('local project run command', () => {
     fixture = null
   })
 
-  it('loads factories directly from project config and picks up edits without install', async () => {
+  it('loads pipes directly from project config and picks up edits without install', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture()
 
@@ -33,9 +33,13 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'smoke.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
-    await writeFile(factoryPath, factorySource(canonicalModuleUrl, 'done'), 'utf8')
+    await writeFile(
+      factoryPath,
+      factorySource(canonicalModuleUrl, 'done'),
+      'utf8',
+    )
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
       configSource('./pipes/smoke.ts'),
@@ -50,7 +54,11 @@ describe('local project run command', () => {
       readTaskState(fixture.projectDir, externalTaskId),
     ).resolves.toBe('done')
 
-    await writeFile(factoryPath, factorySource(canonicalModuleUrl, 'failed'), 'utf8')
+    await writeFile(
+      factoryPath,
+      factorySource(canonicalModuleUrl, 'failed'),
+      'utf8',
+    )
     await resetTaskToQueued(fixture.projectDir, externalTaskId)
 
     await execCli(['run', '--task', externalTaskId], fixture.projectDir)
@@ -68,15 +76,15 @@ describe('local project run command', () => {
 
     await execCli(['init'], fixture.projectDir)
 
-    const factoryPath = path.join(
-      fixture.projectDir,
-      'pipes',
-      'ask-resume.ts',
-    )
+    const factoryPath = path.join(fixture.projectDir, 'pipes', 'ask-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
-    await writeFile(factoryPath, askResumeFactorySource(canonicalModuleUrl), 'utf8')
+    await writeFile(
+      factoryPath,
+      askResumeFactorySource(canonicalModuleUrl),
+      'utf8',
+    )
     await writeFile(
       path.join(fixture.projectDir, 'notionflow.config.ts'),
       configSource('./pipes/ask-resume.ts'),
@@ -124,19 +132,15 @@ describe('local project run command', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('runs direct definePipe factories and resumes feedback in local mode', async () => {
+  it('runs direct definePipe pipes and resumes feedback in local mode', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
 
-    const factoryPath = path.join(
-      fixture.projectDir,
-      'pipes',
-      'pipe-resume.ts',
-    )
+    const factoryPath = path.join(fixture.projectDir, 'pipes', 'pipe-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     await writeFile(
       factoryPath,
@@ -162,7 +166,9 @@ describe('local project run command', () => {
       unknown
     >
     expect(pausedCtx.attempts).toBe(1)
-    expect(pausedCtx.__nf_feedback_prompt).toBe('Approve this task to continue.')
+    expect(pausedCtx.__nf_feedback_prompt).toBe(
+      'Approve this task to continue.',
+    )
     expect(pausedCtx.__nf_checkpoint).toEqual({
       v: 1,
       path: [{k: 'flow', at: 1}],
@@ -196,10 +202,10 @@ describe('local project run command', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('does not expose the removed factory install command', async () => {
+  it('does not expose the removed pipe install command', async () => {
     fixture = await createTempProjectFixture()
     const result = await execCliResult(
-      ['factory', 'install', '--path', './fake.ts'],
+      ['pipe', 'install', '--path', './fake.ts'],
       fixture.projectDir,
     )
     expect(result.code).not.toBe(0)
@@ -337,10 +343,7 @@ async function readTaskRunTraces(
 ): Promise<Array<typeof runTraces.$inferSelect>> {
   const {db} = await openApp({projectRoot})
   const task = await readTask(projectRoot, externalTaskId)
-  return db
-    .select()
-    .from(runTraces)
-    .where(eq(runTraces.taskId, task.id))
+  return db.select().from(runTraces).where(eq(runTraces.taskId, task.id))
 }
 
 async function queueTaskWithContext(
@@ -451,7 +454,7 @@ function directPipeFeedbackFactorySource(canonicalModuleUrl: string): string {
 function configSource(factoryPath: string): string {
   return [
     'export default {',
-    `  factories: [${JSON.stringify(factoryPath)}],`,
+    `  pipes: [${JSON.stringify(factoryPath)}],`,
     '};',
     '',
   ].join('\n')
