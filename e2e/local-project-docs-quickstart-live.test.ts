@@ -8,9 +8,9 @@ import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
 import {tasks, workflows} from '../src/db/schema'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
@@ -43,16 +43,16 @@ if (liveSuiteEnabled) {
     })
 
     it('runs init -> pipe create -> doctor -> tick in local project mode', async () => {
-      const before = await snapshotGlobalNotionflowWrites()
-      fixture = await createTempProjectFixture('notionflow-docs-live-')
+      const before = await snapshotGlobalPipesWrites()
+      fixture = await createTempProjectFixture('pipes-docs-live-')
 
       await execCli(['init'], fixture.projectDir)
       await initGitRepo(fixture.projectDir)
-      await ensureNotionflowDependencyAvailable(fixture.projectDir)
+      await ensurePipesDependencyAvailable(fixture.projectDir)
       await execCli(['pipe', 'create', '--id', 'docs-live'], fixture.projectDir)
 
       await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
+        path.join(fixture.projectDir, 'pipes.config.ts'),
         docsConfigSource(),
         'utf8',
       )
@@ -67,7 +67,7 @@ if (liveSuiteEnabled) {
       const resolvedProjectRoot = await realpath(fixture.projectDir)
       expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
       expect(doctor.stdout).toContain(
-        `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
+        `Config path: ${path.join(resolvedProjectRoot, 'pipes.config.ts')}`,
       )
       expect(doctor.stdout).toContain(
         'Workspace execution: default project repo',
@@ -106,8 +106,8 @@ if (liveSuiteEnabled) {
         waitForTaskState(fixture.projectDir, taskExternalId, 'done'),
       ).resolves.toBe('done')
 
-      const after = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(before, after)
+      const after = await snapshotGlobalPipesWrites()
+      assertNoNewGlobalPipesWrites(before, after)
     }, 180_000)
   },
 )
@@ -156,14 +156,14 @@ async function execCli(
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })
   })
 }
 
-async function ensureNotionflowDependencyAvailable(
+async function ensurePipesDependencyAvailable(
   projectDir: string,
 ): Promise<void> {
   const nodeModules = path.join(projectDir, 'node_modules')
@@ -255,8 +255,8 @@ function docsFactorySource(): string {
 
 async function initGitRepo(repoRoot: string): Promise<void> {
   await runGit(['init'], repoRoot)
-  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
-  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+  await runGit(['config', 'user.name', 'Pipes Test'], repoRoot)
+  await runGit(['config', 'user.email', 'pipes@example.com'], repoRoot)
 }
 
 async function commitAll(repoRoot: string, message: string): Promise<void> {

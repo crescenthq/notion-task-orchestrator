@@ -249,7 +249,7 @@ function buildFooterContent(
 
 function buildLoadingView(footer: string): DashboardTextView {
   return {
-    header: 'NOTIONFLOW DASHBOARD\nLoading runtime state...',
+    header: 'PIPES DASHBOARD\nLoading runtime state...',
     summary: 'Connecting to the local runtime database.',
     inProgress: 'Loading active tasks...',
     tasks: 'Loading task list...',
@@ -260,7 +260,7 @@ function buildLoadingView(footer: string): DashboardTextView {
 
 function buildErrorView(message: string, footer: string): DashboardTextView {
   return {
-    header: 'NOTIONFLOW DASHBOARD\nDashboard refresh failed.',
+    header: 'PIPES DASHBOARD\nDashboard refresh failed.',
     summary: `Dashboard refresh failed\n\n${message}`,
     inProgress: 'No in-progress task data available.',
     tasks: 'No task rows available.',
@@ -286,7 +286,7 @@ function terminalSize(output: NodeJS.WriteStream): {
 function assertInteractiveTerminal(): void {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
-      'The start dashboard requires an interactive TTY. Use `notionflow tick` for non-interactive execution.',
+      'The start dashboard requires an interactive TTY. Use `pipes tick` for non-interactive execution.',
     )
   }
 }

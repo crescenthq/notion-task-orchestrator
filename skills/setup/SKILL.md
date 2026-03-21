@@ -1,11 +1,11 @@
 ---
 name: setup
 description:
-  Guide a user through setting up NotionFlow. Use when the user asks to set up,
-  install, configure, onboard, or get started with NotionFlow.
+  Guide a user through setting up Pipes. Use when the user asks to set up,
+  install, configure, onboard, or get started with Pipes.
 ---
 
-# NotionFlow Setup
+# Pipes Setup
 
 Guided, conversational installer. Run steps automatically — only pause for user
 input (Notion token, pipe shape). Use AskUserQuestion for all decisions.
@@ -16,10 +16,10 @@ input (Notion token, pipe shape). Use AskUserQuestion for all decisions.
 ## 1. Initialize Project
 
 ```bash
-npx notionflow init
+npx pipes init
 ```
 
-This creates `notionflow.config.ts`, `pipes/`, and `.notionflow/` in the current
+This creates `pipes.config.ts`, `pipes/`, and `.pipes-runtime/` in the current
 directory.
 
 If this fails, ensure Node.js ≥20 is installed.
@@ -29,14 +29,14 @@ If this fails, ensure Node.js ≥20 is installed.
 Check for existing token:
 
 ```bash
-npx notionflow doctor
+npx pipes doctor
 ```
 
 If the doctor output shows the Notion token is missing:
 
 1. Tell the user: "To connect to Notion, you need an integration token."
 2. Direct them to https://www.notion.so/profile/integrations
-3. Ask them to create a new internal integration named "NotionFlow"
+3. Ask them to create a new internal integration named "Pipes"
 4. Use AskUserQuestion: "Paste your Notion integration token (starts with ntn*
    or secret*)"
 5. Save the token as an environment variable. Ask how they prefer to store it:
@@ -47,7 +47,7 @@ If the doctor output shows the Notion token is missing:
 Validate:
 
 ```bash
-npx notionflow doctor
+npx pipes doctor
 ```
 
 Expected: `[ok] Notion auth`. If it fails, revisit the token value.
@@ -58,7 +58,7 @@ Expected: `[ok] Notion auth`. If it fails, revisit the token value.
 before any code is written.
 
 Present these pipe ideas with the framing: "Each state in the pipe runs a
-specialized inline agent function — that's what makes NotionFlow a pipe, not
+specialized inline agent function — that's what makes Pipes a pipe, not
 just a script."
 
 Offer these examples (lead with the more novel/interesting ones):
@@ -85,7 +85,7 @@ then use the **add-factory** skill to create the TypeScript pipe file.
 ## 4. Register the Pipe
 
 After the pipe file is created under `pipes/`, it loads automatically in the
-default project layout. Use `notionflow.config.ts` only when you want a custom
+default project layout. Use `pipes.config.ts` only when you want a custom
 project name or non-default pipe locations:
 
 ```ts
@@ -96,7 +96,7 @@ export default defineConfig({
 })
 ```
 
-NotionFlow walks up parent directories to find `notionflow.config.ts`, so you
+Pipes walks up parent directories to find `pipes.config.ts`, so you
 can run commands from anywhere inside the project tree.
 
 Use `--config <path>` on any project-scoped command to override config
@@ -107,7 +107,7 @@ resolution explicitly.
 Run one tick to process any queued tasks:
 
 ```bash
-npx notionflow tick --pipe <pipe-id>
+npx pipes tick --pipe <pipe-id>
 ```
 
 Watch the output. It should execute each pipe state through its inline agent
@@ -116,52 +116,52 @@ function.
 If you want to provision a Notion board for queue-driven workflows, run:
 
 ```bash
-npx notionflow pipe create --id <pipe-id> --config notionflow.config.ts
+npx pipes pipe create --id <pipe-id> --config pipes.config.ts
 ```
 
 Or provision a board for an existing pipe:
 
 ```bash
-npx notionflow integrations notion provision-board --board <pipe-id>
+npx pipes integrations notion provision-board --board <pipe-id>
 ```
 
-**Important:** Tell the user they must share the database with the "NotionFlow"
+**Important:** Tell the user they must share the database with the "Pipes"
 integration in Notion (click "..." on the database → "Connect to" → select
-"NotionFlow").
+"Pipes").
 
 ## 6. Verify
 
 ```bash
-npx notionflow doctor
-npx notionflow pipe list
+npx pipes doctor
+npx pipes pipe list
 ```
 
 All should show configured resources. Setup complete.
 
 The user can now:
 
-- Add tasks via Notion or `npx notionflow integrations notion create-task`
-- Run `npx notionflow tick` to process queued tasks
+- Add tasks via Notion or `npx pipes integrations notion create-task`
+- Run `npx pipes tick` to process queued tasks
 - Build more pipes with the `add-factory` skill
 
 ## Troubleshooting
 
 **`doctor` shows NOTION_API_TOKEN missing:** Ensure `NOTION_API_TOKEN` is set as
-an environment variable or in a `.env` file at the project root. NotionFlow does
+an environment variable or in a `.env` file at the project root. Pipes does
 not read global config files.
 
-**`tick` processes nothing:** Run `npx notionflow doctor` to confirm the project
+**`tick` processes nothing:** Run `npx pipes doctor` to confirm the project
 is resolved and auth is valid. Check that at least one pipe exists under the
-top-level `pipes/` directory, or that `notionflow.config.ts` points to the
+top-level `pipes/` directory, or that `pipes.config.ts` points to the
 custom location you intended.
 
 **Pipe load error:** Check that the TypeScript file exports a valid pipe object
 and that the file lives under the default `pipes/` directory or matches the
-`pipes` declarations in `notionflow.config.ts`. Relative declarations resolve
-from the project root (directory containing `notionflow.config.ts`).
+`pipes` declarations in `pipes.config.ts`. Relative declarations resolve
+from the project root (directory containing `pipes.config.ts`).
 
 **Notion page not updating:** Ensure the integration is connected to the
-database in Notion (Share → Connect to → NotionFlow).
+database in Notion (Share → Connect to → Pipes).
 
 **Config not found:** Run commands from inside the project directory, or pass
-`--config <path>` to point to your `notionflow.config.ts` explicitly.
+`--config <path>` to point to your `pipes.config.ts` explicitly.

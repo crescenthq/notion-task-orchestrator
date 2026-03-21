@@ -84,7 +84,7 @@ function buildScreenModel(
   const summary = parseSummary(view.summary)
 
   return {
-    title: `NOTIONFLOW / ${header.project.toUpperCase()}`,
+    title: `PIPES / ${header.project.toUpperCase()}`,
     stateEntries: summary.stateEntries,
     pipeLines:
       summary.pipeLines.length > 0
@@ -634,7 +634,7 @@ function normalizePipeLine(line: string): string {
 function normalizeDashboardMessage(line: string): string {
   if (
     line ===
-    'No local tasks found. Run `notionflow integrations notion sync` or create a task first.'
+    'No local tasks found. Run `pipes integrations notion sync` or create a task first.'
   ) {
     return 'No local tasks found. Sync Notion or create a task first.'
   }

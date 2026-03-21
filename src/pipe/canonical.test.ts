@@ -18,12 +18,12 @@ type TestCtx = {
 }
 
 const testWorkspace: PipeWorkspace = {
-  root: '/tmp/notionflow-workspace',
-  cwd: '/tmp/notionflow-workspace/app',
+  root: '/tmp/pipes-workspace',
+  cwd: '/tmp/pipes-workspace/app',
   ref: 'deadbeef',
   source: {
     mode: 'project',
-    repo: '/tmp/notionflow-source',
+    repo: '/tmp/pipes-source',
     requestedRef: 'HEAD',
   },
 }

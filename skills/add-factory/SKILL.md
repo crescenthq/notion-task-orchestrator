@@ -14,7 +14,7 @@ result.
 
 **Principle:** One file, all logic inline. No separate executor scripts. No
 YAML. No global install step — factories are local files declared in
-`notionflow.config.ts`.
+`pipes.config.ts`.
 
 ## Phase 1 — Design
 
@@ -36,11 +36,11 @@ success/failure routes it needs.
 ## Phase 2 — Scaffold
 
 ```bash
-npx notionflow pipe create --id <pipe-id>
+npx pipes pipe create --id <pipe-id>
 ```
 
 This creates `./pipes/<pipe-id>.ts` relative to the project root (the directory
-containing `notionflow.config.ts`). Edit the file directly — it's just
+containing `pipes.config.ts`). Edit the file directly — it's just
 TypeScript.
 
 ## Phase 3 — Write the Pipe
@@ -284,9 +284,9 @@ export default {
 
 ## Phase 4 — Register
 
-After `pipe create` writes the file under `pipes/`, NotionFlow loads it
+After `pipe create` writes the file under `pipes/`, Pipes loads it
 automatically in the default project layout. You only need `pipes` in
-`notionflow.config.ts` when you want custom locations or filtering:
+`pipes.config.ts` when you want custom locations or filtering:
 
 ```ts
 import {defineConfig} from 'notionflow'
@@ -297,9 +297,9 @@ export default defineConfig({
 ```
 
 Relative file and directory declarations resolve from the project root (the
-directory containing `notionflow.config.ts`).
+directory containing `pipes.config.ts`).
 
-NotionFlow discovers `notionflow.config.ts` by walking up parent directories
+Pipes discovers `pipes.config.ts` by walking up parent directories
 from the current working directory. Use `--config <path>` on any command to
 override config resolution explicitly.
 
@@ -307,12 +307,12 @@ override config resolution explicitly.
 
 ```bash
 # Create a test task in Queue state
-npx notionflow integrations notion create-task \
+npx pipes integrations notion create-task \
   --board <pipe-id> --title "Test: <short description>" \
   --pipe <pipe-id> --status queue
 
 # Run it
-npx notionflow tick
+npx pipes tick
 ```
 
 Watch the output. Each state should transition and log to Notion.
@@ -322,60 +322,60 @@ Watch the output. Each state should transition and log to Notion.
 If a pipe state returns `status: "feedback"`:
 
 1. Create a task with an ambiguous or vague title
-2. Run `npx notionflow tick`
+2. Run `npx pipes tick`
 3. The state returns `status: "feedback"` — task pauses, Notion State becomes
    "Feedback"
 4. Open the Notion page — a comment is posted with the question
 5. **Reply to the comment** in Notion (no page editing, no state change needed)
-6. Run `npx notionflow tick` again — detects the reply, resumes from where it
+6. Run `npx pipes tick` again — detects the reply, resumes from where it
    paused
 
 ### Testing retry/failure
 
 1. Temporarily make an agent function return
    `{ status: "failed", message: "forced fail" }`
-2. Run `npx notionflow tick` — state retries up to `retries.max`, then routes
+2. Run `npx pipes tick` — state retries up to `retries.max`, then routes
    via `on.failed`
 3. Revert the agent, reset the Notion State to Queue, run `tick` again
 
 ## Phase 6 — Verify
 
 ```bash
-npx notionflow doctor
-npx notionflow pipe list
+npx pipes doctor
+npx pipes pipe list
 ```
 
 ## CLI Cheat Sheet
 
 ```bash
 # Scaffold a new pipe file
-npx notionflow pipe create --id <id>
+npx pipes pipe create --id <id>
 
-# List loaded factories (reads from notionflow.config.ts)
-npx notionflow pipe list
+# List loaded factories (reads from pipes.config.ts)
+npx pipes pipe list
 
 # Create and run tasks
-npx notionflow integrations notion create-task \
+npx pipes integrations notion create-task \
   --board <id> --title "..." --pipe <id> --status queue
-npx notionflow tick
+npx pipes tick
 
 # Run a specific task directly (bypasses sync)
-npx notionflow run --task <notion-page-id>
+npx pipes run --task <notion-page-id>
 
 # Check setup
-npx notionflow doctor
+npx pipes doctor
 ```
 
 ## Modifying Later
 
 - **Edit logic:** Open `./pipes/<pipe-id>.ts`, change the inline agent function.
-  No re-install needed — NotionFlow reads the file on each run via
-  `notionflow.config.ts`.
+  No re-install needed — Pipes reads the file on each run via
+  `pipes.config.ts`.
 - **Add a state:** Add the state to `states`, wire up `on` maps in affected
   states, save the file.
 - **Change routing:** Update `select` or `orchestrate.agent` return value,
   update `on` map, save the file.
-- **Add another pipe:** Run `npx notionflow pipe create --id <new-id>`, write
+- **Add another pipe:** Run `npx pipes pipe create --id <new-id>`, write
   the pipe. No config edit is needed unless the new file lives outside the
   default top-level `pipes/` directory.
 
@@ -401,6 +401,6 @@ original comment — are detected.
 **`action` states require both `on.done` and `on.failed`** Both routes must be
 declared. The runtime rejects factories missing either route at load time.
 
-**Pipe not loading** Check that the path in `notionflow.config.ts` matches the
+**Pipe not loading** Check that the path in `pipes.config.ts` matches the
 actual file location. Paths are relative to the project root. Run
-`npx notionflow doctor` to confirm the config is resolved correctly.
+`npx pipes doctor` to confirm the config is resolved correctly.

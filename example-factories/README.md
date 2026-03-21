@@ -1,6 +1,6 @@
 # Example Pipes
 
-A standalone example NotionFlow project demonstrating project-local
+A standalone example Pipes project demonstrating project-local
 architecture. Contains five pipes and a shared helper module to show real-world
 patterns.
 
@@ -99,13 +99,13 @@ npm run tick -- --pipe expressive-primitives
 
 | Script               | Command                                                                             | Description                                           |
 | -------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `doctor`             | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts`                          | Validate config and pipe resolution                   |
-| `notion:setup`       | `tsx ../src/cli.ts integrations notion setup --config ./notionflow.config.ts`       | Register the shared Notion board used by this example |
-| `notion:sync`        | `tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts`        | Pull tasks and feedback from the shared Notion board  |
-| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a task in the shared board for a declared pipe |
-| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts` | Re-queue a quarantined task after restoring `Pipe`    |
-| `tick`               | `tsx ../src/cli.ts tick --config ./notionflow.config.ts`                            | Sync and run queued work across all pipes             |
-| `tick:demo`          | `tsx ../src/cli.ts tick --pipe shared-helper-demo --config ./notionflow.config.ts`  | Sync and run queued work for `shared-helper-demo`     |
+| `doctor`             | `tsx ../src/cli.ts doctor --config ./pipes.config.ts`                          | Validate config and pipe resolution                   |
+| `notion:setup`       | `tsx ../src/cli.ts integrations notion setup --config ./pipes.config.ts`       | Register the shared Notion board used by this example |
+| `notion:sync`        | `tsx ../src/cli.ts integrations notion sync --config ./pipes.config.ts`        | Pull tasks and feedback from the shared Notion board  |
+| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./pipes.config.ts` | Create a task in the shared board for a declared pipe |
+| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./pipes.config.ts` | Re-queue a quarantined task after restoring `Pipe`    |
+| `tick`               | `tsx ../src/cli.ts tick --config ./pipes.config.ts`                            | Sync and run queued work across all pipes             |
+| `tick:demo`          | `tsx ../src/cli.ts tick --pipe shared-helper-demo --config ./pipes.config.ts`  | Sync and run queued work for `shared-helper-demo`     |
 | `check`              | `tsc --noEmit`                                                                      | Type-check all pipe files                             |
 
 ## Common command examples
@@ -124,7 +124,7 @@ Use `tick` when you want to sync and immediately run queued work. Use
 
 ```
 example-factories/
-  notionflow.config.ts        # Uses default top-level pipes/ discovery
+  pipes.config.ts        # Uses default top-level pipes/ discovery
   package.json                # Standalone package with runnable scripts
   pipes/
     intent.ts
@@ -138,9 +138,9 @@ example-factories/
 
 ## Passing --config from any directory
 
-Scripts in `package.json` use `--config ./notionflow.config.ts` (relative to
+Scripts in `package.json` use `--config ./pipes.config.ts` (relative to
 `example-factories/`). You can also run from anywhere using an absolute path:
 
 ```bash
-npx tsx ../src/cli.ts doctor --config /path/to/example-factories/notionflow.config.ts
+npx tsx ../src/cli.ts doctor --config /path/to/example-factories/pipes.config.ts
 ```

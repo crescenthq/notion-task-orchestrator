@@ -33,7 +33,7 @@ export function buildDashboardTextView(
 
   return {
     header: [
-      'NOTIONFLOW DASHBOARD',
+      'PIPES DASHBOARD',
       `Project: ${projectName}`,
       `Path: ${snapshot.projectRoot}`,
       `Runtime DB: ${snapshot.dbPath}`,
@@ -126,7 +126,7 @@ export function buildTasksPanel(
   shownTasks = tasks.length,
 ): string {
   if (tasks.length === 0) {
-    return 'No local tasks found. Run `notionflow integrations notion sync` or create a task first.'
+    return 'No local tasks found. Run `pipes integrations notion sync` or create a task first.'
   }
 
   const table = buildTaskTable(tasks, [

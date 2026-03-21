@@ -1,6 +1,6 @@
 type SignalRecord = Record<PropertyKey, unknown>
 
-export const CONTROL_SIGNAL_BRAND = Symbol.for('notionflow.control')
+export const CONTROL_SIGNAL_BRAND = Symbol.for('pipes.control')
 
 function isSignalRecord(value: unknown): value is SignalRecord {
   return typeof value === 'object' && value !== null

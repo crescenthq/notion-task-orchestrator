@@ -3,9 +3,9 @@ import {spawn} from 'node:child_process'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
@@ -24,7 +24,7 @@ describe('local project pipe create', () => {
   })
 
   it('creates pipes/<id>.ts in local project context without global writes', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
 
@@ -35,19 +35,19 @@ describe('local project pipe create', () => {
       stat(path.join(fixture.projectDir, 'pipes', 'smoke.ts')),
     ).resolves.toBeTruthy()
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('creates pipes with --config when run outside the project', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
-    const outsider = await createTempProjectFixture('notionflow-e2e-outside-')
+    const outsider = await createTempProjectFixture('pipes-e2e-outside-')
     fixtures.push(outsider)
 
     await execCli(['init'], fixture.projectDir)
-    const configPath = path.join(fixture.projectDir, 'notionflow.config.ts')
+    const configPath = path.join(fixture.projectDir, 'pipes.config.ts')
 
     await execCli(
       ['pipe', 'create', '--id', 'external', '--config', configPath],
@@ -58,8 +58,8 @@ describe('local project pipe create', () => {
       stat(path.join(fixture.projectDir, 'pipes', 'external.ts')),
     ).resolves.toBeTruthy()
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 })
 
@@ -98,7 +98,7 @@ async function execCli(args: string[], cwd: string): Promise<void> {
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })

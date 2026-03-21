@@ -15,7 +15,7 @@ Top-level commands:
 
 ## Project Context Resolution
 
-Project-scoped commands resolve `notionflow.config.ts` by walking up parent
+Project-scoped commands resolve `pipes.config.ts` by walking up parent
 directories from the current working directory.
 
 Supported `--config <path>` override:
@@ -30,33 +30,33 @@ Supported `--config <path>` override:
 - `integrations notion sync`
 - `integrations notion create-task`
 
-When `--config` is provided, NotionFlow resolves project root from that config
+When `--config` is provided, Pipes resolves project root from that config
 file's directory.
 
 ## Common Commands
 
 ### `init`
 
-Initialize a local NotionFlow project in the current directory.
+Initialize a local Pipes project in the current directory.
 
 ```bash
-notionflow init
+pipes init
 ```
 
 Creates:
 
-- `notionflow.config.ts`
+- `pipes.config.ts`
 - `pipes/`
-- `.notionflow/`
+- `.pipes-runtime/`
 
-Also ensures `.notionflow/` exists exactly once in `.gitignore`.
+Also ensures `.pipes-runtime/` exists exactly once in `.gitignore`.
 
 ### `doctor`
 
 Validate project resolution and Notion auth.
 
 ```bash
-notionflow doctor [--config <path>]
+pipes doctor [--config <path>]
 ```
 
 Prints resolved project root and config path, reports whether execution will use
@@ -65,7 +65,7 @@ workspace prerequisites without creating a run worktree.
 
 ## Workspace Config
 
-`notionflow.config.ts` supports three workspace forms:
+`pipes.config.ts` supports three workspace forms:
 
 1. Omit `workspace` to use the git repo containing the resolved project root.
 2. Set `workspace` to a string for an explicit git URL.
@@ -96,7 +96,7 @@ export default {
 Start the interactive operator session and background tick loop.
 
 ```bash
-notionflow start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
+pipes start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
 ```
 
 Options:
@@ -126,7 +126,7 @@ Notes:
 Run exactly one queue-driven orchestration tick.
 
 ```bash
-notionflow tick [options]
+pipes tick [options]
 ```
 
 Options:
@@ -149,7 +149,7 @@ Notes:
 Run one task directly by Notion page ID.
 
 ```bash
-notionflow run --task <notion_page_id> [options]
+pipes run --task <notion_page_id> [options]
 ```
 
 Required:
@@ -169,7 +169,7 @@ Options:
 Print local task record as JSON.
 
 ```bash
-notionflow status --task <notion_page_id>
+pipes status --task <notion_page_id>
 ```
 
 ## Pipe Commands
@@ -179,20 +179,20 @@ notionflow status --task <notion_page_id>
 Create a local pipe scaffold.
 
 ```bash
-notionflow pipe create --id <pipe-id> [--config <path>]
+pipes pipe create --id <pipe-id> [--config <path>]
 ```
 
 Writes `pipes/<pipe-id>.ts` in the resolved project root.
 
 Files under the top-level `pipes/` directory load automatically unless
-`notionflow.config.ts` overrides `pipes`.
+`pipes.config.ts` overrides `pipes`.
 
 ### `pipe list`
 
 List known pipes from runtime DB.
 
 ```bash
-notionflow pipe list
+pipes pipe list
 ```
 
 ## Integrations: Notion
@@ -200,7 +200,7 @@ notionflow pipe list
 Namespace:
 
 ```bash
-notionflow integrations notion <subcommand>
+pipes integrations notion <subcommand>
 ```
 
 ### `integrations notion setup`
@@ -209,7 +209,7 @@ Set up the shared Notion board by reusing `NOTION_TASKS_DATABASE_ID`, creating a
 database from project config, or adopting an existing Notion database URL.
 
 ```bash
-notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
+pipes integrations notion setup [--url <notion-database-url>] [--config <path>]
 ```
 
 ### `integrations notion repair-task`
@@ -217,7 +217,7 @@ notionflow integrations notion setup [--url <notion-database-url>] [--config <pa
 Clear ownership quarantine after restoring the `Pipe` property in Notion.
 
 ```bash
-notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
+pipes integrations notion repair-task --task <notion_page_id> [--config <path>]
 ```
 
 ### `integrations notion create-task`
@@ -225,7 +225,7 @@ notionflow integrations notion repair-task --task <notion_page_id> [--config <pa
 Create a Notion task and upsert local state.
 
 ```bash
-notionflow integrations notion create-task --pipe <pipe-id> --title "Task" [--status <state>] [--config <path>]
+pipes integrations notion create-task --pipe <pipe-id> --title "Task" [--status <state>] [--config <path>]
 ```
 
 ### `integrations notion sync`
@@ -233,7 +233,7 @@ notionflow integrations notion create-task --pipe <pipe-id> --title "Task" [--st
 Sync tasks from registered Notion boards.
 
 ```bash
-notionflow integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
+pipes integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
 ```
 
 Extra option when `--run` is set:
@@ -246,12 +246,12 @@ Default queued run concurrency is `16` (clamped to max `32`).
 
 All runtime artifacts are project-local:
 
-- `<project-root>/.notionflow/notionflow.db`
-- `<project-root>/.notionflow/runtime.log`
-- `<project-root>/.notionflow/errors.log`
-- `<project-root>/.notionflow/workspace-mirrors/`
-- `<project-root>/.notionflow/workspace-manifests/`
-- `<project-root>/.notionflow/workspaces/`
+- `<project-root>/.pipes-runtime/pipes.db`
+- `<project-root>/.pipes-runtime/runtime.log`
+- `<project-root>/.pipes-runtime/errors.log`
+- `<project-root>/.pipes-runtime/workspace-mirrors/`
+- `<project-root>/.pipes-runtime/workspace-manifests/`
+- `<project-root>/.pipes-runtime/workspaces/`
 
 ## Quickstart Sequence
 
@@ -259,10 +259,10 @@ Run the quickstart from a git repo with a valid `HEAD` commit, or configure an
 explicit workspace override first.
 
 ```bash
-notionflow init
-notionflow pipe create --id demo
-notionflow doctor
-notionflow integrations notion setup
-notionflow integrations notion create-task --pipe demo --title "Try demo" --status queue
-notionflow tick --pipe demo
+pipes init
+pipes pipe create --id demo
+pipes doctor
+pipes integrations notion setup
+pipes integrations notion create-task --pipe demo --title "Try demo" --status queue
+pipes tick --pipe demo
 ```

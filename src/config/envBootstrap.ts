@@ -13,14 +13,14 @@ type BootstrapOptions = {
 type RuntimeEnv = {
   NOTION_API_TOKEN?: string
   NOTION_TASKS_DATABASE_ID?: string
-  NOTIONFLOW_PROJECT_ROOT?: string
+  PIPES_PROJECT_ROOT?: string
 }
 
 const nonEmpty = z.string().trim().min(1)
 const RuntimeEnvSchema = z.object({
   NOTION_API_TOKEN: nonEmpty.optional(),
   NOTION_TASKS_DATABASE_ID: nonEmpty.optional(),
-  NOTIONFLOW_PROJECT_ROOT: nonEmpty.optional(),
+  PIPES_PROJECT_ROOT: nonEmpty.optional(),
 })
 
 function getArgValue(argv: string[], flag: string): string | null {

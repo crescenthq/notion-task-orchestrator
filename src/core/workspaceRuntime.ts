@@ -955,7 +955,7 @@ async function resolveWorktreeHead(
 function resolveValidatedRelativeWorkspaceCwd(
   workspace: ResolvedWorkspaceConfig,
 ): string {
-  const worktreeRoot = path.resolve(path.sep, '__notionflow__', 'workspace')
+  const worktreeRoot = path.resolve(path.sep, '__pipes__', 'workspace')
   const {relativeCwd} = resolveWorkspaceCwd({
     worktreeRoot,
     workspace,

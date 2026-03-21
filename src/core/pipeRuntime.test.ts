@@ -17,12 +17,12 @@ import {replayRunTraces} from './runTraces'
 
 const homes: string[] = []
 const originalHome = process.env.HOME
-const originalProjectRoot = process.env.NOTIONFLOW_PROJECT_ROOT
+const originalProjectRoot = process.env.PIPES_PROJECT_ROOT
 
 async function setupRuntime(
   options: {configSource?: string; projectSubdir?: string} = {},
 ) {
-  const home = await mkdtemp(path.join(tmpdir(), 'notionflow-runtime-test-'))
+  const home = await mkdtemp(path.join(tmpdir(), 'pipes-runtime-test-'))
   homes.push(home)
   const projectRoot = options.projectSubdir
     ? path.join(home, options.projectSubdir)
@@ -30,10 +30,10 @@ async function setupRuntime(
 
   await initGitRepo(home)
   process.env.HOME = home
-  process.env.NOTIONFLOW_PROJECT_ROOT = projectRoot
+  process.env.PIPES_PROJECT_ROOT = projectRoot
   await mkdir(projectRoot, {recursive: true})
   await writeFile(
-    path.join(projectRoot, 'notionflow.config.ts'),
+    path.join(projectRoot, 'pipes.config.ts'),
     options.configSource ?? 'export default { pipes: [] };\n',
     'utf8',
   )
@@ -117,7 +117,7 @@ async function pathExists(targetPath: string): Promise<boolean> {
 describe('pipeRuntime (definePipe only)', () => {
   afterEach(async () => {
     process.env.HOME = originalHome
-    process.env.NOTIONFLOW_PROJECT_ROOT = originalProjectRoot
+    process.env.PIPES_PROJECT_ROOT = originalProjectRoot
     for (const home of homes.splice(0, homes.length)) {
       await rm(home, {recursive: true, force: true})
     }
@@ -255,16 +255,16 @@ export default {
   id: "${factoryId}",
   initial: { checks: 0 },
   run: async ({ ctx, runId }) => {
-    const projectRoot = process.env.NOTIONFLOW_PROJECT_ROOT;
+    const projectRoot = process.env.PIPES_PROJECT_ROOT;
     const manifestPath = path.join(
       projectRoot,
-      ".notionflow",
+      ".pipes-runtime",
       "workspace-manifests",
       \`\${runId}.json\`,
     );
     const workspaceRoot = path.join(
       projectRoot,
-      ".notionflow",
+      ".pipes-runtime",
       "workspaces",
       runId,
     );
@@ -487,7 +487,7 @@ export default {
         `  id: "${factoryId}",\n` +
         `  initial: { attempts: 0, approved: false },\n` +
         `  run: async ({ ctx }) => {\n` +
-        `    const controlBrand = Symbol.for("notionflow.control");\n` +
+        `    const controlBrand = Symbol.for("pipes.control");\n` +
         `    const attempts = Number(ctx.attempts ?? 0) + 1;\n` +
         `    if (!ctx.human_feedback) {\n` +
         `      return {\n` +
@@ -586,10 +586,10 @@ export default {
   id: "${factoryId}",
   initial: { attempts: 0 },
   run: async ({ ctx, runId }) => {
-    const projectRoot = process.env.NOTIONFLOW_PROJECT_ROOT;
+    const projectRoot = process.env.PIPES_PROJECT_ROOT;
     const manifestPath = path.join(
       projectRoot,
-      ".notionflow",
+      ".pipes-runtime",
       "workspace-manifests",
       \`\${runId}.json\`,
     );
@@ -708,7 +708,7 @@ export default {
     const externalTaskId = 'task-runtime-resume-persisted-manifest-1'
     const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
     const alternateRepo = await mkdtemp(
-      path.join(tmpdir(), 'notionflow-runtime-alt-workspace-'),
+      path.join(tmpdir(), 'pipes-runtime-alt-workspace-'),
     )
     homes.push(alternateRepo)
 
@@ -773,7 +773,7 @@ export default {
     >
 
     await writeFile(
-      path.join(projectRoot, 'notionflow.config.ts'),
+      path.join(projectRoot, 'pipes.config.ts'),
       [
         'export default {',
         '  pipes: [],',
@@ -973,7 +973,7 @@ export default {
     expect(manifest.relativeCwd).toBe(path.join('apps', 'web'))
     expect(manifest.cwd).toBe(path.join(manifest.root, 'apps', 'web'))
     expect(
-      await readFile(path.join(manifest.cwd, 'notionflow.config.ts'), 'utf8'),
+      await readFile(path.join(manifest.cwd, 'pipes.config.ts'), 'utf8'),
     ).toContain('export default')
   })
 
@@ -1251,7 +1251,7 @@ export default definePipe({
           `  id: "${factoryId}",\n` +
           `  initial: {},\n` +
           `  run: async ({ ctx }) => {\n` +
-          `    const controlBrand = Symbol.for("notionflow.control");\n` +
+          `    const controlBrand = Symbol.for("pipes.control");\n` +
           `    return {\n` +
           `      [controlBrand]: true,\n` +
           `      type: "end",\n` +
@@ -1340,7 +1340,7 @@ export default definePipe({
         `  id: "${factoryId}",\n` +
         `  initial: {},\n` +
         `  run: async ({ctx}) => {\n` +
-        `    const controlBrand = Symbol.for("notionflow.control");\n` +
+        `    const controlBrand = Symbol.for("pipes.control");\n` +
         `    return {\n` +
         `      [controlBrand]: true,\n` +
         `      type: "await_feedback",\n` +
@@ -1503,8 +1503,8 @@ export default definePipe({
 
 async function initGitRepo(repoRoot: string): Promise<void> {
   await runGit(['init'], repoRoot)
-  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
-  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+  await runGit(['config', 'user.name', 'Pipes Test'], repoRoot)
+  await runGit(['config', 'user.email', 'pipes@example.com'], repoRoot)
 }
 
 async function commitAll(repoRoot: string, message: string): Promise<string> {

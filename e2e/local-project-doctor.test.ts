@@ -4,9 +4,9 @@ import {mkdir, realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
@@ -25,13 +25,13 @@ describe('local project doctor', () => {
   })
 
   it('discovers project config from nested directory and reports resolved paths', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
 
     await execCli(['init'], fixture.projectDir)
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       'export default {};\n',
       'utf8',
     )
@@ -45,7 +45,7 @@ describe('local project doctor', () => {
     const doctorOutput = await execCli(['doctor'], nestedDir)
     expect(doctorOutput).toContain(`Project root: ${canonicalProjectRoot}`)
     expect(doctorOutput).toContain(
-      `Config path: ${path.join(canonicalProjectRoot, 'notionflow.config.ts')}`,
+      `Config path: ${path.join(canonicalProjectRoot, 'pipes.config.ts')}`,
     )
     expect(doctorOutput).toContain(
       'Workspace execution: default project repo',
@@ -53,23 +53,23 @@ describe('local project doctor', () => {
     expect(doctorOutput).toContain(`Workspace repo: ${canonicalProjectRoot}`)
     expect(doctorOutput).toContain('Workspace cwd: .')
     expect(
-      existsSync(path.join(fixture.projectDir, '.notionflow', 'workspaces')),
+      existsSync(path.join(fixture.projectDir, '.pipes-runtime', 'workspaces')),
     ).toBe(false)
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('supports --config override from outside project', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
-    const outsider = await createTempProjectFixture('notionflow-e2e-outside-')
+    const outsider = await createTempProjectFixture('pipes-e2e-outside-')
     fixtures.push(outsider)
 
     await execCli(['init'], fixture.projectDir)
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       'export default {};\n',
       'utf8',
     )
@@ -77,7 +77,7 @@ describe('local project doctor', () => {
     await commitAll(fixture.projectDir, 'doctor config override fixture')
 
     const canonicalProjectRoot = await realpath(fixture.projectDir)
-    const configPath = path.join(canonicalProjectRoot, 'notionflow.config.ts')
+    const configPath = path.join(canonicalProjectRoot, 'pipes.config.ts')
     const doctorOutput = await execCli(
       ['doctor', '--config', configPath],
       outsider.projectDir,
@@ -88,15 +88,15 @@ describe('local project doctor', () => {
       'Workspace execution: default project repo',
     )
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('reports explicit workspace URL overrides from projects outside git repos', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
-    const sourceRepo = await createTempProjectFixture('notionflow-e2e-source-')
+    const before = await snapshotGlobalPipesWrites()
+    const sourceRepo = await createTempProjectFixture('pipes-e2e-source-')
     fixtures.push(sourceRepo)
-    const project = await createTempProjectFixture('notionflow-e2e-explicit-')
+    const project = await createTempProjectFixture('pipes-e2e-explicit-')
     fixtures.push(project)
 
     await initGitRepo(sourceRepo.projectDir)
@@ -109,7 +109,7 @@ describe('local project doctor', () => {
 
     await execCli(['init'], project.projectDir)
     await writeFile(
-      path.join(project.projectDir, 'notionflow.config.ts'),
+      path.join(project.projectDir, 'pipes.config.ts'),
       [
         'export default {',
         `  workspace: ${JSON.stringify(`file://${await realpath(sourceRepo.projectDir)}`)},`,
@@ -128,21 +128,21 @@ describe('local project doctor', () => {
     )
     expect(doctorOutput).toContain('Workspace cwd: .')
     expect(
-      existsSync(path.join(project.projectDir, '.notionflow', 'workspaces')),
+      existsSync(path.join(project.projectDir, '.pipes-runtime', 'workspaces')),
     ).toBe(false)
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('validates explicit workspace refs without requiring remote HEAD', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     const sourceRepo = await createTempProjectFixture(
-      'notionflow-e2e-source-no-head-',
+      'pipes-e2e-source-no-head-',
     )
     fixtures.push(sourceRepo)
     const project = await createTempProjectFixture(
-      'notionflow-e2e-explicit-no-head-',
+      'pipes-e2e-explicit-no-head-',
     )
     fixtures.push(project)
 
@@ -165,7 +165,7 @@ describe('local project doctor', () => {
 
     await execCli(['init'], project.projectDir)
     await writeFile(
-      path.join(project.projectDir, 'notionflow.config.ts'),
+      path.join(project.projectDir, 'pipes.config.ts'),
       [
         'export default {',
         '  workspace: {',
@@ -186,28 +186,28 @@ describe('local project doctor', () => {
       `Workspace ref: feature/stable -> ${stableHead}`,
     )
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('fails with actionable context when config cannot be resolved', async () => {
     const fixture = await createTempProjectFixture(
-      'notionflow-e2e-missing-config-',
+      'pipes-e2e-missing-config-',
     )
     fixtures.push(fixture)
 
     const result = await execCliRaw(['doctor'], fixture.projectDir)
     const canonicalStartDir = await realpath(fixture.projectDir)
     expect(result.code).not.toBe(0)
-    expect(result.stderr).toContain('Could not find notionflow.config.ts')
+    expect(result.stderr).toContain('Could not find pipes.config.ts')
     expect(result.stderr).toContain(`Start directory: ${canonicalStartDir}`)
   })
 })
 
 async function initGitRepo(repoRoot: string): Promise<void> {
   await runGit(['init'], repoRoot)
-  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
-  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+  await runGit(['config', 'user.name', 'Pipes Test'], repoRoot)
+  await runGit(['config', 'user.email', 'pipes@example.com'], repoRoot)
 }
 
 async function commitAll(repoRoot: string, message: string): Promise<void> {
@@ -222,7 +222,7 @@ async function execCli(args: string[], cwd: string): Promise<string> {
   }
 
   throw new Error(
-    `Command failed (${result.code ?? -1}): notionflow ${args.join(' ')}\n${result.stderr}`,
+    `Command failed (${result.code ?? -1}): pipes ${args.join(' ')}\n${result.stderr}`,
   )
 }
 

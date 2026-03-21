@@ -1,7 +1,7 @@
 import {access, stat} from 'node:fs/promises'
 import path from 'node:path'
 
-const PROJECT_CONFIG_FILE = 'notionflow.config.ts'
+const PROJECT_CONFIG_FILE = 'pipes.config.ts'
 
 export type ResolvedProjectConfig = {
   projectRoot: string
@@ -51,7 +51,7 @@ export async function resolveProjectConfig(
   }
 
   throw new ProjectConfigResolutionError(
-    'Could not find notionflow.config.ts by walking up from the current directory.',
+    'Could not find pipes.config.ts by walking up from the current directory.',
     {startDir},
   )
 }

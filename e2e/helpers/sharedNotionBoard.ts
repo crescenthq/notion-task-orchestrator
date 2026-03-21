@@ -102,7 +102,7 @@ async function createFreshSharedBoard(
 
   const board = await notionCreateBoardDataSource(
     token,
-    `NotionFlow E2E ${new Date().toISOString()}`,
+    `Pipes E2E ${new Date().toISOString()}`,
     [],
     [],
     {parentPageId},

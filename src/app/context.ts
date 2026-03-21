@@ -45,10 +45,10 @@ async function resolveAppRuntimePaths(
   }
 
   if (
-    process.env.NOTIONFLOW_PROJECT_ROOT &&
-    process.env.NOTIONFLOW_PROJECT_ROOT.trim().length > 0
+    process.env.PIPES_PROJECT_ROOT &&
+    process.env.PIPES_PROJECT_ROOT.trim().length > 0
   ) {
-    return resolveRuntimePaths(process.env.NOTIONFLOW_PROJECT_ROOT)
+    return resolveRuntimePaths(process.env.PIPES_PROJECT_ROOT)
   }
 
   const resolvedProject = await resolveProjectConfig({

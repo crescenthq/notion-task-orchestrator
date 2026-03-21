@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export const RUNTIME_DIR = '.notionflow'
+export const RUNTIME_DIR = '.pipes-runtime'
 
 export type RuntimePaths = {
   projectRoot: string
@@ -22,7 +22,7 @@ export function resolveRuntimePaths(projectRoot: string): RuntimePaths {
   return {
     projectRoot: resolvedProjectRoot,
     root: runtimeRoot,
-    db: path.join(runtimeRoot, 'notionflow.db'),
+    db: path.join(runtimeRoot, 'pipes.db'),
     agentsDir: path.join(runtimeRoot, 'agents'),
     workflowsDir: path.join(runtimeRoot, 'workflows'),
     workspaceMirrorsDir: path.join(runtimeRoot, 'workspace-mirrors'),
@@ -34,7 +34,7 @@ export function resolveRuntimePaths(projectRoot: string): RuntimePaths {
 }
 
 const defaultProjectRoot = path.resolve(
-  process.env.NOTIONFLOW_PROJECT_ROOT ?? process.cwd(),
+  process.env.PIPES_PROJECT_ROOT ?? process.cwd(),
 )
 
 export const paths = resolveRuntimePaths(defaultProjectRoot)

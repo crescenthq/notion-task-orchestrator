@@ -1,14 +1,14 @@
 # Architecture
 
-NotionFlow is a project-local orchestration runtime for Notion-backed tasks.
+Pipes is a project-local orchestration runtime for Notion-backed tasks.
 
 ## Local Project Layout
 
-Each NotionFlow project defines:
+Each Pipes project defines:
 
-- `notionflow.config.ts`
+- `pipes.config.ts`
 - `pipes/`
-- `.notionflow/`
+- `.pipes-runtime/`
 
 Project root is the directory containing the resolved config file.
 
@@ -29,7 +29,7 @@ Applicable commands also support `--config <path>` for explicit resolution.
 
 Factories default to top-level `./pipes` discovery.
 
-`notionflow.config.ts` can override discovery with exact file paths or directory
+`pipes.config.ts` can override discovery with exact file paths or directory
 paths.
 
 - no repo-wide implicit glob scan
@@ -40,11 +40,11 @@ paths.
 
 ## Runtime Persistence
 
-Runtime artifacts are stored under `<project-root>/.notionflow/`.
+Runtime artifacts are stored under `<project-root>/.pipes-runtime/`.
 
 Primary artifacts:
 
-- `notionflow.db`
+- `pipes.db`
 - `runtime.log`
 - `errors.log`
 

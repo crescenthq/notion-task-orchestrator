@@ -22,7 +22,7 @@ afterEach(async () => {
 
 describe('projectConfig', () => {
   it('loads an optional project name alongside default pipes discovery', async () => {
-    const projectRoot = await createFixture('notionflow-project-config-name-')
+    const projectRoot = await createFixture('pipes-project-config-name-')
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
 
@@ -36,7 +36,7 @@ describe('projectConfig', () => {
       'utf8',
     )
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
 
     await expect(loadProjectConfig(configPath)).resolves.toEqual({
@@ -60,7 +60,7 @@ describe('projectConfig', () => {
 
   it('resolves omitted workspace to the git repo containing projectRoot', async () => {
     const repoRoot = await createFixture(
-      'notionflow-project-config-workspace-default-',
+      'pipes-project-config-workspace-default-',
     )
     await initGitRepo(repoRoot)
     const canonicalRepoRoot = await realpath(repoRoot)
@@ -68,7 +68,7 @@ describe('projectConfig', () => {
     const projectRoot = path.join(repoRoot, 'packages', 'app')
     await mkdir(projectRoot, {recursive: true})
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
 
     const config = await loadProjectConfig(configPath)
@@ -86,9 +86,9 @@ describe('projectConfig', () => {
 
   it('rejects string workspace shorthand for explicit local repo paths', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-workspace-local-',
+      'pipes-project-config-workspace-local-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { workspace: "../service-repo" };\n`,
@@ -103,9 +103,9 @@ describe('projectConfig', () => {
 
   it('parses string workspace shorthand for remote repo URLs', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-workspace-remote-',
+      'pipes-project-config-workspace-remote-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { workspace: "git@github.com:acme/service.git" };\n`,
@@ -127,9 +127,9 @@ describe('projectConfig', () => {
 
   it('parses workspace object form with repo, ref, cwd, and cleanup overrides', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-workspace-object-',
+      'pipes-project-config-workspace-object-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       [
@@ -158,7 +158,7 @@ describe('projectConfig', () => {
 
   it('allows workspace object overrides without repo in project mode', async () => {
     const repoRoot = await createFixture(
-      'notionflow-project-config-workspace-overrides-',
+      'pipes-project-config-workspace-overrides-',
     )
     await initGitRepo(repoRoot)
     const canonicalRepoRoot = await realpath(repoRoot)
@@ -166,7 +166,7 @@ describe('projectConfig', () => {
     const projectRoot = path.join(repoRoot, 'packages', 'web')
     await mkdir(projectRoot, {recursive: true})
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       [
@@ -203,7 +203,7 @@ describe('projectConfig', () => {
 
   it('treats explicit empty pipes as default top-level discovery', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-empty-pipes-',
+      'pipes-project-config-empty-pipes-',
     )
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
@@ -211,7 +211,7 @@ describe('projectConfig', () => {
     const defaultFactoryPath = path.join(pipesDir, 'default.mjs')
     await writeMinimalFactory(defaultFactoryPath, 'default-factory')
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, `export default { pipes: [] };\n`, 'utf8')
 
     const config = await loadProjectConfig(configPath)
@@ -226,7 +226,7 @@ describe('projectConfig', () => {
   })
 
   it('loads config and resolves declared directory and exact factory paths', async () => {
-    const projectRoot = await createFixture('notionflow-project-config-')
+    const projectRoot = await createFixture('pipes-project-config-')
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
 
@@ -235,7 +235,7 @@ describe('projectConfig', () => {
     await writeMinimalFactory(localFactoryPath, 'local-factory')
     await writeMinimalFactory(absoluteFactoryPath, 'absolute-factory')
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { pipes: ["./pipes", ${JSON.stringify(absoluteFactoryPath)}] };\n`,
@@ -255,7 +255,7 @@ describe('projectConfig', () => {
   })
 
   it('treats declared directories as top-level scans', async () => {
-    const projectRoot = await createFixture('notionflow-project-config-match-')
+    const projectRoot = await createFixture('pipes-project-config-match-')
     const topLevelFactoryPath = path.join(projectRoot, 'factories', 'one.mjs')
     const nestedHelperPath = path.join(
       projectRoot,
@@ -271,7 +271,7 @@ describe('projectConfig', () => {
       'utf8',
     )
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       ['export default {', '  pipes: ["./factories"],', '};', ''].join('\n'),
@@ -289,9 +289,9 @@ describe('projectConfig', () => {
 
   it('rejects configs that use the removed factories key', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-factories-',
+      'pipes-project-config-factories-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { factories: ["./pipes/legacy.mjs"] };\n`,
@@ -305,9 +305,9 @@ describe('projectConfig', () => {
 
   it('rejects empty workspace shorthand with path-aware diagnostics', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-workspace-empty-',
+      'pipes-project-config-workspace-empty-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, `export default { workspace: "" };\n`, 'utf8')
 
     await expect(loadProjectConfig(configPath)).rejects.toThrowError(
@@ -317,9 +317,9 @@ describe('projectConfig', () => {
 
   it('rejects malformed workspace objects with offending keys in diagnostics', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-workspace-invalid-',
+      'pipes-project-config-workspace-invalid-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       [
@@ -344,9 +344,9 @@ describe('projectConfig', () => {
 
   it('does not fail when default pipes directory is absent and no pipes are declared', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-default-missing-',
+      'pipes-project-config-default-missing-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
 
     const config = await loadProjectConfig(configPath)
@@ -358,7 +358,7 @@ describe('projectConfig', () => {
 
   it('loads only config-declared factories and does not scan unlisted files', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-declared-',
+      'pipes-project-config-declared-',
     )
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
@@ -375,7 +375,7 @@ describe('projectConfig', () => {
       'utf8',
     )
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { pipes: ["./pipes/listed.mjs"] };\n`,
@@ -389,9 +389,9 @@ describe('projectConfig', () => {
 
   it('fails with declared path context when a configured factory file is missing', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-missing-',
+      'pipes-project-config-missing-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { pipes: ["./pipes/missing.mjs"] };\n`,
@@ -411,7 +411,7 @@ describe('projectConfig', () => {
 
   it('fails fast when duplicate factory ids are declared across files', async () => {
     const projectRoot = await createFixture(
-      'notionflow-project-config-duplicate-',
+      'pipes-project-config-duplicate-',
     )
     const pipesDir = path.join(projectRoot, 'pipes')
     await mkdir(pipesDir, {recursive: true})
@@ -421,7 +421,7 @@ describe('projectConfig', () => {
     await writeMinimalFactory(firstFactoryPath, 'duplicate-factory')
     await writeMinimalFactory(secondFactoryPath, 'duplicate-factory')
 
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       `export default { pipes: ["./pipes/first.mjs", "./pipes/second.mjs"] };\n`,

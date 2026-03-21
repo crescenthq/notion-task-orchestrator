@@ -91,7 +91,7 @@ function buildPipeSelectOptions(pipeIds: string[]) {
 
 function defaultProjectName(projectRoot: string): string {
   const baseName = path.basename(projectRoot).trim()
-  if (!baseName) return 'NotionFlow'
+  if (!baseName) return 'Pipes'
 
   const parts = baseName
     .split(/[-_]+/)
@@ -106,7 +106,7 @@ function defaultProjectName(projectRoot: string): string {
 
 const PIPE_MISMATCH_ERROR_PREFIX = 'pipe_mismatch:'
 const PIPE_INVALID_ERROR_PREFIX = 'pipe_invalid:'
-const REPAIR_TASK_COMMAND = 'notionflow integrations notion repair-task --task'
+const REPAIR_TASK_COMMAND = 'pipes integrations notion repair-task --task'
 
 function isOwnershipQuarantined(lastError: string | null | undefined): boolean {
   return Boolean(
@@ -293,7 +293,7 @@ export async function getRegisteredSharedNotionBoard(
 
   if (!board) {
     throw new Error(
-      'No shared Notion board connected. Run `notionflow integrations notion setup` first.',
+      'No shared Notion board connected. Run `pipes integrations notion setup` first.',
     )
   }
 

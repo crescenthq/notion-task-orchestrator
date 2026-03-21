@@ -18,7 +18,7 @@ import {notionWhoAmI} from '../services/notion'
 export const doctorCmd = defineCommand({
   meta: {
     name: 'doctor',
-    description: '[common] Validate NotionFlow setup and integration auth',
+    description: '[common] Validate Pipes setup and integration auth',
   },
   args: {
     config: {type: 'string', required: false},

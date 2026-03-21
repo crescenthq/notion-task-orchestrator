@@ -18,7 +18,7 @@ describe('dashboard snapshot', () => {
 
   it('summarizes runtime task state, active work, and recent events', async () => {
     const projectRoot = await mkdtemp(
-      path.join(tmpdir(), 'notionflow-dashboard-test-'),
+      path.join(tmpdir(), 'pipes-dashboard-test-'),
     )
     projectRoots.push(projectRoot)
 
@@ -198,7 +198,7 @@ describe('dashboard snapshot', () => {
   it('builds stable text panels for the dashboard renderer', () => {
     const snapshot = {
       generatedAt: '2026-03-21T10:01:00.000Z',
-      dbPath: '/tmp/project/.notionflow/notionflow.db',
+      dbPath: '/tmp/project/.pipes-runtime/pipes.db',
       projectRoot: '/tmp/project',
       totalTasks: 2,
       activeTasks: 1,
@@ -308,7 +308,7 @@ describe('dashboard snapshot', () => {
       Date.parse('2026-03-21T10:01:00.000Z'),
     )
 
-    expect(view.header).toContain('NOTIONFLOW DASHBOARD')
+    expect(view.header).toContain('PIPES DASHBOARD')
     expect(view.summary).toContain('Pipes')
     expect(view.inProgress).toContain('page-run…23456')
     expect(view.tasks).toContain('Draft Copy')
