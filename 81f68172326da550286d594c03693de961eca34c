@@ -1,0 +1,29 @@
+src/project/projectConfig.ts
+  6fbe5e783cf569cf 3,40-42,53-54,59-61,63,101-104,117,145-151,154-158,235,401,405,408,411-423,484,497-547,552-555,558-559,563-570,573
+docs/pipe-authoring.md
+  6fbe5e783cf569cf 197,203
+src/core/workspaceRuntime.ts
+  6fbe5e783cf569cf 72-75,83,194,196,199,205,215,219,227,327,374,394,464,484,521,538,559,588,636,686,735,764,784,794-795,797,800,826,842-845,862
+src/core/pipeRuntime.ts
+  6fbe5e783cf569cf 20-22,220-235,247-250,286-289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "81f68172326da550286d594c03693de961eca34c",
+  "prompts": {
+    "6fbe5e783cf569cf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d109d-6222-7ab1-a933-924163fad433",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 218,
+      "total_deletions": 242,
+      "accepted_lines": 183,
+      "overriden_lines": 0
+    }
+  }
+}
