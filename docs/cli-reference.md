@@ -44,7 +44,7 @@ notionflow init
 Creates:
 
 - `notionflow.config.ts`
-- `factories/`
+- `pipes/`
 - `.notionflow/`
 
 Also ensures `.notionflow/` exists exactly once in `.gitignore`.
@@ -126,7 +126,7 @@ Create a local factory scaffold.
 notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
 ```
 
-Writes `factories/<factory-id>.ts` in the resolved project root.
+Writes `pipes/<factory-id>.ts` in the resolved project root.
 
 ### `factory list`
 

@@ -21,7 +21,7 @@ describe('local project init', () => {
     fixture = null
   })
 
-  it('scaffolds config, factories, runtime dir, and idempotent gitignore entry', async () => {
+  it('scaffolds config, pipes, runtime dir, and idempotent gitignore entry', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture()
 
@@ -32,7 +32,7 @@ describe('local project init', () => {
       stat(path.join(fixture.projectDir, 'notionflow.config.ts')),
     ).resolves.toBeTruthy()
     await expect(
-      stat(path.join(fixture.projectDir, 'factories')),
+      stat(path.join(fixture.projectDir, 'pipes')),
     ).resolves.toBeTruthy()
     await expect(
       stat(path.join(fixture.projectDir, '.notionflow')),

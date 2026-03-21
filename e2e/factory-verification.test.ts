@@ -252,7 +252,7 @@ async function writeVerificationProjectConfig(
   projectRoot: string,
 ): Promise<void> {
   const factoryEntries = verificationFactories
-    .map(fileName => path.join(repositoryRoot, 'e2e', 'factories', fileName))
+    .map(fileName => path.join(repositoryRoot, 'e2e', 'pipes', fileName))
     .map(absolutePath => `    ${JSON.stringify(absolutePath)},`)
     .join('\n')
 

@@ -3,7 +3,7 @@ import path from 'node:path'
 import {defineCommand} from 'citty'
 
 const CONFIG_FILE = 'notionflow.config.ts'
-const FACTORIES_DIR = 'factories'
+const PIPES_DIR = 'pipes'
 const RUNTIME_DIR = '.notionflow'
 const GITIGNORE_FILE = '.gitignore'
 const RUNTIME_GITIGNORE_ENTRY = '.notionflow/'
@@ -16,10 +16,10 @@ export const initCmd = defineCommand({
   async run() {
     const projectRoot = process.cwd()
     const configPath = path.join(projectRoot, CONFIG_FILE)
-    const factoriesPath = path.join(projectRoot, FACTORIES_DIR)
+    const pipesPath = path.join(projectRoot, PIPES_DIR)
     const runtimePath = path.join(projectRoot, RUNTIME_DIR)
 
-    await mkdir(factoriesPath, {recursive: true})
+    await mkdir(pipesPath, {recursive: true})
     await mkdir(runtimePath, {recursive: true})
     await writeFile(configPath, buildDefaultConfigTemplate(projectRoot), {
       encoding: 'utf8',

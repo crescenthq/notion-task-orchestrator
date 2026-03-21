@@ -48,14 +48,14 @@ export async function createProjectFixture(
   tempDirs.push(projectRoot)
 
   const factoryIds = options.factoryIds ?? ['alpha', 'beta']
-  const factoriesDir = path.join(projectRoot, 'factories')
-  await mkdir(factoriesDir, {recursive: true})
+  const pipesDir = path.join(projectRoot, 'pipes')
+  await mkdir(pipesDir, {recursive: true})
   await writeFile(
     path.join(projectRoot, 'notionflow.config.ts'),
     [
       'export default {',
       ...(options.name ? [`  name: ${JSON.stringify(options.name)},`] : []),
-      `  factories: [${factoryIds.map(id => JSON.stringify(`./factories/${id}.mjs`)).join(', ')}],`,
+      `  factories: [${factoryIds.map(id => JSON.stringify(`./pipes/${id}.mjs`)).join(', ')}],`,
       '};',
       '',
     ].join('\n'),
@@ -63,7 +63,7 @@ export async function createProjectFixture(
   )
 
   for (const factoryId of factoryIds) {
-    await writeFactory(path.join(factoriesDir, `${factoryId}.mjs`), factoryId)
+    await writeFactory(path.join(pipesDir, `${factoryId}.mjs`), factoryId)
   }
 
   return projectRoot

@@ -1,9 +1,9 @@
 import {describe, expect, it} from 'vitest'
-import expressivePrimitives from '../../example-factories/factories/expressive-primitives'
-import intentFactory from '../../example-factories/factories/intent'
-import magic8Factory from '../../example-factories/factories/magic-8'
-import sharedHelperDemo from '../../example-factories/factories/shared-helper-demo'
-import wouldYouRatherFactory from '../../example-factories/factories/would-you-rather'
+import expressivePrimitives from '../../example-factories/pipes/expressive-primitives'
+import intentFactory from '../../example-factories/pipes/intent'
+import magic8Factory from '../../example-factories/pipes/magic-8'
+import sharedHelperDemo from '../../example-factories/pipes/shared-helper-demo'
+import wouldYouRatherFactory from '../../example-factories/pipes/would-you-rather'
 
 type AwaitFeedbackSignal = {
   type: 'await_feedback'

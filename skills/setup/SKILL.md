@@ -19,7 +19,7 @@ input (Notion token, factory shape). Use AskUserQuestion for all decisions.
 npx notionflow init
 ```
 
-This creates `notionflow.config.ts`, `factories/`, and `.notionflow/` in the
+This creates `notionflow.config.ts`, `pipes/`, and `.notionflow/` in the
 current directory.
 
 If this fails, ensure Node.js ≥20 is installed.
@@ -84,14 +84,14 @@ then use the **add-factory** skill to create the TypeScript factory file.
 
 ## 4. Register the Factory
 
-After the factory file is created under `factories/`, declare it in
+After the factory file is created under `pipes/`, declare it in
 `notionflow.config.ts`:
 
 ```ts
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  factories: ['./factories/<factory-id>.ts'],
+  factories: ['./pipes/<factory-id>.ts'],
 })
 ```
 

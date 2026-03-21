@@ -10,7 +10,7 @@ NotionFlow runs inside your project directory.
 Each project contains:
 
 - `notionflow.config.ts`
-- `factories/`
+- `pipes/`
 - `.notionflow/` (runtime DB + logs)
 
 `run` and `tick` load factories only from paths declared in
@@ -31,7 +31,7 @@ npx notionflow init
 npx notionflow factory create --id demo --skip-notion-board
 
 # 3) Declare the factory in notionflow.config.ts
-# factories: ["./factories/demo.ts"]
+# factories: ["./pipes/demo.ts"]
 
 # 4) Validate config + auth resolution
 npx notionflow doctor
@@ -57,7 +57,7 @@ import {defineConfig} from 'notionflow'
 
 export default defineConfig({
   name: 'Asmara Tasks',
-  factories: ['./factories/demo.ts', './factories/shared-helper-demo.ts'],
+  factories: ['./pipes/demo.ts', './pipes/shared-helper-demo.ts'],
 })
 ```
 
@@ -261,7 +261,7 @@ back to the same default mapping above.
 Project-style examples are in [`example-factories/`](./example-factories):
 
 - explicit `notionflow.config.ts`
-- definePipe-only factories under `factories/`
+- definePipe-only factories under `pipes/`
 - shared helper import patterns for reusable steps/selectors
 
 ## Verification Checklist

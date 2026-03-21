@@ -45,7 +45,7 @@ export const factoryCmd = defineCommand({
         }
 
         const id = String(args.id)
-        const targetDir = path.join(resolvedProject.projectRoot, 'factories')
+        const targetDir = path.join(resolvedProject.projectRoot, 'pipes')
         const targetPath = path.join(targetDir, `${id}.ts`)
         const template = `export default {\n  id: "${id}",\n  initial: {},\n  run: async ({ctx}) => ({...ctx, result: 'ok'}),\n}\n`
         await mkdir(targetDir, {recursive: true})

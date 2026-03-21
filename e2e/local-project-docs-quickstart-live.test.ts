@@ -59,7 +59,7 @@ if (liveSuiteEnabled) {
       'utf8',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'factories', 'docs-live.ts'),
+      path.join(fixture.projectDir, 'pipes', 'docs-live.ts'),
       docsFactorySource(),
       'utf8',
     )
@@ -207,7 +207,7 @@ async function readTaskState(
 function docsConfigSource(): string {
   return [
     'export default {',
-    '  factories: ["./factories/docs-live.ts"],',
+    '  factories: ["./pipes/docs-live.ts"],',
     '};',
     '',
   ].join('\n')

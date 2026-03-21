@@ -23,7 +23,7 @@ describe('local project factory create', () => {
     }
   })
 
-  it('creates factories/<id>.ts in local project context without global writes', async () => {
+  it('creates pipes/<id>.ts in local project context without global writes', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
@@ -32,14 +32,14 @@ describe('local project factory create', () => {
     await execCli(['factory', 'create', '--id', 'smoke'], fixture.projectDir)
 
     await expect(
-      stat(path.join(fixture.projectDir, 'factories', 'smoke.ts')),
+      stat(path.join(fixture.projectDir, 'pipes', 'smoke.ts')),
     ).resolves.toBeTruthy()
 
     const after = await snapshotGlobalNotionflowWrites()
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('creates factories with --config when run outside the project', async () => {
+  it('creates pipes with --config when run outside the project', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     const fixture = await createTempProjectFixture()
     fixtures.push(fixture)
@@ -62,7 +62,7 @@ describe('local project factory create', () => {
     )
 
     await expect(
-      stat(path.join(fixture.projectDir, 'factories', 'external.ts')),
+      stat(path.join(fixture.projectDir, 'pipes', 'external.ts')),
     ).resolves.toBeTruthy()
 
     const after = await snapshotGlobalNotionflowWrites()

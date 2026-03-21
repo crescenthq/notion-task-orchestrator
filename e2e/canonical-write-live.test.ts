@@ -50,7 +50,7 @@ if (liveSuiteEnabled) {
       'utf8',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'factories', 'write-live.ts'),
+      path.join(fixture.projectDir, 'pipes', 'write-live.ts'),
       writeLiveFactorySource(),
       'utf8',
     )
@@ -194,7 +194,7 @@ function extractTaskExternalId(stdout: string): string {
 function writeLiveConfigSource(): string {
   return [
     'export default {',
-    '  factories: ["./factories/write-live.ts"],',
+    '  factories: ["./pipes/write-live.ts"],',
     '};',
     '',
   ].join('\n')
