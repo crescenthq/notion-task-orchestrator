@@ -6,10 +6,7 @@ import {resolveProjectConfig} from '../project/discoverConfig'
 import {notionTasksDatabaseId, notionToken} from '../config/env'
 import {upsertEnvVar} from '../config/envFile'
 import {boards, tasks, workflows} from '../db/schema'
-import {
-  loadDeclaredFactories,
-  loadProjectConfig,
-} from '../project/projectConfig'
+import {loadDeclaredPipes, loadProjectConfig} from '../project/projectConfig'
 import {
   mapTaskStateToNotionStatus,
   notionAppendTaskPageLog,
@@ -79,15 +76,15 @@ type SharedBoardCommandOptions = {
   startDir?: string
 }
 
-type DeclaredFactoryCatalog = {
+type DeclaredPipeCatalog = {
   resolvedProject: Awaited<ReturnType<typeof resolveProjectConfig>>
-  factoryIds: string[]
-  factoryOptions: Array<{name: string; color: string}>
+  pipeIds: string[]
+  pipeOptions: Array<{name: string; color: string}>
 }
 
-function buildFactorySelectOptions(factoryIds: string[]) {
-  return factoryIds.map((factoryId, index) => ({
-    name: factoryId,
+function buildPipeSelectOptions(pipeIds: string[]) {
+  return pipeIds.map((pipeId, index) => ({
+    name: pipeId,
     color:
       FACTORY_OPTION_COLORS[index % FACTORY_OPTION_COLORS.length] ?? 'gray',
   }))
@@ -174,8 +171,8 @@ async function reconcileSharedBoardSchema(
   boardExternalId: string,
   options: SharedBoardCommandOptions,
 ): Promise<Awaited<ReturnType<typeof notionGetDataSource>>> {
-  const {factoryOptions} = await loadDeclaredFactoryCatalog(options)
-  await notionEnsureBoardSchema(token, boardExternalId, [], factoryOptions)
+  const {pipeOptions} = await loadDeclaredPipeCatalog(options)
+  await notionEnsureBoardSchema(token, boardExternalId, [], pipeOptions)
   const dataSource = await notionGetDataSource(token, boardExternalId)
   notionAssertSharedBoardSchema(dataSource)
   return dataSource
@@ -218,40 +215,39 @@ async function reflectTaskQuarantineOnBoard(
   }
 }
 
-async function loadDeclaredFactoryCatalog(
+async function loadDeclaredPipeCatalog(
   options: SharedBoardCommandOptions,
-): Promise<DeclaredFactoryCatalog> {
+): Promise<DeclaredPipeCatalog> {
   const resolvedProject = await resolveProjectConfig({
     startDir: options.startDir ?? process.cwd(),
     configPath: options.configPath,
   })
-  const declaredFactories = await loadDeclaredFactories({
+  const declaredPipes = await loadDeclaredPipes({
     configPath: resolvedProject.configPath,
     projectRoot: resolvedProject.projectRoot,
   })
 
-  const factoryIds = declaredFactories.map(entry => entry.definition.id)
+  const pipeIds = declaredPipes.map(entry => entry.definition.id)
 
   return {
     resolvedProject,
-    factoryIds,
-    factoryOptions: buildFactorySelectOptions(factoryIds),
+    pipeIds,
+    pipeOptions: buildPipeSelectOptions(pipeIds),
   }
 }
 
-async function assertDeclaredFactoryId(
-  factoryId: string,
+async function assertDeclaredPipeId(
+  pipeId: string,
   options: SharedBoardCommandOptions = {},
 ): Promise<void> {
-  const {resolvedProject, factoryIds} =
-    await loadDeclaredFactoryCatalog(options)
-  if (factoryIds.includes(factoryId)) return
+  const {resolvedProject, pipeIds} = await loadDeclaredPipeCatalog(options)
+  if (pipeIds.includes(pipeId)) return
 
   throw new Error(
     [
-      `Factory \`${factoryId}\` is not declared in project config.`,
+      `Pipe \`${pipeId}\` is not declared in project config.`,
       `Config path: ${resolvedProject.configPath}`,
-      `Available factories: ${factoryIds.sort().join(', ') || '<none>'}`,
+      `Available pipes: ${pipeIds.sort().join(', ') || '<none>'}`,
     ].join('\n'),
   )
 }
@@ -265,9 +261,9 @@ function sharedBoardTitle(input: {name?: string; projectRoot: string}): string {
 async function createSharedBoardConnection(
   token: string,
   title: string,
-  factoryOptions: Array<{name: string; color: string}>,
+  pipeOptions: Array<{name: string; color: string}>,
 ) {
-  return notionCreateBoardDataSource(token, title, [], factoryOptions)
+  return notionCreateBoardDataSource(token, title, [], pipeOptions)
 }
 
 async function persistTasksDatabaseMapping(
@@ -317,7 +313,7 @@ export async function setupSharedNotionBoard(
   const token = notionToken()
   if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-  const {resolvedProject, factoryOptions} = await loadDeclaredFactoryCatalog({
+  const {resolvedProject, pipeOptions} = await loadDeclaredPipeCatalog({
     configPath: options.configPath,
     startDir: options.startDir,
   })
@@ -350,7 +346,7 @@ export async function setupSharedNotionBoard(
               name: (await loadProjectConfig(resolvedProject.configPath)).name,
               projectRoot: resolvedProject.projectRoot,
             }),
-            factoryOptions,
+            pipeOptions,
           )
 
   const sameBoard =
@@ -508,17 +504,17 @@ export async function syncNotionBoards(options: {
   if (!token) throw new Error('NOTION_API_TOKEN is required')
 
   if (options.factoryId) {
-    await assertDeclaredFactoryId(options.factoryId, {
+    await assertDeclaredPipeId(options.factoryId, {
       configPath: options.configPath,
       startDir: options.startDir,
     })
   }
 
-  const {resolvedProject, factoryIds} = await loadDeclaredFactoryCatalog({
+  const {resolvedProject, pipeIds} = await loadDeclaredPipeCatalog({
     startDir: options.startDir ?? process.cwd(),
     configPath: options.configPath,
   })
-  const declaredFactoryIds = new Set(factoryIds)
+  const declaredPipeIds = new Set(pipeIds)
 
   const {db} = await openApp({
     startDir: options.startDir ?? process.cwd(),
@@ -575,7 +571,7 @@ export async function syncNotionBoards(options: {
       )
       continue
     }
-    if (!declaredFactoryIds.has(workflowId)) {
+    if (!declaredPipeIds.has(workflowId)) {
       if (existingTask) {
         const message = makeFactoryInvalidMessage(
           existingTask,
@@ -918,7 +914,7 @@ export const notionCmd = defineCommand({
         if (!token) throw new Error('NOTION_API_TOKEN is required')
 
         const factoryId = String(args.factory)
-        await assertDeclaredFactoryId(factoryId, {
+        await assertDeclaredPipeId(factoryId, {
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
         })

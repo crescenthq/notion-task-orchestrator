@@ -3,9 +3,9 @@ import os from 'node:os'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
-  loadDeclaredFactories,
+  loadDeclaredPipes,
   loadProjectConfig,
-  resolveFactoryPaths,
+  resolvePipePaths,
 } from './projectConfig'
 
 const fixtures: string[] = []
@@ -43,11 +43,11 @@ describe('projectConfig', () => {
     })
 
     const config = await loadProjectConfig(configPath)
-    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+    await expect(resolvePipePaths(config, projectRoot)).resolves.toEqual([
       localFactoryPath,
     ])
 
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded.map(entry => entry.definition.id)).toEqual(['named-factory'])
   })
 
@@ -65,11 +65,11 @@ describe('projectConfig', () => {
     await writeFile(configPath, `export default { pipes: [] };\n`, 'utf8')
 
     const config = await loadProjectConfig(configPath)
-    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+    await expect(resolvePipePaths(config, projectRoot)).resolves.toEqual([
       defaultFactoryPath,
     ])
 
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded.map(entry => entry.definition.id)).toEqual([
       'default-factory',
     ])
@@ -93,14 +93,11 @@ describe('projectConfig', () => {
     )
 
     const config = await loadProjectConfig(configPath)
-    const resolvedFactoryPaths = await resolveFactoryPaths(config, projectRoot)
+    const resolvedPipePaths = await resolvePipePaths(config, projectRoot)
 
-    expect(resolvedFactoryPaths).toEqual([
-      localFactoryPath,
-      absoluteFactoryPath,
-    ])
+    expect(resolvedPipePaths).toEqual([localFactoryPath, absoluteFactoryPath])
 
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded.map(entry => entry.definition.id)).toEqual([
       'local-factory',
       'absolute-factory',
@@ -132,11 +129,11 @@ describe('projectConfig', () => {
     )
 
     const config = await loadProjectConfig(configPath)
-    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
+    await expect(resolvePipePaths(config, projectRoot)).resolves.toEqual([
       topLevelFactoryPath,
     ])
 
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded.map(entry => entry.definition.id)).toEqual(['alpha-factory'])
   })
 
@@ -164,10 +161,10 @@ describe('projectConfig', () => {
     await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
 
     const config = await loadProjectConfig(configPath)
-    await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([])
-    await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
-    ).resolves.toEqual([])
+    await expect(resolvePipePaths(config, projectRoot)).resolves.toEqual([])
+    await expect(loadDeclaredPipes({configPath, projectRoot})).resolves.toEqual(
+      [],
+    )
   })
 
   it('loads only config-declared factories and does not scan unlisted files', async () => {
@@ -196,7 +193,7 @@ describe('projectConfig', () => {
       'utf8',
     )
 
-    const loaded = await loadDeclaredFactories({configPath, projectRoot})
+    const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded).toHaveLength(1)
     expect(loaded[0]?.definition.id).toBe('listed-factory')
   })
@@ -213,13 +210,13 @@ describe('projectConfig', () => {
     )
 
     await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
+      loadDeclaredPipes({configPath, projectRoot}),
     ).rejects.toThrowError(
-      /Declared factory path does not exist: \.\/pipes\/missing\.mjs/,
+      /Declared pipe path does not exist: \.\/pipes\/missing\.mjs/,
     )
 
     await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
+      loadDeclaredPipes({configPath, projectRoot}),
     ).rejects.toThrowError(/Resolved path:/)
   })
 
@@ -243,15 +240,15 @@ describe('projectConfig', () => {
     )
 
     await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
-    ).rejects.toThrowError(/Duplicate factory id detected: duplicate-factory/)
+      loadDeclaredPipes({configPath, projectRoot}),
+    ).rejects.toThrowError(/Duplicate pipe id detected: duplicate-factory/)
 
     await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
+      loadDeclaredPipes({configPath, projectRoot}),
     ).rejects.toThrowError(/First resolved path:/)
 
     await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
+      loadDeclaredPipes({configPath, projectRoot}),
     ).rejects.toThrowError(/Duplicate resolved path:/)
   })
 })

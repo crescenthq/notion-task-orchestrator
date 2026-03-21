@@ -24,7 +24,7 @@ async function setupRuntime() {
   const [{nowIso, openApp}, {paths}, runtime, schema] = await Promise.all([
     import('../app/context'),
     import('../config/paths'),
-    import('./factoryRuntime'),
+    import('./pipeRuntime'),
     import('../db/schema'),
   ])
 
@@ -82,7 +82,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
 
-describe('factoryRuntime (definePipe only)', () => {
+describe('pipeRuntime (definePipe only)', () => {
   afterEach(async () => {
     process.env.HOME = originalHome
     process.env.NOTIONFLOW_PROJECT_ROOT = originalProjectRoot
@@ -111,7 +111,7 @@ describe('factoryRuntime (definePipe only)', () => {
     )
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [updatedTask] = await db
       .select()
@@ -185,7 +185,7 @@ describe('factoryRuntime (definePipe only)', () => {
       postComment: vi.fn(async () => undefined),
     }
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId, {
+    await runtime.runPipeTaskByExternalId(externalTaskId, {
       taskBoardAdapter: adapter,
     })
 
@@ -243,7 +243,7 @@ describe('factoryRuntime (definePipe only)', () => {
     )
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [paused] = await db
       .select()
@@ -270,7 +270,7 @@ describe('factoryRuntime (definePipe only)', () => {
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [doneTask] = await db
       .select()
@@ -337,7 +337,7 @@ describe('factoryRuntime (definePipe only)', () => {
     )
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [paused] = await db
       .select()
@@ -364,7 +364,7 @@ describe('factoryRuntime (definePipe only)', () => {
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [doneTask] = await db
       .select()
@@ -411,7 +411,7 @@ export default definePipe({
     )
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [firstPause] = await db
       .select()
@@ -439,7 +439,7 @@ export default definePipe({
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [secondPause] = await db
       .select()
@@ -467,7 +467,7 @@ export default definePipe({
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [doneTask] = await db
       .select()
@@ -518,7 +518,7 @@ export default definePipe({
     )
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [paused] = await db
       .select()
@@ -547,7 +547,7 @@ export default definePipe({
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
-    await runtime.runFactoryTaskByExternalId(externalTaskId)
+    await runtime.runPipeTaskByExternalId(externalTaskId)
 
     const [doneTask] = await db
       .select()
@@ -592,7 +592,7 @@ export default definePipe({
       )
 
       await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
-      await runtime.runFactoryTaskByExternalId(externalTaskId)
+      await runtime.runPipeTaskByExternalId(externalTaskId)
 
       const [updatedTask] = await db
         .select()
@@ -629,7 +629,7 @@ export default definePipe({
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId),
+      runtime.runPipeTaskByExternalId(externalTaskId),
     ).rejects.toThrow(/Pipe execution failed/)
 
     const [updatedTask] = await db
@@ -681,7 +681,7 @@ export default definePipe({
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId),
+      runtime.runPipeTaskByExternalId(externalTaskId),
     ).rejects.toThrow(/malformed await_feedback control signal/)
 
     const [updatedTask] = await db
@@ -723,7 +723,7 @@ export default definePipe({
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId, {
+      runtime.runPipeTaskByExternalId(externalTaskId, {
         maxTransitionsPerTick: 1,
       }),
     ).rejects.toThrow(/Pipe transition budget exceeded \(1\)/)
@@ -766,7 +766,7 @@ export default definePipe({
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
 
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId),
+      runtime.runPipeTaskByExternalId(externalTaskId),
     ).rejects.toThrow(/repair-task --task task-runtime-quarantined-task-1/)
   })
 
@@ -802,7 +802,7 @@ export default definePipe({
 
     await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
 
-    const firstRun = runtime.runFactoryTaskByExternalId(externalTaskId, {
+    const firstRun = runtime.runPipeTaskByExternalId(externalTaskId, {
       leaseMs: 1_000,
       leaseMode: 'strict',
       workerId: 'worker-a',
@@ -811,7 +811,7 @@ export default definePipe({
     await sleep(1_300)
 
     await expect(
-      runtime.runFactoryTaskByExternalId(externalTaskId, {
+      runtime.runPipeTaskByExternalId(externalTaskId, {
         leaseMs: 1_000,
         leaseMode: 'strict',
         workerId: 'worker-b',

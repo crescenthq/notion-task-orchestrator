@@ -27,13 +27,13 @@ export type PipeDeclaration = z.output<typeof pipeDeclarationSchema>
 export type ProjectConfigInput = z.input<typeof projectConfigInputSchema>
 export type ProjectConfig = z.output<typeof projectConfigSchema>
 
-export type LoadedDeclaredFactory = {
+export type LoadedDeclaredPipe = {
   declaredSource: string
   resolvedPath: string
   definition: LoadedFactoryDefinition
 }
 
-type ResolvedFactoryPath = {
+type ResolvedPipePath = {
   declaredSource: string
   resolvedPath: string
 }
@@ -97,24 +97,24 @@ export async function loadProjectConfig(
   return parsed.data
 }
 
-export async function resolveFactoryPaths(
+export async function resolvePipePaths(
   config: ProjectConfig,
   projectRoot: string,
 ): Promise<string[]> {
-  const resolvedEntries = await resolveDeclaredFactoryPaths(config, projectRoot)
+  const resolvedEntries = await resolveDeclaredPipePaths(config, projectRoot)
   return resolvedEntries.map(entry => entry.resolvedPath)
 }
 
-export async function loadDeclaredFactories(options: {
+export async function loadDeclaredPipes(options: {
   configPath: string
   projectRoot: string
-}): Promise<LoadedDeclaredFactory[]> {
+}): Promise<LoadedDeclaredPipe[]> {
   const resolvedConfigPath = path.resolve(options.configPath)
   const config = await loadProjectConfig(resolvedConfigPath)
-  let resolvedFactoryPaths: ResolvedFactoryPath[]
+  let resolvedPipePaths: ResolvedPipePath[]
 
   try {
-    resolvedFactoryPaths = await resolveDeclaredFactoryPaths(
+    resolvedPipePaths = await resolveDeclaredPipePaths(
       config,
       options.projectRoot,
     )
@@ -126,15 +126,15 @@ export async function loadDeclaredFactories(options: {
     throw error
   }
 
-  const loadedFactories: LoadedDeclaredFactory[] = []
-  const seenFactoryIds = new Map<string, LoadedDeclaredFactory>()
-  for (const {declaredSource, resolvedPath} of resolvedFactoryPaths) {
+  const loadedPipes: LoadedDeclaredPipe[] = []
+  const seenPipeIds = new Map<string, LoadedDeclaredPipe>()
+  for (const {declaredSource, resolvedPath} of resolvedPipePaths) {
     try {
       await access(resolvedPath, constants.F_OK)
     } catch {
       throw new ProjectConfigLoadError(
         [
-          `Declared factory file does not exist: ${declaredSource}`,
+          `Declared pipe file does not exist: ${declaredSource}`,
           `Resolved path: ${resolvedPath}`,
         ].join('\n'),
         resolvedConfigPath,
@@ -143,17 +143,17 @@ export async function loadDeclaredFactories(options: {
 
     try {
       const loaded = await loadFactoryFromPath(resolvedPath)
-      const loadedEntry: LoadedDeclaredFactory = {
+      const loadedEntry: LoadedDeclaredPipe = {
         declaredSource,
         resolvedPath,
         definition: loaded.definition,
       }
 
-      const existing = seenFactoryIds.get(loaded.definition.id)
+      const existing = seenPipeIds.get(loaded.definition.id)
       if (existing) {
         throw new ProjectConfigLoadError(
           [
-            `Duplicate factory id detected: ${loaded.definition.id}`,
+            `Duplicate pipe id detected: ${loaded.definition.id}`,
             `First declaration: ${existing.declaredSource}`,
             `First resolved path: ${existing.resolvedPath}`,
             `Duplicate declaration: ${declaredSource}`,
@@ -163,8 +163,8 @@ export async function loadDeclaredFactories(options: {
         )
       }
 
-      seenFactoryIds.set(loaded.definition.id, loadedEntry)
-      loadedFactories.push(loadedEntry)
+      seenPipeIds.set(loaded.definition.id, loadedEntry)
+      loadedPipes.push(loadedEntry)
     } catch (error) {
       if (error instanceof ProjectConfigLoadError) {
         throw error
@@ -173,7 +173,7 @@ export async function loadDeclaredFactories(options: {
       const reason = error instanceof Error ? error.message : String(error)
       throw new ProjectConfigLoadError(
         [
-          `Failed loading declared factory path: ${declaredSource}`,
+          `Failed loading declared pipe path: ${declaredSource}`,
           `Resolved path: ${resolvedPath}`,
           reason,
         ].join('\n'),
@@ -182,20 +182,20 @@ export async function loadDeclaredFactories(options: {
     }
   }
 
-  return loadedFactories
+  return loadedPipes
 }
 
-async function resolveDeclaredFactoryPaths(
+async function resolveDeclaredPipePaths(
   config: ProjectConfig,
   projectRoot: string,
-): Promise<ResolvedFactoryPath[]> {
+): Promise<ResolvedPipePath[]> {
   const declarations =
     config.pipes.length > 0
       ? config.pipes
       : ([DEFAULT_FACTORY_DIRECTORY] satisfies PipeDeclaration[])
   const allowMissingDefaultDirectory = config.pipes.length === 0
 
-  const resolvedEntries: ResolvedFactoryPath[] = []
+  const resolvedEntries: ResolvedPipePath[] = []
   for (const declaration of declarations) {
     const resolvedDeclaration = await resolvePipeDeclaration(
       declaration,
@@ -210,14 +210,14 @@ async function resolveDeclaredFactoryPaths(
     resolvedEntries.push(...resolvedDeclaration)
   }
 
-  return dedupeResolvedFactoryPaths(resolvedEntries)
+  return dedupeResolvedPipePaths(resolvedEntries)
 }
 
 async function resolvePipeDeclaration(
   declaration: PipeDeclaration,
   projectRoot: string,
   options: {allowMissing: boolean},
-): Promise<ResolvedFactoryPath[]> {
+): Promise<ResolvedPipePath[]> {
   const resolvedPath = resolveConfiguredPath(declaration, projectRoot)
   const targetType = await getPathType(resolvedPath)
 
@@ -226,20 +226,20 @@ async function resolvePipeDeclaration(
 
     throw new PipeDeclarationResolutionError(
       [
-        `Declared factory path does not exist: ${declaration}`,
+        `Declared pipe path does not exist: ${declaration}`,
         `Resolved path: ${resolvedPath}`,
       ].join('\n'),
     )
   }
 
   if (targetType === 'directory') {
-    return collectFactoryPathsFromDirectory(declaration, resolvedPath)
+    return collectPipePathsFromDirectory(declaration, resolvedPath)
   }
 
   if (targetType !== 'file') {
     throw new PipeDeclarationResolutionError(
       [
-        `Declared factory path is not a file or directory: ${declaration}`,
+        `Declared pipe path is not a file or directory: ${declaration}`,
         `Resolved path: ${resolvedPath}`,
       ].join('\n'),
     )
@@ -248,11 +248,11 @@ async function resolvePipeDeclaration(
   return [{declaredSource: declaration, resolvedPath}]
 }
 
-async function collectFactoryPathsFromDirectory(
+async function collectPipePathsFromDirectory(
   declaration: string,
   resolvedDirectory: string,
-): Promise<ResolvedFactoryPath[]> {
-  const resolvedPaths = await listFactoryModulesInDirectory(resolvedDirectory)
+): Promise<ResolvedPipePath[]> {
+  const resolvedPaths = await listPipeModulesInDirectory(resolvedDirectory)
 
   return resolvedPaths.map(resolvedPath => ({
     declaredSource: declaration,
@@ -260,7 +260,7 @@ async function collectFactoryPathsFromDirectory(
   }))
 }
 
-async function listFactoryModulesInDirectory(
+async function listPipeModulesInDirectory(
   directoryPath: string,
 ): Promise<string[]> {
   const entries = await readdir(directoryPath, {withFileTypes: true})
@@ -310,10 +310,10 @@ function resolveConfiguredPath(
     : path.resolve(projectRoot, targetPath)
 }
 
-function dedupeResolvedFactoryPaths(
-  entries: ResolvedFactoryPath[],
-): ResolvedFactoryPath[] {
-  const uniqueEntries: ResolvedFactoryPath[] = []
+function dedupeResolvedPipePaths(
+  entries: ResolvedPipePath[],
+): ResolvedPipePath[] {
+  const uniqueEntries: ResolvedPipePath[] = []
   const seenPaths = new Set<string>()
 
   for (const entry of entries) {
