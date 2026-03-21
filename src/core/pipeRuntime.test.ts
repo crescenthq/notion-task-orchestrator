@@ -387,6 +387,229 @@ export default {
     expect(traceTypes.has('resumed')).toBe(true)
   })
 
+  it('reuses the same run workspace when resuming after feedback', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-resume-workspace-reuse'
+    const externalTaskId = 'task-runtime-resume-workspace-reuse-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `import {existsSync, readFileSync, writeFileSync} from "node:fs";
+import path from "node:path";
+
+export default {
+  id: "${factoryId}",
+  initial: { attempts: 0 },
+  run: async ({ ctx, runId }) => {
+    const projectRoot = process.env.NOTIONFLOW_PROJECT_ROOT;
+    const manifestPath = path.join(
+      projectRoot,
+      ".notionflow",
+      "workspace-manifests",
+      \`\${runId}.json\`,
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const markerPath = path.join(manifest.root, "resume-marker.txt");
+    const attempts = Number(ctx.attempts ?? 0) + 1;
+
+    if (!ctx.human_feedback) {
+      writeFileSync(markerPath, runId, "utf8");
+      return {
+        type: "await_feedback",
+        prompt: "resume me",
+        ctx: {
+          ...ctx,
+          attempts,
+          firstRunId: runId,
+          firstWorkspaceRoot: manifest.root,
+        },
+      };
+    }
+
+    return {
+      type: "end",
+      status: "done",
+      ctx: {
+        ...ctx,
+        attempts,
+        resumedRunId: runId,
+        resumedWorkspaceRoot: manifest.root,
+        markerPersisted:
+          existsSync(markerPath) &&
+          readFileSync(markerPath, "utf8") === String(ctx.firstRunId),
+      },
+    };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [pausedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(pausedTask?.state).toBe('feedback')
+
+    const pausedCtx = JSON.parse(pausedTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    const [feedbackRun] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, pausedTask!.id))
+
+    expect(feedbackRun?.status).toBe('feedback')
+    expect(pausedCtx.firstRunId).toBe(feedbackRun?.id)
+    expect(pausedCtx.firstWorkspaceRoot).toBe(
+      path.join(paths.workspacesDir, feedbackRun!.id),
+    )
+
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'approved',
+        }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [doneTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(doneTask?.state).toBe('done')
+
+    const doneCtx = JSON.parse(doneTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    const taskRuns = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, doneTask!.id))
+
+    expect(taskRuns).toHaveLength(1)
+    expect(taskRuns[0]?.id).toBe(feedbackRun?.id)
+    expect(taskRuns[0]?.status).toBe('done')
+    expect(doneCtx.firstRunId).toBe(feedbackRun?.id)
+    expect(doneCtx.resumedRunId).toBe(feedbackRun?.id)
+    expect(doneCtx.firstWorkspaceRoot).toBe(
+      path.join(paths.workspacesDir, feedbackRun!.id),
+    )
+    expect(doneCtx.resumedWorkspaceRoot).toBe(
+      path.join(paths.workspacesDir, feedbackRun!.id),
+    )
+    expect(doneCtx.markerPersisted).toBe(true)
+  })
+
+  it('fails resumed runs when their original workspace is missing', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-missing-resume-workspace'
+    const externalTaskId = 'task-runtime-missing-resume-workspace-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {
+  id: "${factoryId}",
+  initial: { attempts: 0 },
+  run: async ({ ctx }) => {
+    const attempts = Number(ctx.attempts ?? 0) + 1;
+    if (!ctx.human_feedback) {
+      return {
+        type: "await_feedback",
+        prompt: "resume me",
+        ctx: { ...ctx, attempts },
+      };
+    }
+    return {
+      type: "end",
+      status: "done",
+      ctx: { ...ctx, attempts },
+    };
+  },
+};
+`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [pausedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(pausedTask?.state).toBe('feedback')
+
+    const [feedbackRun] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, pausedTask!.id))
+    const workspacePath = path.join(paths.workspacesDir, feedbackRun!.id)
+
+    await rm(workspacePath, {recursive: true, force: true})
+
+    const pausedCtx = JSON.parse(pausedTask?.stepVarsJson ?? '{}') as Record<
+      string,
+      unknown
+    >
+    await db
+      .update(schema.tasks)
+      .set({
+        state: 'queued',
+        stepVarsJson: JSON.stringify({
+          ...pausedCtx,
+          human_feedback: 'approved',
+        }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    let resumeError: unknown
+    try {
+      await runtime.runPipeTaskByExternalId(externalTaskId)
+    } catch (error) {
+      resumeError = error
+    }
+
+    expect(resumeError).toBeInstanceOf(Error)
+    const resumeMessage = (resumeError as Error).message
+    expect(resumeMessage).toContain(
+      `Run workspace is missing for resumed run \`${feedbackRun!.id}\`.`,
+    )
+    expect(resumeMessage).toContain(`worktreePath: ${workspacePath}`)
+
+    const [failedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    expect(failedTask?.state).toBe('failed')
+    expect(failedTask?.lastError).toContain(
+      `Run workspace is missing for resumed run \`${feedbackRun!.id}\`.`,
+    )
+    expect(failedTask?.lastError).toContain(`worktreePath: ${workspacePath}`)
+
+    const taskRuns = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, failedTask!.id))
+    expect(taskRuns).toHaveLength(1)
+    expect(taskRuns[0]?.id).toBe(feedbackRun?.id)
+    expect(taskRuns[0]?.status).toBe('failed')
+  })
+
   it('maps default project workspaces to the project-root-relative cwd for monorepos', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime({
       projectSubdir: path.join('apps', 'web'),

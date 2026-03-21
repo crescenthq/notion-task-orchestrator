@@ -211,6 +211,7 @@ async function provisionRuntimeWorkspace(options: {
   paths: Awaited<ReturnType<typeof openApp>>['paths']
   projectConfig: ResolvedProjectConfig | null
   runId: string
+  resume: boolean
 }): Promise<void> {
   if (!options.projectConfig) return
 
@@ -226,7 +227,20 @@ async function provisionRuntimeWorkspace(options: {
     projectRoot: options.projectConfig.projectRoot,
     workspace,
     runId: options.runId,
+    resume: options.resume,
   })
+}
+
+function selectMostRecentOpenRun<T extends {updatedAt: string; createdAt: string}>(
+  openRuns: T[],
+): T | undefined {
+  return [...openRuns]
+    .sort((left, right) => {
+      const updatedAtComparison = left.updatedAt.localeCompare(right.updatedAt)
+      if (updatedAtComparison !== 0) return updatedAtComparison
+      return left.createdAt.localeCompare(right.createdAt)
+    })
+    .at(-1)
 }
 
 function leaseExpiryIso(leaseMs: number): string {
@@ -448,16 +462,11 @@ export async function runPipeTaskByExternalId(
   let currentStateId = task.currentStepId ? task.currentStepId : initialStateId
   const resumed = task.currentStepId !== null || task.stepVarsJson !== null
 
-  const [activeRun] = await db
+  const openRuns = await db
     .select()
     .from(runs)
-    .where(
-      and(
-        eq(runs.taskId, task.id),
-        isNull(runs.endedAt),
-        eq(runs.status, 'running'),
-      ),
-    )
+    .where(and(eq(runs.taskId, task.id), isNull(runs.endedAt)))
+  const activeRun = selectMostRecentOpenRun(openRuns)
   const runId = activeRun?.id ?? crypto.randomUUID()
   const now = nowIso()
   if (!activeRun) {
@@ -861,6 +870,7 @@ export async function runPipeTaskByExternalId(
         paths,
         projectConfig: resolvedProjectConfig,
         runId,
+        resume: resumed,
       })
 
       const runPipe = async (

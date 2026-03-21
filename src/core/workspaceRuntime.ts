@@ -31,6 +31,7 @@ export type ProvisionRunWorkspaceOptions = {
   projectRoot: string
   workspace: ResolvedWorkspaceConfig
   runId: string
+  resume?: boolean
 }
 
 export class WorkspaceProvisionError extends Error {
@@ -78,6 +79,8 @@ export async function provisionRunWorkspace(
     worktreePath,
     targetRef: resolvedTargetRef,
     projectRoot,
+    runId,
+    resume: options.resume ?? false,
   })
 
   const root = await resolveWorktreeRoot(worktreePath, projectRoot)
@@ -287,9 +290,22 @@ async function ensureManagedWorktree(options: {
   worktreePath: string
   targetRef: string
   projectRoot: string
+  runId: string
+  resume: boolean
 }): Promise<void> {
   const worktreeExists = await pathExists(options.worktreePath)
   if (!worktreeExists) {
+    if (options.resume) {
+      throw new WorkspaceProvisionError(
+        [
+          `Run workspace is missing for resumed run \`${options.runId}\`.`,
+          `runId: ${options.runId}`,
+          `worktreePath: ${options.worktreePath}`,
+          'Resume requires the original workspace; restore it or start a new run instead.',
+        ].join('\n'),
+      )
+    }
+
     try {
       await runGit(
         [
@@ -321,7 +337,10 @@ async function ensureManagedWorktree(options: {
     options.mirrorPath,
     options.projectRoot,
   )
-  if (!managedWorktrees.has(path.resolve(options.worktreePath))) {
+  const canonicalWorktreePath = await realpath(options.worktreePath).catch(
+    () => path.resolve(options.worktreePath),
+  )
+  if (!managedWorktrees.has(canonicalWorktreePath)) {
     throw new WorkspaceProvisionError(
       [
         `Run workspace path already exists but is not managed by the mirror.`,
@@ -341,12 +360,16 @@ async function listManagedWorktrees(
       ['--git-dir', mirrorPath, 'worktree', 'list', '--porcelain'],
       projectRoot,
     )
-    return new Set(
-      output
-        .split('\n')
-        .filter(line => line.startsWith('worktree '))
-        .map(line => path.resolve(line.slice('worktree '.length))),
+    const worktreePaths = output
+      .split('\n')
+      .filter(line => line.startsWith('worktree '))
+      .map(line => line.slice('worktree '.length))
+    const canonicalPaths = await Promise.all(
+      worktreePaths.map(worktreePath =>
+        realpath(worktreePath).catch(() => path.resolve(worktreePath)),
+      ),
     )
+    return new Set(canonicalPaths)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw new WorkspaceProvisionError(

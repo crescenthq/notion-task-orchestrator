@@ -11,9 +11,15 @@ Workspace-Backed Pipe Execution Progress:
   - US-002: Added unit coverage in `src/core/workspaceRuntime.test.ts` for project-repo mode, explicit repo mode, invalid repo sources, and unresolved refs.
   - US-003: Updated `src/core/pipeRuntime.ts` so `runPipeTaskByExternalId` resolves the active project config from the runtime project root, provisions the run workspace keyed by `runId`, and does so immediately before `pipeDefinition.run(...)` executes.
   - US-003: Updated `src/core/pipeRuntime.test.ts` to run against temporary git-backed projects and added coverage that verifies workspace manifests/worktrees exist before pipe execution and that project-repo workspaces map monorepo `projectRoot` paths to the correct workspace `cwd`.
+  - US-004: Updated `src/core/pipeRuntime.ts` so resumed feedback/checkpoint ticks reuse the most recent open run record, preserving the original `runId` and workspace path instead of minting a fresh run on each resume.
+  - US-004: Updated `src/core/workspaceRuntime.ts` so resumed runs fail if their original workspace directory is missing, with an actionable error that includes the run id and workspace path, and canonicalized managed-worktree path checks so existing macOS worktrees are recognized on resume.
+  - US-004: Added coverage in `src/core/pipeRuntime.test.ts` that verifies resumed runs keep the same workspace across feedback loops and that deleting the original resume workspace fails the run instead of silently recreating it.
 - Notes:
   - Verification:
     - `npm run check` (pass)
     - `npx vitest run src/project/projectConfig.test.ts` (pass)
+    - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
+    - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
+    - `npm run check` (pass)
     - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
