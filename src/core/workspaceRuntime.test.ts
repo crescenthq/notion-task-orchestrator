@@ -259,6 +259,119 @@ describe('workspaceRuntime', () => {
     })
   })
 
+  it('validates explicit remote refs without requiring remote HEAD when the ref is concrete', async () => {
+    const sourceRepo = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-no-head-',
+    )
+    await initGitRepo(sourceRepo)
+    await writeFile(path.join(sourceRepo, 'README.md'), 'remote ref\n', 'utf8')
+    await commitAll(sourceRepo, 'workspace validation remote ref')
+    await runGit(['checkout', '-b', 'feature/stable'], sourceRepo)
+    const stableHead = await runGit(
+      ['rev-parse', '--verify', 'feature/stable^{commit}'],
+      sourceRepo,
+    )
+    await runGit(['symbolic-ref', 'HEAD', 'refs/heads/missing-head'], sourceRepo)
+
+    const projectRoot = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-no-head-project-',
+    )
+    const workspace = {
+      ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
+      ref: 'feature/stable',
+    }
+
+    await expect(
+      validateWorkspaceSetup({
+        projectRoot,
+        workspace,
+      }),
+    ).resolves.toEqual({
+      source: 'repo',
+      repo: `file://${await realpath(sourceRepo)}`,
+      repoKind: 'remote',
+      requestedRef: 'feature/stable',
+      ref: stableHead,
+      relativeCwd: '.',
+    })
+  })
+
+  it('rejects unknown explicit remote commit refs during validation', async () => {
+    const sourceRepo = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-sha-',
+    )
+    await initGitRepo(sourceRepo)
+    await writeFile(path.join(sourceRepo, 'README.md'), 'remote sha\n', 'utf8')
+    await commitAll(sourceRepo, 'workspace validation remote sha')
+
+    const projectRoot = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-sha-project-',
+    )
+    const workspace = {
+      ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
+      ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    }
+
+    await expect(
+      validateWorkspaceSetup({
+        projectRoot,
+        workspace,
+      }),
+    ).rejects.toThrowError(/ls-remote did not match the requested commit/)
+  })
+
+  it('resolves explicit remote ref names with the same precedence as checkout', async () => {
+    const sourceRepo = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-ambiguous-',
+    )
+    await initGitRepo(sourceRepo)
+    await writeFile(
+      path.join(sourceRepo, 'README.md'),
+      'release tag\n',
+      'utf8',
+    )
+    const releaseTagCommit = await commitAll(sourceRepo, 'release tag commit')
+    await runGit(['tag', 'release'], sourceRepo)
+    await runGit(['checkout', '-b', 'release'], sourceRepo)
+    await writeFile(
+      path.join(sourceRepo, 'README.md'),
+      'release branch\n',
+      'utf8',
+    )
+    await commitAll(sourceRepo, 'release branch commit')
+
+    const projectRoot = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-ambiguous-project-',
+    )
+    const runtimePaths = resolveRuntimePaths(projectRoot)
+    const workspace = {
+      ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
+      ref: 'release',
+    }
+
+    await expect(
+      validateWorkspaceSetup({
+        projectRoot,
+        workspace,
+      }),
+    ).resolves.toEqual({
+      source: 'repo',
+      repo: `file://${await realpath(sourceRepo)}`,
+      repoKind: 'remote',
+      requestedRef: 'release',
+      ref: releaseTagCommit,
+      relativeCwd: '.',
+    })
+
+    const provisioned = await provisionRunWorkspace({
+      paths: runtimePaths,
+      projectRoot,
+      workspace,
+      runId: 'run-explicit-ambiguous-release',
+    })
+    expect(provisioned.ref).toBe(releaseTagCommit)
+  })
+
   it('fails fast when the configured explicit repo is not a git repository', async () => {
     const projectRoot = await createFixture(
       'notionflow-workspace-runtime-invalid-repo-',

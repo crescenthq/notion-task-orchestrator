@@ -135,6 +135,61 @@ describe('local project doctor', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
+  it('validates explicit workspace refs without requiring remote HEAD', async () => {
+    const before = await snapshotGlobalNotionflowWrites()
+    const sourceRepo = await createTempProjectFixture(
+      'notionflow-e2e-source-no-head-',
+    )
+    fixtures.push(sourceRepo)
+    const project = await createTempProjectFixture(
+      'notionflow-e2e-explicit-no-head-',
+    )
+    fixtures.push(project)
+
+    await initGitRepo(sourceRepo.projectDir)
+    await writeFile(
+      path.join(sourceRepo.projectDir, 'README.md'),
+      'explicit workspace source without head\n',
+      'utf8',
+    )
+    await commitAll(sourceRepo.projectDir, 'explicit workspace source without head')
+    await runGit(['checkout', '-b', 'feature/stable'], sourceRepo.projectDir)
+    const stableHead = await runGit(
+      ['rev-parse', '--verify', 'feature/stable^{commit}'],
+      sourceRepo.projectDir,
+    )
+    await runGit(
+      ['symbolic-ref', 'HEAD', 'refs/heads/missing-head'],
+      sourceRepo.projectDir,
+    )
+
+    await execCli(['init'], project.projectDir)
+    await writeFile(
+      path.join(project.projectDir, 'notionflow.config.ts'),
+      [
+        'export default {',
+        '  workspace: {',
+        `    repo: ${JSON.stringify(`file://${await realpath(sourceRepo.projectDir)}`)},`,
+        '    ref: "feature/stable",',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const doctorOutput = await execCli(['doctor'], project.projectDir)
+    expect(doctorOutput).toContain(
+      `Workspace repo: file://${await realpath(sourceRepo.projectDir)}`,
+    )
+    expect(doctorOutput).toContain(
+      `Workspace ref: feature/stable -> ${stableHead}`,
+    )
+
+    const after = await snapshotGlobalNotionflowWrites()
+    assertNoNewGlobalNotionflowWrites(before, after)
+  })
+
   it('fails with actionable context when config cannot be resolved', async () => {
     const fixture = await createTempProjectFixture(
       'notionflow-e2e-missing-config-',

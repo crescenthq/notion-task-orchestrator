@@ -483,10 +483,81 @@ async function resolveRemoteWorkspaceRef(options: {
   sourceRepo: string
   projectRoot: string
 }): Promise<string> {
-  const headOutput = await runGit(
-    ['ls-remote', options.sourceRepo, 'HEAD'],
-    options.projectRoot,
-  ).catch(error => {
+  if (options.requestedRef === 'HEAD') {
+    const headRefs = await listRemoteRefs({
+      sourceRepo: options.sourceRepo,
+      projectRoot: options.projectRoot,
+      patterns: ['HEAD'],
+    })
+    const headRef = resolveExactRemoteRef(headRefs, 'HEAD')
+    if (headRef) {
+      return headRef
+    }
+
+    throw new WorkspaceProvisionError(
+      [
+        `Workspace source is not a reachable git repo: ${options.sourceRepo}`,
+        `projectRoot: ${options.projectRoot}`,
+        'git: ls-remote did not return HEAD',
+      ].join('\n'),
+    )
+  }
+
+  if (looksLikeGitCommitRef(options.requestedRef)) {
+    const remoteRefs = await listRemoteRefs({
+      sourceRepo: options.sourceRepo,
+      projectRoot: options.projectRoot,
+    })
+    const commitMatch = resolveRemoteCommitRef(remoteRefs, options.requestedRef)
+    if (commitMatch) {
+      return commitMatch
+    }
+
+    throw new WorkspaceProvisionError(
+      [
+        `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
+        `sourceRepo: ${options.sourceRepo}`,
+        'git: ls-remote did not match the requested commit',
+      ].join('\n'),
+    )
+  }
+
+  const remoteRefs = await listRemoteRefs({
+    sourceRepo: options.sourceRepo,
+    projectRoot: options.projectRoot,
+    patterns: isFullGitRefName(options.requestedRef)
+      ? [options.requestedRef, `${options.requestedRef}^{}`]
+      : [
+          `refs/${options.requestedRef}`,
+          `refs/${options.requestedRef}^{}`,
+          `refs/tags/${options.requestedRef}`,
+          `refs/tags/${options.requestedRef}^{}`,
+          `refs/heads/${options.requestedRef}`,
+        ],
+  })
+  const resolvedRef = isFullGitRefName(options.requestedRef)
+    ? resolveExactRemoteRef(remoteRefs, options.requestedRef)
+    : resolveRemoteNamedRef(remoteRefs, options.requestedRef)
+  if (resolvedRef) {
+    return resolvedRef
+  }
+
+  throw new WorkspaceProvisionError(
+    [
+      `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
+      `sourceRepo: ${options.sourceRepo}`,
+      'git: ls-remote did not match the requested ref',
+    ].join('\n'),
+  )
+}
+
+async function listRemoteRefs(options: {
+  sourceRepo: string
+  projectRoot: string
+  patterns?: string[]
+}): Promise<Array<{hash: string; ref: string}>> {
+  const args = ['ls-remote', options.sourceRepo, ...(options.patterns ?? [])]
+  const output = await runGit(args, options.projectRoot).catch(error => {
     const reason = getErrorMessage(error)
     throw new WorkspaceProvisionError(
       [
@@ -497,50 +568,44 @@ async function resolveRemoteWorkspaceRef(options: {
     )
   })
 
-  const headHashes = parseGitRemoteHashes(headOutput)
-  const headRef = headHashes[0]
-  if (!headRef) {
-    throw new WorkspaceProvisionError(
-      [
-        `Workspace source is not a reachable git repo: ${options.sourceRepo}`,
-        `projectRoot: ${options.projectRoot}`,
-        'git: ls-remote did not return HEAD',
-      ].join('\n'),
-    )
-  }
+  return parseGitRemoteRefs(output)
+}
 
-  if (options.requestedRef === 'HEAD') {
-    return headRef
-  }
-
-  const refOutput = await runGit(
-    [
-      'ls-remote',
-      options.sourceRepo,
-      options.requestedRef,
-      `refs/heads/${options.requestedRef}`,
-      `refs/tags/${options.requestedRef}`,
-      `refs/tags/${options.requestedRef}^{}`,
-    ],
-    options.projectRoot,
+function resolveRemoteNamedRef(
+  remoteRefs: Array<{hash: string; ref: string}>,
+  requestedRef: string,
+): string | undefined {
+  return (
+    resolveExactRemoteRef(remoteRefs, `refs/${requestedRef}`) ??
+    resolveExactRemoteRef(remoteRefs, `refs/tags/${requestedRef}`) ??
+    resolveExactRemoteRef(remoteRefs, `refs/heads/${requestedRef}`)
   )
-  const matches = parseGitRemoteHashes(refOutput)
-  const resolvedRef = matches[0]
-  if (resolvedRef) {
-    return resolvedRef
-  }
+}
 
-  if (/^[a-f\d]{7,40}$/i.test(options.requestedRef)) {
-    return options.requestedRef
-  }
-
-  throw new WorkspaceProvisionError(
-    [
-      `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
-      `sourceRepo: ${options.sourceRepo}`,
-      'git: ls-remote did not match the requested ref',
-    ].join('\n'),
+function resolveExactRemoteRef(
+  remoteRefs: Array<{hash: string; ref: string}>,
+  refName: string,
+): string | undefined {
+  return (
+    remoteRefs.find(remoteRef => remoteRef.ref === `${refName}^{}`)?.hash ??
+    remoteRefs.find(remoteRef => remoteRef.ref === refName)?.hash
   )
+}
+
+function resolveRemoteCommitRef(
+  remoteRefs: Array<{hash: string; ref: string}>,
+  requestedRef: string,
+): string | undefined {
+  const normalizedRef = requestedRef.toLowerCase()
+  const matchingHashes = Array.from(
+    new Set(
+      remoteRefs
+        .map(remoteRef => remoteRef.hash)
+        .filter(hash => hash.toLowerCase().startsWith(normalizedRef)),
+    ),
+  )
+
+  return matchingHashes.length === 1 ? matchingHashes[0] : undefined
 }
 
 async function ensureManagedMirror(options: {
@@ -1017,17 +1082,24 @@ function sanitizePathSegment(value: string): string {
   return cleaned.length > 0 ? cleaned : 'repo'
 }
 
-function parseGitRemoteHashes(output: string): string[] {
-  return Array.from(
-    new Set(
-      output
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => line.split(/\s+/)[0] ?? '')
-        .filter(value => value.length > 0),
-    ),
-  )
+function parseGitRemoteRefs(output: string): Array<{hash: string; ref: string}> {
+  return output
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .map(line => {
+      const [hash = '', ref = ''] = line.split(/\s+/, 2)
+      return {hash, ref}
+    })
+    .filter(remoteRef => remoteRef.hash.length > 0 && remoteRef.ref.length > 0)
+}
+
+function looksLikeGitCommitRef(value: string): boolean {
+  return /^[a-f\d]{7,40}$/i.test(value)
+}
+
+function isFullGitRefName(value: string): boolean {
+  return value.startsWith('refs/')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
