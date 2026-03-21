@@ -71,6 +71,7 @@ describe('CLI bootstrap flow', () => {
       ['config', 'set'],
       ['board', 'list'],
       ['integrations', 'notion', 'connect'],
+      ['dashboard'],
     ]) {
       const run = runCli(args, home)
       const output = `${run.stdout}\n${run.stderr}`.toLowerCase()
