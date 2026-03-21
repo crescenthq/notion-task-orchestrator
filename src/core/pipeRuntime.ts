@@ -32,7 +32,9 @@ import {
   type TaskBoardState,
 } from './taskBoardAdapter'
 import {
+  cleanupRunWorkspace,
   type ProvisionedRunWorkspace,
+  pruneWorkspaceArtifacts,
   provisionRunWorkspace,
 } from './workspaceRuntime'
 
@@ -217,9 +219,21 @@ async function provisionRuntimeWorkspace(options: {
   projectConfig: ResolvedProjectConfig | null
   runId: string
   resume: boolean
-}): Promise<PipeWorkspace> {
+}): Promise<{
+  cleanup: ResolvedWorkspaceConfig['cleanup']
+  workspace: PipeWorkspace
+}> {
   const projectRoot =
     options.projectConfig?.projectRoot ?? options.paths.projectRoot
+  try {
+    await pruneWorkspaceArtifacts({
+      paths: options.paths,
+      projectRoot,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.log(`[warn] failed to prune workspace artifacts: ${message}`)
+  }
   const workspace = options.projectConfig
     ? await resolveConfiguredRuntimeWorkspace(options.projectConfig)
     : createDefaultRuntimeWorkspace(projectRoot)
@@ -232,7 +246,10 @@ async function provisionRuntimeWorkspace(options: {
     resume: options.resume,
   })
 
-  return createPipeWorkspaceHandle(provisioned)
+  return {
+    cleanup: workspace.cleanup,
+    workspace: createPipeWorkspaceHandle(provisioned),
+  }
 }
 
 async function resolveConfiguredRuntimeWorkspace(
@@ -596,6 +613,7 @@ export async function runPipeTaskByExternalId(
   let leaseRenewalError: Error | null = null
   let leaseHeartbeatTimer: NodeJS.Timeout | null = null
   let leaseHeartbeatInFlight: Promise<void> | null = null
+  let workspaceCleanupPolicy: ResolvedWorkspaceConfig['cleanup'] = 'on-success'
 
   const asError = (error: unknown): Error =>
     error instanceof Error ? error : new Error(String(error))
@@ -719,6 +737,25 @@ export async function runPipeTaskByExternalId(
         ? 'Pipe reached terminal done state.'
         : String(ctx.last_error ?? 'no detail'),
     )
+  }
+
+  const cleanupSuccessfulRunWorkspace = async (): Promise<void> => {
+    if (workspaceCleanupPolicy !== 'on-success') {
+      return
+    }
+
+    try {
+      await cleanupRunWorkspace({
+        paths,
+        projectRoot: resolvedProjectConfig?.projectRoot ?? paths.projectRoot,
+        runId,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(
+        `[warn] failed to cleanup successful run workspace (${runId}): ${message}`,
+      )
+    }
   }
 
   const failRun = async (message: string): Promise<never> => {
@@ -908,12 +945,13 @@ export async function runPipeTaskByExternalId(
 
     let result: unknown
     try {
-      const workspace = await provisionRuntimeWorkspace({
+      const provisionedWorkspace = await provisionRuntimeWorkspace({
         paths,
         projectConfig: resolvedProjectConfig,
         runId,
         resume: resumed,
       })
+      workspaceCleanupPolicy = provisionedWorkspace.cleanup
 
       const runPipe = async (
         checkpoint: Checkpoint | undefined,
@@ -928,7 +966,7 @@ export async function runPipeTaskByExternalId(
             prompt: taskPrompt,
             context: taskContext,
           },
-          workspace,
+          workspace: provisionedWorkspace.workspace,
           writePage,
           onStepStart: onPipeStepStart,
           runId,
@@ -1062,6 +1100,9 @@ export async function runPipeTaskByExternalId(
       )
       currentStateId = transitionMeta.toStateId
       await finalizeRun(result.status)
+      if (result.status === 'done') {
+        await cleanupSuccessfulRunWorkspace()
+      }
       console.log(`Task run complete: ${result.status}`)
       return
     }
@@ -1083,6 +1124,7 @@ export async function runPipeTaskByExternalId(
     )
     currentStateId = PIPE_DONE_STATE_ID
     await finalizeRun('done')
+    await cleanupSuccessfulRunWorkspace()
     console.log('Task run complete: done')
     return
   } catch (error) {

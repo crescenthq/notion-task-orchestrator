@@ -18,6 +18,9 @@ Workspace-Backed Pipe Execution Progress:
   - US-005: Updated `src/core/pipeRuntime.ts` to map each provisioned run workspace into `PipeInput.workspace` before pipe execution, including default project-repo workspace provisioning when runtime execution has no resolved config file.
   - US-005: Added runtime coverage in `src/core/pipeRuntime.test.ts` proving pipes receive the workspace handle with root/cwd/ref/source metadata and that runtime execution does not mutate `process.cwd()`.
   - US-005: Updated canonical, smoke, and e2e contract fixtures to provide the required workspace handle so the new `PipeInput` API typechecks across test coverage.
+  - US-006: Extended `src/core/workspaceRuntime.ts` with explicit cleanup and pruning helpers that remove successful run worktrees/manifests, prune stale mirror registrations with `git worktree prune --expire=now`, and delete orphaned workspace directories that are no longer referenced by a manifest or live worktree.
+  - US-006: Updated `src/core/pipeRuntime.ts` so runtime startup opportunistically prunes stale workspace artifacts before provisioning and successful runs apply the default `on-success` cleanup policy without deleting feedback, blocked, or failed workspaces.
+  - US-006: Added coverage in `src/core/workspaceRuntime.test.ts` and `src/core/pipeRuntime.test.ts` for helper-level cleanup/pruning, default success cleanup, and retention of feedback/blocked/failed workspaces, while preserving `cleanup: "never"` fixtures for tests that need post-run manifests.
 - Notes:
   - Verification:
     - `npm run check` (pass)
@@ -29,3 +32,6 @@ Workspace-Backed Pipe Execution Progress:
     - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
     - `npm run check` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` (pass)
+    - `npm run check` (pass)
+    - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
+    - `npx vitest run src/core/pipeRuntime.test.ts` (pass)

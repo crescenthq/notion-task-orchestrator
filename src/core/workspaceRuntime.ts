@@ -1,6 +1,14 @@
 import {execFile} from 'node:child_process'
 import {createHash} from 'node:crypto'
-import {mkdir, realpath, stat, writeFile} from 'node:fs/promises'
+import {
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import type {RuntimePaths} from '../config/paths'
 import type {ResolvedWorkspaceConfig} from '../project/projectConfig'
@@ -32,6 +40,17 @@ export type ProvisionRunWorkspaceOptions = {
   workspace: ResolvedWorkspaceConfig
   runId: string
   resume?: boolean
+}
+
+export type CleanupRunWorkspaceOptions = {
+  paths: RuntimePaths
+  projectRoot: string
+  runId: string
+}
+
+export type PruneWorkspaceArtifactsOptions = {
+  paths: RuntimePaths
+  projectRoot: string
 }
 
 export class WorkspaceProvisionError extends Error {
@@ -124,10 +143,146 @@ export async function provisionRunWorkspace(
   return manifest
 }
 
+export async function cleanupRunWorkspace(
+  options: CleanupRunWorkspaceOptions,
+): Promise<boolean> {
+  const runId = normalizeRunId(options.runId)
+  await ensureWorkspaceRuntimeDirs(options.paths)
+
+  const manifestPath = path.join(
+    options.paths.workspaceManifestsDir,
+    `${runId}.json`,
+  )
+  const defaultWorktreePath = path.join(options.paths.workspacesDir, runId)
+  const manifest = await loadRunWorkspaceManifest(manifestPath)
+  const worktreePath = manifest?.root ?? defaultWorktreePath
+
+  const hasManifest = manifest !== null
+  const hasWorktree = await pathExists(worktreePath)
+  if (!hasManifest && !hasWorktree) {
+    return false
+  }
+
+  if (manifest?.mirrorPath) {
+    await removeManagedWorktree({
+      mirrorPath: manifest.mirrorPath,
+      worktreePath,
+      projectRoot: options.projectRoot,
+    })
+  } else if (hasWorktree) {
+    await rm(worktreePath, {recursive: true, force: true})
+  }
+
+  await rm(worktreePath, {recursive: true, force: true})
+  await rm(manifestPath, {force: true})
+  return true
+}
+
+export async function pruneWorkspaceArtifacts(
+  options: PruneWorkspaceArtifactsOptions,
+): Promise<void> {
+  await ensureWorkspaceRuntimeDirs(options.paths)
+
+  const managedMirrorPaths = await listManagedMirrorPaths(
+    options.paths.workspaceMirrorsDir,
+  )
+  const liveManagedWorktrees = new Set<string>()
+  for (const mirrorPath of managedMirrorPaths) {
+    await pruneManagedMirror({
+      mirrorPath,
+      projectRoot: options.projectRoot,
+    })
+
+    const worktrees = await listManagedWorktrees(
+      mirrorPath,
+      options.projectRoot,
+    )
+    for (const worktreePath of worktrees) {
+      liveManagedWorktrees.add(worktreePath)
+    }
+  }
+
+  const referencedRunIds = await listReferencedWorkspaceRunIds(
+    options.paths.workspaceManifestsDir,
+  )
+  const workspaceEntries = await readdir(options.paths.workspacesDir, {
+    withFileTypes: true,
+  })
+
+  for (const entry of workspaceEntries) {
+    const workspacePath = path.join(options.paths.workspacesDir, entry.name)
+    const canonicalWorkspacePath = await realpath(workspacePath).catch(() =>
+      path.resolve(workspacePath),
+    )
+    if (
+      liveManagedWorktrees.has(canonicalWorkspacePath) ||
+      referencedRunIds.has(entry.name)
+    ) {
+      continue
+    }
+
+    await rm(workspacePath, {recursive: true, force: true})
+  }
+}
+
 async function ensureWorkspaceRuntimeDirs(paths: RuntimePaths): Promise<void> {
   await mkdir(paths.workspaceMirrorsDir, {recursive: true})
   await mkdir(paths.workspaceManifestsDir, {recursive: true})
   await mkdir(paths.workspacesDir, {recursive: true})
+}
+
+async function loadRunWorkspaceManifest(
+  manifestPath: string,
+): Promise<{mirrorPath: string; root: string} | null> {
+  if (!(await pathExists(manifestPath))) {
+    return null
+  }
+
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    if (
+      !isRecord(manifest) ||
+      typeof manifest.mirrorPath !== 'string' ||
+      manifest.mirrorPath.trim().length === 0 ||
+      typeof manifest.root !== 'string' ||
+      manifest.root.trim().length === 0
+    ) {
+      throw new Error('workspace manifest is missing required mirrorPath/root')
+    }
+
+    return {
+      mirrorPath: manifest.mirrorPath,
+      root: manifest.root,
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        `Failed to load run workspace manifest: ${manifestPath}`,
+        `fs: ${reason}`,
+      ].join('\n'),
+    )
+  }
+}
+
+async function listManagedMirrorPaths(
+  workspaceMirrorsDir: string,
+): Promise<string[]> {
+  const entries = await readdir(workspaceMirrorsDir, {withFileTypes: true})
+  return entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => path.join(workspaceMirrorsDir, entry.name))
+}
+
+async function listReferencedWorkspaceRunIds(
+  workspaceManifestsDir: string,
+): Promise<Set<string>> {
+  const entries = await readdir(workspaceManifestsDir, {withFileTypes: true})
+  return new Set(
+    entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+      .map(entry => entry.name.slice(0, -'.json'.length)),
+  )
 }
 
 async function resolveWorkspaceSourceRepo(options: {
@@ -255,6 +410,27 @@ async function ensureManagedMirror(options: {
   }
 }
 
+async function pruneManagedMirror(options: {
+  mirrorPath: string
+  projectRoot: string
+}): Promise<void> {
+  try {
+    await runGit(
+      ['--git-dir', options.mirrorPath, 'worktree', 'prune', '--expire=now'],
+      options.projectRoot,
+    )
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        `Failed to prune managed workspace registrations.`,
+        `mirrorPath: ${options.mirrorPath}`,
+        `git: ${reason}`,
+      ].join('\n'),
+    )
+  }
+}
+
 async function resolveMirrorRef(options: {
   requestedRef: string
   mirrorPath: string
@@ -337,8 +513,8 @@ async function ensureManagedWorktree(options: {
     options.mirrorPath,
     options.projectRoot,
   )
-  const canonicalWorktreePath = await realpath(options.worktreePath).catch(
-    () => path.resolve(options.worktreePath),
+  const canonicalWorktreePath = await realpath(options.worktreePath).catch(() =>
+    path.resolve(options.worktreePath),
   )
   if (!managedWorktrees.has(canonicalWorktreePath)) {
     throw new WorkspaceProvisionError(
@@ -380,6 +556,62 @@ async function listManagedWorktrees(
       ].join('\n'),
     )
   }
+}
+
+async function removeManagedWorktree(options: {
+  mirrorPath: string
+  worktreePath: string
+  projectRoot: string
+}): Promise<void> {
+  const mirrorExists = await pathExists(options.mirrorPath)
+  if (!mirrorExists) {
+    await rm(options.worktreePath, {recursive: true, force: true})
+    return
+  }
+
+  await pruneManagedMirror({
+    mirrorPath: options.mirrorPath,
+    projectRoot: options.projectRoot,
+  })
+
+  const managedWorktrees = await listManagedWorktrees(
+    options.mirrorPath,
+    options.projectRoot,
+  )
+  const canonicalWorktreePath = await realpath(options.worktreePath).catch(() =>
+    path.resolve(options.worktreePath),
+  )
+
+  if (managedWorktrees.has(canonicalWorktreePath)) {
+    try {
+      await runGit(
+        [
+          '--git-dir',
+          options.mirrorPath,
+          'worktree',
+          'remove',
+          '--force',
+          options.worktreePath,
+        ],
+        options.projectRoot,
+      )
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new WorkspaceProvisionError(
+        [
+          `Failed to remove run workspace worktree.`,
+          `worktreePath: ${options.worktreePath}`,
+          `mirrorPath: ${options.mirrorPath}`,
+          `git: ${reason}`,
+        ].join('\n'),
+      )
+    }
+  }
+
+  await pruneManagedMirror({
+    mirrorPath: options.mirrorPath,
+    projectRoot: options.projectRoot,
+  })
 }
 
 async function resolveWorktreeRoot(
@@ -541,6 +773,10 @@ function looksLikeRemoteRepoSpecifier(repo: string): boolean {
   return (
     /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
   )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {

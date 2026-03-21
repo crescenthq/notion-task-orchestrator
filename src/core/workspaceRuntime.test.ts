@@ -5,6 +5,7 @@ import {
   readFile,
   realpath,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import os from 'node:os'
@@ -16,7 +17,11 @@ import {
   resolveWorkspaceConfig,
   type ResolvedWorkspaceConfig,
 } from '../project/projectConfig'
-import {provisionRunWorkspace} from './workspaceRuntime'
+import {
+  cleanupRunWorkspace,
+  provisionRunWorkspace,
+  pruneWorkspaceArtifacts,
+} from './workspaceRuntime'
 
 const fixtures: string[] = []
 
@@ -215,6 +220,130 @@ describe('workspaceRuntime', () => {
       }),
     ).rejects.toThrowError(/Failed to resolve workspace ref `missing-ref`/)
   })
+
+  it('removes run worktrees and manifests when cleanup is requested', async () => {
+    const repoRoot = await createFixture(
+      'notionflow-workspace-runtime-cleanup-project-',
+    )
+    await initGitRepo(repoRoot)
+
+    const projectRoot = path.join(repoRoot, 'packages', 'app')
+    await mkdir(projectRoot, {recursive: true})
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, 'export default {};\n', 'utf8')
+    await writeFile(path.join(projectRoot, 'README.md'), 'cleanup me\n', 'utf8')
+    await commitAll(repoRoot, 'initial cleanup project')
+
+    const config = await loadProjectConfig(configPath)
+    const workspace = await resolveWorkspaceConfig({
+      config,
+      projectRoot,
+      configPath,
+    })
+    const runtimePaths = resolveRuntimePaths(projectRoot)
+
+    const provisioned = await provisionRunWorkspace({
+      paths: runtimePaths,
+      projectRoot,
+      workspace,
+      runId: 'run-cleanup-1',
+    })
+
+    await expect(
+      cleanupRunWorkspace({
+        paths: runtimePaths,
+        projectRoot,
+        runId: 'run-cleanup-1',
+      }),
+    ).resolves.toBe(true)
+
+    expect(await pathExists(provisioned.root)).toBe(false)
+    expect(await pathExists(provisioned.manifestPath)).toBe(false)
+    await expect(
+      runGit(
+        [
+          '--git-dir',
+          provisioned.mirrorPath,
+          'worktree',
+          'list',
+          '--porcelain',
+        ],
+        projectRoot,
+      ),
+    ).resolves.not.toContain(path.resolve(provisioned.root))
+  })
+
+  it('prunes stale worktree registrations and orphaned workspace directories', async () => {
+    const repoRoot = await createFixture(
+      'notionflow-workspace-runtime-prune-project-',
+    )
+    await initGitRepo(repoRoot)
+
+    const projectRoot = path.join(repoRoot, 'packages', 'app')
+    await mkdir(projectRoot, {recursive: true})
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, 'export default {};\n', 'utf8')
+    await writeFile(path.join(projectRoot, 'README.md'), 'prune me\n', 'utf8')
+    await commitAll(repoRoot, 'initial prune project')
+
+    const config = await loadProjectConfig(configPath)
+    const workspace = await resolveWorkspaceConfig({
+      config,
+      projectRoot,
+      configPath,
+    })
+    const runtimePaths = resolveRuntimePaths(projectRoot)
+
+    const provisioned = await provisionRunWorkspace({
+      paths: runtimePaths,
+      projectRoot,
+      workspace,
+      runId: 'run-prune-1',
+    })
+    const orphanWorkspacePath = path.join(
+      runtimePaths.workspacesDir,
+      'orphan-run',
+    )
+    await mkdir(orphanWorkspacePath, {recursive: true})
+    await writeFile(
+      path.join(orphanWorkspacePath, 'temp.txt'),
+      'orphan\n',
+      'utf8',
+    )
+
+    await rm(provisioned.root, {recursive: true, force: true})
+    await expect(
+      runGit(
+        [
+          '--git-dir',
+          provisioned.mirrorPath,
+          'worktree',
+          'list',
+          '--porcelain',
+        ],
+        projectRoot,
+      ),
+    ).resolves.toContain(path.resolve(provisioned.root))
+
+    await pruneWorkspaceArtifacts({
+      paths: runtimePaths,
+      projectRoot,
+    })
+
+    await expect(
+      runGit(
+        [
+          '--git-dir',
+          provisioned.mirrorPath,
+          'worktree',
+          'list',
+          '--porcelain',
+        ],
+        projectRoot,
+      ),
+    ).resolves.not.toContain(path.resolve(provisioned.root))
+    expect(await pathExists(orphanWorkspacePath)).toBe(false)
+  })
 })
 
 async function createFixture(prefix: string): Promise<string> {
@@ -256,4 +385,17 @@ function runGit(args: string[], cwd: string): Promise<string> {
       resolve(stdout.trim())
     })
   })
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await stat(targetPath)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+
+    throw error
+  }
 }

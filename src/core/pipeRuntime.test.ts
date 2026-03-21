@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
@@ -17,7 +18,9 @@ const homes: string[] = []
 const originalHome = process.env.HOME
 const originalProjectRoot = process.env.NOTIONFLOW_PROJECT_ROOT
 
-async function setupRuntime(options: {projectSubdir?: string} = {}) {
+async function setupRuntime(
+  options: {configSource?: string; projectSubdir?: string} = {},
+) {
   const home = await mkdtemp(path.join(tmpdir(), 'notionflow-runtime-test-'))
   homes.push(home)
   const projectRoot = options.projectSubdir
@@ -30,7 +33,7 @@ async function setupRuntime(options: {projectSubdir?: string} = {}) {
   await mkdir(projectRoot, {recursive: true})
   await writeFile(
     path.join(projectRoot, 'notionflow.config.ts'),
-    'export default { pipes: [] };\n',
+    options.configSource ?? 'export default { pipes: [] };\n',
     'utf8',
   )
   await commitAll(home, 'initial runtime project')
@@ -95,6 +98,19 @@ function transitionLike<T extends {type: string | null}>(traces: T[]): T[] {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await stat(targetPath)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+
+    throw error
+  }
 }
 
 describe('pipeRuntime (definePipe only)', () => {
@@ -223,7 +239,7 @@ describe('pipeRuntime (definePipe only)', () => {
     expect(adapter.appendLog).toHaveBeenCalled()
   })
 
-  it('provisions a workspace before direct pipe execution and keys it by run id', async () => {
+  it('provisions a workspace before direct pipe execution, keys it by run id, and cleans it up on success by default', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-workspace-provisioning'
     const externalTaskId = 'task-runtime-workspace-provisioning-1'
@@ -288,12 +304,22 @@ export default {
       path.join(paths.workspacesDir, run!.id),
     )
     expect(persistedCtx.manifestRunId).toBe(run!.id)
-    expect(await readdir(paths.workspacesDir)).toEqual([run!.id])
+    expect(await pathExists(path.join(paths.workspacesDir, run!.id))).toBe(
+      false,
+    )
+    expect(
+      await pathExists(
+        path.join(paths.workspaceManifestsDir, `${run!.id}.json`),
+      ),
+    ).toBe(false)
+    expect(await readdir(paths.workspacesDir)).toEqual([])
   })
 
   it('passes the provisioned workspace handle into pipe execution without changing process.cwd()', async () => {
     const cwdBeforeRun = process.cwd()
     const {db, paths, runtime, schema, timestamp} = await setupRuntime({
+      configSource:
+        'export default { pipes: [], workspace: { cleanup: "never" } };\n',
       projectSubdir: 'apps/web',
     })
     const factoryId = 'runtime-workspace-handle'
@@ -352,6 +378,100 @@ export default {
     expect(persistedCtx.processCwdDuringRun).toBe(cwdBeforeRun)
     expect(process.cwd()).toBe(cwdBeforeRun)
     expect(persistedCtx.processCwdDuringRun).not.toBe(persistedCtx.workspaceCwd)
+  })
+
+  it('retains workspaces for feedback, blocked, and failed outcomes under the default success-only cleanup policy', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const scenarios = [
+      {
+        externalTaskId: 'task-workspace-retained-feedback-1',
+        factoryId: 'runtime-workspace-retained-feedback',
+        shouldThrow: false,
+        state: 'feedback',
+        source:
+          `export default {\n` +
+          `  id: "runtime-workspace-retained-feedback",\n` +
+          `  initial: {},\n` +
+          `  run: async ({ ctx }) => ({\n` +
+          `    type: "await_feedback",\n` +
+          `    prompt: "Need input",\n` +
+          `    ctx,\n` +
+          `  }),\n` +
+          `};\n`,
+      },
+      {
+        externalTaskId: 'task-workspace-retained-blocked-1',
+        factoryId: 'runtime-workspace-retained-blocked',
+        shouldThrow: false,
+        state: 'blocked',
+        source:
+          `export default {\n` +
+          `  id: "runtime-workspace-retained-blocked",\n` +
+          `  initial: {},\n` +
+          `  run: async ({ ctx }) => ({\n` +
+          `    type: "end",\n` +
+          `    status: "blocked",\n` +
+          `    ctx,\n` +
+          `  }),\n` +
+          `};\n`,
+      },
+      {
+        externalTaskId: 'task-workspace-retained-failed-1',
+        factoryId: 'runtime-workspace-retained-failed',
+        shouldThrow: true,
+        state: 'failed',
+        source:
+          `export default {\n` +
+          `  id: "runtime-workspace-retained-failed",\n` +
+          `  initial: {},\n` +
+          `  run: async () => {\n` +
+          `    throw new Error("boom");\n` +
+          `  },\n` +
+          `};\n`,
+      },
+    ] as const
+
+    for (const scenario of scenarios) {
+      await writeFile(
+        path.join(paths.workflowsDir, `${scenario.factoryId}.mjs`),
+        scenario.source,
+        'utf8',
+      )
+      await insertQueuedTask({
+        db,
+        schema,
+        timestamp,
+        factoryId: scenario.factoryId,
+        externalTaskId: scenario.externalTaskId,
+      })
+
+      if (scenario.shouldThrow) {
+        await expect(
+          runtime.runPipeTaskByExternalId(scenario.externalTaskId),
+        ).rejects.toThrow(/Pipe execution failed: boom/)
+      } else {
+        await runtime.runPipeTaskByExternalId(scenario.externalTaskId)
+      }
+
+      const [taskRecord] = await db
+        .select()
+        .from(schema.tasks)
+        .where(eq(schema.tasks.externalTaskId, scenario.externalTaskId))
+      const [runRecord] = await db
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.taskId, taskRecord!.id))
+
+      expect(taskRecord?.state).toBe(scenario.state)
+      expect(
+        await pathExists(path.join(paths.workspacesDir, runRecord!.id)),
+      ).toBe(true)
+      expect(
+        await pathExists(
+          path.join(paths.workspaceManifestsDir, `${runRecord!.id}.json`),
+        ),
+      ).toBe(true)
+    }
   })
 
   it('persists direct pipe feedback state and resumes from persisted context', async () => {
@@ -675,6 +795,8 @@ export default {
 
   it('maps default project workspaces to the project-root-relative cwd for monorepos', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime({
+      configSource:
+        'export default { pipes: [], workspace: { cleanup: "never" } };\n',
       projectSubdir: path.join('apps', 'web'),
     })
     const factoryId = 'runtime-monorepo-project-workspace'
