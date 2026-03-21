@@ -1,0 +1,29 @@
+docs/cli-reference.md
+  9c908b4f295b34dc 9,27,64-93,96,112,114-115
+src/cli-structure.test.ts
+  9c908b4f295b34dc 6,22
+src/cli.ts
+  9c908b4f295b34dc 17,38
+README.md
+  9c908b4f295b34dc 23,48,99-100,108-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "89153c94086fc4c43aef11e4c94d9ed5d2d0693a",
+  "prompts": {
+    "9c908b4f295b34dc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d1094-22fc-7fc0-9cf5-23e98ea71908",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 240,
+      "total_deletions": 62,
+      "accepted_lines": 191,
+      "overriden_lines": 0
+    }
+  }
+}
