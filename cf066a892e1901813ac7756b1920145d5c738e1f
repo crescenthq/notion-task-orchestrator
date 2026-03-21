@@ -1,0 +1,25 @@
+src/core/workspaceMaterializer.test.ts
+  a8918d69c6ab9243 1-206
+src/core/workspaceMaterializer.ts
+  a8918d69c6ab9243 1-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "cf066a892e1901813ac7756b1920145d5c738e1f",
+  "prompts": {
+    "a8918d69c6ab9243": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d10c8-3331-78b1-b098-044150b10ff0",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 562,
+      "total_deletions": 0,
+      "accepted_lines": 562,
+      "overriden_lines": 0
+    }
+  }
+}
