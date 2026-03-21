@@ -6,7 +6,11 @@ Workspace-Backed Pipe Execution Progress:
   - US-001: Added workspace config parsing in `src/project/projectConfig.ts` for omitted workspace, string shorthand, and object overrides. Normalized workspace config now defaults to project-repo mode, supports explicit repo/ref/cwd/cleanup overrides, and exposes `resolveWorkspaceConfig` to resolve the containing git repo for project mode and absolute local repo paths for explicit mode.
   - US-001: Added config diagnostics for invalid workspace values and path-aware union error flattening so malformed workspace keys surface actionable `ProjectConfigLoadError` messages.
   - US-001: Added unit coverage in `src/project/projectConfig.test.ts` for default project-repo resolution, local and remote shorthand repos, object overrides, and invalid workspace diagnostics.
+  - US-002: Extended runtime path support in `src/config/paths.ts` and `src/app/context.ts` so `.notionflow` now provisions dedicated directories for managed mirrors, workspace manifests, and per-run worktrees.
+  - US-002: Added `src/core/workspaceRuntime.ts` to validate workspace repo sources, create or refresh managed bare mirrors, materialize run-scoped git worktrees, and persist workspace manifests with root/cwd/ref metadata.
+  - US-002: Added unit coverage in `src/core/workspaceRuntime.test.ts` for project-repo mode, explicit repo mode, invalid repo sources, and unresolved refs.
 - Notes:
   - Verification:
     - `npm run check`
     - `npx vitest run src/project/projectConfig.test.ts`
+    - `npx vitest run src/core/workspaceRuntime.test.ts`

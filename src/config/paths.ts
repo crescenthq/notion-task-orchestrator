@@ -8,6 +8,9 @@ export type RuntimePaths = {
   db: string
   agentsDir: string
   workflowsDir: string
+  workspaceMirrorsDir: string
+  workspaceManifestsDir: string
+  workspacesDir: string
   runtimeLog: string
   errorsLog: string
 }
@@ -22,6 +25,9 @@ export function resolveRuntimePaths(projectRoot: string): RuntimePaths {
     db: path.join(runtimeRoot, 'notionflow.db'),
     agentsDir: path.join(runtimeRoot, 'agents'),
     workflowsDir: path.join(runtimeRoot, 'workflows'),
+    workspaceMirrorsDir: path.join(runtimeRoot, 'workspace-mirrors'),
+    workspaceManifestsDir: path.join(runtimeRoot, 'workspace-manifests'),
+    workspacesDir: path.join(runtimeRoot, 'workspaces'),
     runtimeLog: path.join(runtimeRoot, 'runtime.log'),
     errorsLog: path.join(runtimeRoot, 'errors.log'),
   }
