@@ -291,6 +291,69 @@ export default {
     expect(await readdir(paths.workspacesDir)).toEqual([run!.id])
   })
 
+  it('passes the provisioned workspace handle into pipe execution without changing process.cwd()', async () => {
+    const cwdBeforeRun = process.cwd()
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime({
+      projectSubdir: 'apps/web',
+    })
+    const factoryId = 'runtime-workspace-handle'
+    const externalTaskId = 'task-runtime-workspace-handle-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: {},\n` +
+        `  run: async ({ ctx, workspace }) => ({\n` +
+        `    ...ctx,\n` +
+        `    workspaceRoot: workspace.root,\n` +
+        `    workspaceCwd: workspace.cwd,\n` +
+        `    workspaceRef: workspace.ref,\n` +
+        `    workspaceSourceMode: workspace.source.mode,\n` +
+        `    workspaceSourceRepo: workspace.source.repo,\n` +
+        `    workspaceRequestedRef: workspace.source.requestedRef,\n` +
+        `    processCwdDuringRun: process.cwd(),\n` +
+        `  }),\n` +
+        `};\n`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+    await runtime.runPipeTaskByExternalId(externalTaskId)
+
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    const persistedCtx = JSON.parse(
+      updatedTask?.stepVarsJson ?? '{}',
+    ) as Record<string, unknown>
+
+    const [run] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.taskId, updatedTask!.id))
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(paths.workspaceManifestsDir, `${run!.id}.json`),
+        'utf8',
+      ),
+    ) as Record<string, unknown>
+
+    expect(persistedCtx.workspaceRoot).toBe(
+      path.join(paths.workspacesDir, run!.id),
+    )
+    expect(persistedCtx.workspaceCwd).toBe(manifest.cwd)
+    expect(persistedCtx.workspaceRef).toBe(manifest.ref)
+    expect(persistedCtx.workspaceSourceMode).toBe(manifest.source)
+    expect(persistedCtx.workspaceSourceRepo).toBe(manifest.repo)
+    expect(persistedCtx.workspaceRequestedRef).toBe(manifest.requestedRef)
+    expect(persistedCtx.processCwdDuringRun).toBe(cwdBeforeRun)
+    expect(process.cwd()).toBe(cwdBeforeRun)
+    expect(persistedCtx.processCwdDuringRun).not.toBe(persistedCtx.workspaceCwd)
+  })
+
   it('persists direct pipe feedback state and resumes from persisted context', async () => {
     const {db, paths, runtime, schema, timestamp} = await setupRuntime()
     const factoryId = 'runtime-direct-pipe-feedback'

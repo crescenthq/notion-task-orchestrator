@@ -9,6 +9,7 @@ import {
   step,
   write,
   type PipeInput,
+  type PipeWorkspace,
 } from './canonical'
 
 type TestCtx = {
@@ -16,8 +17,20 @@ type TestCtx = {
   trail: string[]
 }
 
+const testWorkspace: PipeWorkspace = {
+  root: '/tmp/notionflow-workspace',
+  cwd: '/tmp/notionflow-workspace/app',
+  ref: 'deadbeef',
+  source: {
+    mode: 'project',
+    repo: '/tmp/notionflow-source',
+    requestedRef: 'HEAD',
+  },
+}
+
 const baseInput: PipeInput<TestCtx> = {
   ctx: {score: 0, trail: []},
+  workspace: testWorkspace,
   runId: 'run-1',
   tickId: 'tick-1',
   task: {
@@ -146,6 +159,7 @@ describe('canonical flow helper', () => {
 
     const result = await run({
       ctx: {type: 'end', status: 'done', data: 'original'},
+      workspace: testWorkspace,
       runId: 'run-collision-1',
       tickId: 'tick-collision-1',
     })
@@ -167,6 +181,7 @@ describe('checkpoint-aware resume behavior', () => {
 
     const input: PipeInput<CheckpointCtx> = {
       ctx: {aRuns: 0, bRuns: 0, cRuns: 0},
+      workspace: testWorkspace,
       runId: 'run-checkpoint-flow',
       tickId: 'tick-checkpoint-flow',
     }
@@ -276,6 +291,7 @@ describe('checkpoint-aware resume behavior', () => {
 
     const first = await run({
       ctx: {route: 'approve'},
+      workspace: testWorkspace,
       runId: 'run-checkpoint-decide',
       tickId: 'tick-checkpoint-decide',
     })
@@ -288,6 +304,7 @@ describe('checkpoint-aware resume behavior', () => {
       ctx: first.ctx,
       feedback: 'yes',
       checkpoint: first.checkpoint,
+      workspace: testWorkspace,
       runId: 'run-checkpoint-decide',
       tickId: 'tick-checkpoint-decide-2',
     })
@@ -314,6 +331,7 @@ describe('checkpoint-aware resume behavior', () => {
 
     const first = await run({
       ctx: {iterations: 0},
+      workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop',
     })
@@ -329,6 +347,7 @@ describe('checkpoint-aware resume behavior', () => {
         human_feedback: 'next',
       },
       checkpoint: first.checkpoint,
+      workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop-2',
     })
@@ -344,6 +363,7 @@ describe('checkpoint-aware resume behavior', () => {
         human_feedback: 'done',
       },
       checkpoint: second.checkpoint,
+      workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop-3',
     })
@@ -381,6 +401,7 @@ type AskCtx = {
 
 const askBaseInput: PipeInput<AskCtx> = {
   ctx: {attempts: 0, trail: []},
+  workspace: testWorkspace,
   runId: 'run-ask-1',
   tickId: 'tick-ask-1',
   task: {
@@ -509,6 +530,7 @@ type DecideCtx = {
 
 const decideBaseInput: PipeInput<DecideCtx> = {
   ctx: {score: 0, trail: []},
+  workspace: testWorkspace,
   runId: 'run-decide-1',
   tickId: 'tick-decide-1',
   task: {
@@ -621,6 +643,7 @@ type LoopCtx = {
 
 const loopBaseInput: PipeInput<LoopCtx> = {
   ctx: {iterations: 0, trail: []},
+  workspace: testWorkspace,
   runId: 'run-loop-1',
   tickId: 'tick-loop-1',
   task: {
@@ -750,6 +773,7 @@ type WriteCtx = {
 
 const writeBaseInput: PipeInput<WriteCtx> = {
   ctx: {score: 3, trail: []},
+  workspace: testWorkspace,
   runId: 'run-write-1',
   tickId: 'tick-write-1',
   task: {
@@ -830,6 +854,7 @@ type LifecycleCtx = {
 
 const endBaseInput: PipeInput<EndCtx> = {
   ctx: {score: 1, trail: ['prepared']},
+  workspace: testWorkspace,
   runId: 'run-end-1',
   tickId: 'tick-end-1',
   task: {
@@ -859,6 +884,7 @@ describe('canonical step lifecycle observer', () => {
       end.done<LifecycleCtx>(),
     )({
       ctx: {count: 0},
+      workspace: testWorkspace,
       runId: 'run-life-1',
       tickId: 'tick-life-1',
       onStepStart: event => {

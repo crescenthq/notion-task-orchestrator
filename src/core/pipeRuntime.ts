@@ -11,6 +11,7 @@ import {
   parseCheckpoint,
 } from '../pipe/checkpoint'
 import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
+import type {PipeWorkspace} from '../pipe/canonical'
 import {
   type ResolvedProjectConfig,
   resolveProjectConfig,
@@ -18,6 +19,7 @@ import {
 import {
   loadDeclaredPipes,
   loadProjectConfig,
+  type ResolvedWorkspaceConfig,
   resolveWorkspaceConfig,
 } from '../project/projectConfig'
 import {formatStatusLabel} from '../services/statusIcons'
@@ -29,7 +31,10 @@ import {
   type TaskBoardAdapter,
   type TaskBoardState,
 } from './taskBoardAdapter'
-import {provisionRunWorkspace} from './workspaceRuntime'
+import {
+  type ProvisionedRunWorkspace,
+  provisionRunWorkspace,
+} from './workspaceRuntime'
 
 type JsonObject = Record<string, unknown>
 
@@ -212,28 +217,65 @@ async function provisionRuntimeWorkspace(options: {
   projectConfig: ResolvedProjectConfig | null
   runId: string
   resume: boolean
-}): Promise<void> {
-  if (!options.projectConfig) return
+}): Promise<PipeWorkspace> {
+  const projectRoot =
+    options.projectConfig?.projectRoot ?? options.paths.projectRoot
+  const workspace = options.projectConfig
+    ? await resolveConfiguredRuntimeWorkspace(options.projectConfig)
+    : createDefaultRuntimeWorkspace(projectRoot)
 
-  const config = await loadProjectConfig(options.projectConfig.configPath)
-  const workspace = await resolveWorkspaceConfig({
-    config,
-    projectRoot: options.projectConfig.projectRoot,
-    configPath: options.projectConfig.configPath,
-  })
-
-  await provisionRunWorkspace({
+  const provisioned = await provisionRunWorkspace({
     paths: options.paths,
-    projectRoot: options.projectConfig.projectRoot,
+    projectRoot,
     workspace,
     runId: options.runId,
     resume: options.resume,
   })
+
+  return createPipeWorkspaceHandle(provisioned)
 }
 
-function selectMostRecentOpenRun<T extends {updatedAt: string; createdAt: string}>(
-  openRuns: T[],
-): T | undefined {
+async function resolveConfiguredRuntimeWorkspace(
+  projectConfig: ResolvedProjectConfig,
+): Promise<ResolvedWorkspaceConfig> {
+  const config = await loadProjectConfig(projectConfig.configPath)
+  return resolveWorkspaceConfig({
+    config,
+    projectRoot: projectConfig.projectRoot,
+    configPath: projectConfig.configPath,
+  })
+}
+
+function createDefaultRuntimeWorkspace(
+  projectRoot: string,
+): ResolvedWorkspaceConfig {
+  return {
+    source: 'project',
+    repo: projectRoot,
+    ref: 'HEAD',
+    cwd: '.',
+    cleanup: 'on-success',
+  }
+}
+
+function createPipeWorkspaceHandle(
+  provisioned: ProvisionedRunWorkspace,
+): PipeWorkspace {
+  return {
+    root: provisioned.root,
+    cwd: provisioned.cwd,
+    ref: provisioned.ref,
+    source: {
+      mode: provisioned.source,
+      repo: provisioned.repo,
+      requestedRef: provisioned.requestedRef,
+    },
+  }
+}
+
+function selectMostRecentOpenRun<
+  T extends {updatedAt: string; createdAt: string},
+>(openRuns: T[]): T | undefined {
   return [...openRuns]
     .sort((left, right) => {
       const updatedAtComparison = left.updatedAt.localeCompare(right.updatedAt)
@@ -866,7 +908,7 @@ export async function runPipeTaskByExternalId(
 
     let result: unknown
     try {
-      await provisionRuntimeWorkspace({
+      const workspace = await provisionRuntimeWorkspace({
         paths,
         projectConfig: resolvedProjectConfig,
         runId,
@@ -886,6 +928,7 @@ export async function runPipeTaskByExternalId(
             prompt: taskPrompt,
             context: taskContext,
           },
+          workspace,
           writePage,
           onStepStart: onPipeStepStart,
           runId,

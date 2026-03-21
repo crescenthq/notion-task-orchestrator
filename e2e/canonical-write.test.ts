@@ -6,6 +6,7 @@ import {
   write,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type WriteE2ECtx = {
   score: number
@@ -19,6 +20,7 @@ function createInput(
 ): PipeInput<WriteE2ECtx> {
   return {
     ctx,
+    workspace: mockPipeWorkspace,
     runId: 'run-write-e2e-1',
     tickId: 'tick-write-e2e-1',
     writePage,

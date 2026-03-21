@@ -48,11 +48,25 @@ export type Control<C> = AwaitFeedback<C> | EndSignal<C>
 
 export type WritePage = (output: PageOutput) => PipeResult<void>
 
+export type PipeWorkspaceSource = {
+  mode: 'project' | 'repo'
+  repo: string
+  requestedRef: string
+}
+
+export type PipeWorkspace = {
+  root: string
+  cwd: string
+  ref: string
+  source: PipeWorkspaceSource
+}
+
 export type PipeInput<C> = {
   ctx: C
   feedback?: string
   checkpoint?: Checkpoint
   task?: {id: string; title?: string; prompt?: string; context?: string}
+  workspace: PipeWorkspace
   writePage?: WritePage
   onStepStart?: StepLifecycleObserver<C>
   runId: string

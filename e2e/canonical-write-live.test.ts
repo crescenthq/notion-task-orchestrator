@@ -19,6 +19,7 @@ import {
   registerLiveBoardSuite,
   resolveSharedBoardConnection,
 } from './helpers/sharedNotionBoard'
+import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 loadDotEnv()
 const liveSuiteEnabled = hasLiveNotionEnv()
@@ -92,6 +93,7 @@ if (liveSuiteEnabled) {
 
       const result = await writePipe.run({
         ctx: {score: 9},
+        workspace: mockPipeWorkspace,
         runId: `run-${Date.now()}`,
         tickId: `tick-${Date.now()}`,
         task: {

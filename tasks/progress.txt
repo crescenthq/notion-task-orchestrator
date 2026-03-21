@@ -14,6 +14,10 @@ Workspace-Backed Pipe Execution Progress:
   - US-004: Updated `src/core/pipeRuntime.ts` so resumed feedback/checkpoint ticks reuse the most recent open run record, preserving the original `runId` and workspace path instead of minting a fresh run on each resume.
   - US-004: Updated `src/core/workspaceRuntime.ts` so resumed runs fail if their original workspace directory is missing, with an actionable error that includes the run id and workspace path, and canonicalized managed-worktree path checks so existing macOS worktrees are recognized on resume.
   - US-004: Added coverage in `src/core/pipeRuntime.test.ts` that verifies resumed runs keep the same workspace across feedback loops and that deleting the original resume workspace fails the run instead of silently recreating it.
+  - US-005: Extended `src/pipe/canonical.ts` with public `PipeWorkspace` and `PipeWorkspaceSource` types, made `PipeInput.workspace` a typed runtime handle, and re-exported the new types from `src/index.ts`.
+  - US-005: Updated `src/core/pipeRuntime.ts` to map each provisioned run workspace into `PipeInput.workspace` before pipe execution, including default project-repo workspace provisioning when runtime execution has no resolved config file.
+  - US-005: Added runtime coverage in `src/core/pipeRuntime.test.ts` proving pipes receive the workspace handle with root/cwd/ref/source metadata and that runtime execution does not mutate `process.cwd()`.
+  - US-005: Updated canonical, smoke, and e2e contract fixtures to provide the required workspace handle so the new `PipeInput` API typechecks across test coverage.
 - Notes:
   - Verification:
     - `npm run check` (pass)
@@ -23,3 +27,5 @@ Workspace-Backed Pipe Execution Progress:
     - `npm run check` (pass)
     - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
+    - `npm run check` (pass)
+    - `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` (pass)
