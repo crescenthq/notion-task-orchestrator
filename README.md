@@ -73,11 +73,6 @@ export default defineConfig({
   pipes: [
     './pipes',
     './manual/critical-review.ts',
-    {
-      directory: './packages/factories',
-      recursive: true,
-      match: /^team-a\/.*\.ts$/,
-    },
   ],
 })
 ```
@@ -86,7 +81,6 @@ Factory discovery stays deterministic:
 
 - Relative file and directory declarations resolve from project root
 - Default `./pipes` discovery is top-level only
-- Directory declarations can opt into recursive scans with `match: RegExp`
 - Missing explicit paths fail fast with diagnostics
 - Duplicate factory IDs fail startup with conflict diagnostics
 

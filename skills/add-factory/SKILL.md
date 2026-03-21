@@ -295,7 +295,6 @@ export default defineConfig({
   pipes: [
     './pipes',
     './manual/<factory-id>.ts',
-    {directory: './packages/factories', recursive: true, match: /^team-a\/.*\.ts$/},
   ],
 })
 ```

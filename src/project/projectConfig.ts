@@ -1,20 +1,11 @@
 import path from 'node:path'
-import {pathToFileURL} from 'node:url'
 import {access, constants, readdir, stat} from 'node:fs/promises'
+import {pathToFileURL} from 'node:url'
 import {z} from 'zod'
 import {loadFactoryFromPath} from '../core/factory'
 import type {LoadedFactoryDefinition} from '../core/factory'
 
-const factoryDirectoryDeclarationSchema = z.object({
-  directory: z.string().trim().min(1),
-  match: z.instanceof(RegExp).optional(),
-  recursive: z.boolean().optional(),
-})
-
-const factoryDeclarationSchema = z.union([
-  z.string().trim().min(1),
-  factoryDirectoryDeclarationSchema,
-])
+const factoryDeclarationSchema = z.string().trim().min(1)
 
 const projectConfigInputSchema = z
   .object({
@@ -221,7 +212,6 @@ async function resolveDeclaredFactoryPaths(
       {
         allowMissing:
           allowMissingDefaultDirectory &&
-          typeof declaration === 'string' &&
           declaration === DEFAULT_FACTORY_DIRECTORY,
       },
     )
@@ -234,18 +224,6 @@ async function resolveDeclaredFactoryPaths(
 
 async function resolveFactoryDeclaration(
   declaration: FactoryDeclaration,
-  projectRoot: string,
-  options: {allowMissing: boolean},
-): Promise<ResolvedFactoryPath[]> {
-  if (typeof declaration === 'string') {
-    return resolveStringFactoryDeclaration(declaration, projectRoot, options)
-  }
-
-  return resolveDirectoryFactoryDeclaration(declaration, projectRoot, options)
-}
-
-async function resolveStringFactoryDeclaration(
-  declaration: string,
   projectRoot: string,
   options: {allowMissing: boolean},
 ): Promise<ResolvedFactoryPath[]> {
@@ -264,11 +242,7 @@ async function resolveStringFactoryDeclaration(
   }
 
   if (targetType === 'directory') {
-    return collectFactoryPathsFromDirectory(
-      {directory: declaration},
-      projectRoot,
-      declaration,
-    )
+    return collectFactoryPathsFromDirectory(declaration, resolvedPath)
   }
 
   if (targetType !== 'file') {
@@ -283,98 +257,33 @@ async function resolveStringFactoryDeclaration(
   return [{declaredSource: declaration, resolvedPath}]
 }
 
-async function resolveDirectoryFactoryDeclaration(
-  declaration: z.output<typeof factoryDirectoryDeclarationSchema>,
-  projectRoot: string,
-  options: {allowMissing: boolean},
-): Promise<ResolvedFactoryPath[]> {
-  const resolvedDirectory = resolveConfiguredPath(
-    declaration.directory,
-    projectRoot,
-  )
-  const targetType = await getPathType(resolvedDirectory)
-
-  if (targetType === 'missing') {
-    if (options.allowMissing) return []
-
-    throw new FactoryDeclarationResolutionError(
-      [
-        `Declared factory directory does not exist: ${declaration.directory}`,
-        `Resolved path: ${resolvedDirectory}`,
-      ].join('\n'),
-    )
-  }
-
-  if (targetType !== 'directory') {
-    throw new FactoryDeclarationResolutionError(
-      [
-        `Declared factory directory is not a directory: ${formatFactoryDeclaration(declaration)}`,
-        `Resolved path: ${resolvedDirectory}`,
-      ].join('\n'),
-    )
-  }
-
-  return collectFactoryPathsFromDirectory(
-    declaration,
-    projectRoot,
-    formatFactoryDeclaration(declaration),
-  )
-}
-
 async function collectFactoryPathsFromDirectory(
-  declaration: z.output<typeof factoryDirectoryDeclarationSchema>,
-  projectRoot: string,
-  declaredSource: string,
+  declaration: string,
+  resolvedDirectory: string,
 ): Promise<ResolvedFactoryPath[]> {
-  const resolvedDirectory = resolveConfiguredPath(
-    declaration.directory,
-    projectRoot,
-  )
-  const resolvedPaths = await walkFactoryDirectory(resolvedDirectory, {
-    rootDirectory: resolvedDirectory,
-    match: declaration.match,
-    recursive: declaration.recursive ?? false,
-  })
+  const resolvedPaths = await listFactoryModulesInDirectory(resolvedDirectory)
 
   return resolvedPaths.map(resolvedPath => ({
-    declaredSource,
+    declaredSource: declaration,
     resolvedPath,
   }))
 }
 
-async function walkFactoryDirectory(
+async function listFactoryModulesInDirectory(
   directoryPath: string,
-  options: {
-    rootDirectory: string
-    match?: RegExp
-    recursive: boolean
-  },
 ): Promise<string[]> {
   const entries = await readdir(directoryPath, {withFileTypes: true})
   entries.sort((left, right) => left.name.localeCompare(right.name))
 
   const resolvedPaths: string[] = []
   for (const entry of entries) {
-    const entryPath = path.join(directoryPath, entry.name)
-
-    if (entry.isDirectory()) {
-      if (!options.recursive) continue
-      resolvedPaths.push(...(await walkFactoryDirectory(entryPath, options)))
-      continue
-    }
-
     if (!entry.isFile()) {
       continue
     }
 
-    const relativePath = toPortableRelativePath(
-      options.rootDirectory,
-      entryPath,
-    )
+    const entryPath = path.join(directoryPath, entry.name)
+    const relativePath = toPortableRelativePath(directoryPath, entryPath)
     if (!FACTORY_MODULE_FILE_PATTERN.test(relativePath)) {
-      continue
-    }
-    if (options.match && !matchesFactoryPattern(relativePath, options.match)) {
       continue
     }
 
@@ -426,27 +335,6 @@ function dedupeResolvedFactoryPaths(
   }
 
   return uniqueEntries
-}
-
-function formatFactoryDeclaration(
-  declaration: z.output<typeof factoryDirectoryDeclarationSchema>,
-): string {
-  const flags: string[] = []
-  if (declaration.match) {
-    flags.push(`match=${String(declaration.match)}`)
-  }
-  if (declaration.recursive) {
-    flags.push('recursive=true')
-  }
-
-  return flags.length > 0
-    ? `${declaration.directory} (${flags.join(', ')})`
-    : declaration.directory
-}
-
-function matchesFactoryPattern(relativePath: string, pattern: RegExp): boolean {
-  pattern.lastIndex = 0
-  return pattern.test(relativePath)
 }
 
 function toPortableRelativePath(from: string, to: string): string {

@@ -283,8 +283,8 @@ omitted, NotionFlow falls back to a title derived from the project directory
 name.
 
 `factory create` writes to `pipes/`, so the default project layout does not need
-any `pipes` entry. Add `pipes` only when you want custom locations, directory
-scans, or regex filtering.
+any `pipes` entry. Add `pipes` only when you want custom locations or explicit
+directory scans.
 
 4. Validate context and auth.
 

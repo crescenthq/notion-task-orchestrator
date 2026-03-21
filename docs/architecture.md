@@ -29,8 +29,8 @@ Applicable commands also support `--config <path>` for explicit resolution.
 
 Factories default to top-level `./pipes` discovery.
 
-`notionflow.config.ts` can override discovery with exact file paths, directory
-paths, or `{directory, match, recursive}` entries.
+`notionflow.config.ts` can override discovery with exact file paths or
+directory paths.
 
 - no repo-wide implicit glob scan
 - default `./pipes` scan is top-level only

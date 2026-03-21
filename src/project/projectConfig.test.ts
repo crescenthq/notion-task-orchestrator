@@ -83,40 +83,33 @@ describe('projectConfig', () => {
     ])
   })
 
-  it('supports recursive directory scans with regex filters', async () => {
+  it('treats declared directories as top-level scans', async () => {
     const projectRoot = await createFixture('notionflow-project-config-match-')
-    const alphaFactoryPath = path.join(
+    const topLevelFactoryPath = path.join(projectRoot, 'factories', 'one.mjs')
+    const nestedHelperPath = path.join(
       projectRoot,
       'factories',
-      'alpha',
-      'one.mjs',
+      'shared',
+      'helper.mjs',
     )
-    const betaFactoryPath = path.join(
-      projectRoot,
-      'factories',
-      'beta',
-      'two.mjs',
+    await writeMinimalFactory(topLevelFactoryPath, 'alpha-factory')
+    await mkdir(path.dirname(nestedHelperPath), {recursive: true})
+    await writeFile(
+      nestedHelperPath,
+      'export default { helper: true };\n',
+      'utf8',
     )
-    await writeMinimalFactory(alphaFactoryPath, 'alpha-factory')
-    await writeMinimalFactory(betaFactoryPath, 'beta-factory')
 
     const configPath = path.join(projectRoot, 'notionflow.config.ts')
     await writeFile(
       configPath,
-      [
-        'export default {',
-        '  pipes: [',
-        '    { directory: "./factories", recursive: true, match: /^alpha\\/.*\\.mjs$/ },',
-        '  ],',
-        '};',
-        '',
-      ].join('\n'),
+      ['export default {', '  pipes: ["./factories"],', '};', ''].join('\n'),
       'utf8',
     )
 
     const config = await loadProjectConfig(configPath)
     await expect(resolveFactoryPaths(config, projectRoot)).resolves.toEqual([
-      alphaFactoryPath,
+      topLevelFactoryPath,
     ])
 
     const loaded = await loadDeclaredFactories({configPath, projectRoot})
@@ -221,28 +214,6 @@ describe('projectConfig', () => {
       loadDeclaredFactories({configPath, projectRoot}),
     ).rejects.toThrowError(
       /Declared factory path does not exist: \.\/pipes\/missing\.mjs/,
-    )
-
-    await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
-    ).rejects.toThrowError(/Resolved path:/)
-  })
-
-  it('fails with declared directory context when a configured directory is missing', async () => {
-    const projectRoot = await createFixture(
-      'notionflow-project-config-missing-directory-',
-    )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
-    await writeFile(
-      configPath,
-      `export default { pipes: [{ directory: "./pipes", recursive: true }] };\n`,
-      'utf8',
-    )
-
-    await expect(
-      loadDeclaredFactories({configPath, projectRoot}),
-    ).rejects.toThrowError(
-      /Declared factory directory does not exist: \.\/pipes/,
     )
 
     await expect(
