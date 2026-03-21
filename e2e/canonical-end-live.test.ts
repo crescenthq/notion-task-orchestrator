@@ -39,7 +39,7 @@ if (liveSuiteEnabled) {
   })
 
   it('syncs terminal done/blocked/failed states to Notion task State', async () => {
-    fixture = await createTempProjectFixture('notionflow-end-live-')
+    fixture = await createTempProjectFixture('pipes-end-live-')
     await execCli(['init'], fixture.projectDir)
     await initGitRepo(fixture.projectDir)
 
@@ -64,7 +64,7 @@ if (liveSuiteEnabled) {
     }
 
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       projectConfigSource(
         scenarios.map(({factoryId}) => `./pipes/${factoryId}.ts`),
       ),
@@ -205,7 +205,7 @@ async function execCli(
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })

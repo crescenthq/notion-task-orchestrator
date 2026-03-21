@@ -136,7 +136,7 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 function assertInteractiveStartSession(): void {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
-      'The start dashboard requires an interactive TTY. Use `notionflow tick` for non-interactive execution.',
+      'The start dashboard requires an interactive TTY. Use `pipes tick` for non-interactive execution.',
     )
   }
 }

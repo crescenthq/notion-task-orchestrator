@@ -12,10 +12,10 @@ function stripAnsi(input: string): string {
 function makeView(): DashboardTextView {
   return {
     header: [
-      'NOTIONFLOW DASHBOARD',
+      'PIPES DASHBOARD',
       'Project: demo',
       'Path: /tmp/demo',
-      'Runtime DB: /tmp/demo/.notionflow/notionflow.db',
+      'Runtime DB: /tmp/demo/.pipes-runtime/pipes.db',
       'Tasks 3  |  Active 1  |  Updated 10:01  |  Last event 8s',
     ].join('\n'),
     summary:
@@ -41,7 +41,7 @@ describe('dashboard screen', () => {
     const lines = frame.split('\n')
 
     expect(lines.every(line => line.length <= 96)).toBe(true)
-    expect(frame).toContain('NOTIONFLOW / DEMO')
+    expect(frame).toContain('PIPES / DEMO')
     expect(frame).toContain('LEDGER')
     expect(frame).toContain('running 1')
     expect(frame).toContain('pipe editorial')
@@ -58,7 +58,7 @@ describe('dashboard screen', () => {
       renderDashboardScreen(
         {
           header: [
-            'NOTIONFLOW DASHBOARD',
+            'PIPES DASHBOARD',
             'Project: narrow',
             'Tasks 0  |  Active 0  |  Updated n/a  |  Last event n/a',
           ].join('\n'),
@@ -66,7 +66,7 @@ describe('dashboard screen', () => {
             'States\nRunning       0\nFeedback      0\nQueued        0\nFailed        0\nBlocked       0\nDone          0\n\nPipes\nNo pipes registered yet.',
           inProgress: 'No tasks are currently running or waiting for feedback.',
           tasks:
-            'No local tasks found. Run `notionflow integrations notion sync` or create a task first.',
+            'No local tasks found. Run `pipes integrations notion sync` or create a task first.',
           events: 'No run trace activity recorded yet.',
           footer: 'q quit  |  r refresh',
         },

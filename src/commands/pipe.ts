@@ -38,7 +38,7 @@ export const pipeCmd = defineCommand({
             console.error(`Attempted config path: ${error.attemptedPath}`)
           }
           console.error(
-            'Run `notionflow init` in your project root first, or pass --config <path>.',
+            'Run `pipes init` in your project root first, or pass --config <path>.',
           )
           process.exitCode = 1
           return

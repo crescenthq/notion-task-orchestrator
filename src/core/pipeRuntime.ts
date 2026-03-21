@@ -212,7 +212,7 @@ function resolveRuntimeStartDir(options: RuntimeRunOptions): string {
     return options.startDir
   }
 
-  const projectRootOverride = process.env.NOTIONFLOW_PROJECT_ROOT?.trim()
+  const projectRootOverride = process.env.PIPES_PROJECT_ROOT?.trim()
   return projectRootOverride && projectRootOverride.length > 0
     ? projectRootOverride
     : process.cwd()
@@ -419,7 +419,7 @@ export async function runPipeTaskByExternalId(
     throw new Error(
       [
         `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Pipe mismatch is resolved: ${task.lastError}`,
-        `Restore the original Pipe in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
+        `Restore the original Pipe in Notion, then run \`pipes integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
       ].join(' '),
     )
   }

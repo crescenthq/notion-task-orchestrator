@@ -1,31 +1,31 @@
-# NotionFlow
+# Pipes from Notionflow
 
 Project-local orchestration CLI and typed library for running TypeScript
 `definePipe` pipes against Notion tasks.
 
 ## Local-First Model
 
-NotionFlow runs inside your project directory.
+Pipes is designed to run inside your project directory.
 
 Default execution is git-backed: when `workspace` is omitted, each run gets an
-isolated checkout from the git repo containing `notionflow.config.ts`.
-Run NotionFlow from an existing git checkout with a valid `HEAD` commit, or set
+isolated checkout from the git repo containing `pipes.config.ts`.
+Use Pipes from an existing git checkout with a valid `HEAD` commit, or set
 an explicit workspace override.
 
 Each project contains:
 
-- `notionflow.config.ts`
+- `pipes.config.ts`
 - `pipes/`
-- `.notionflow/` (runtime DB + logs)
+- `.pipes-runtime/` (runtime DB + logs)
 
 `run` and `tick` load pipes from top-level `pipes/` by default, or from custom
-declarations in `notionflow.config.ts`.
+declarations in `pipes.config.ts`.
 
 ## Prerequisites
 
 - Node.js 20+
 - `NOTION_API_TOKEN`
-- An interactive terminal if you want to use `notionflow start`
+- An interactive terminal if you want to use `pipes start`
 
 ## Quickstart
 
@@ -33,24 +33,24 @@ Run this from a git repo that already has a valid `HEAD` commit.
 
 ```bash
 # 1) Initialize a local project
-npx notionflow init
+npx pipes init
 
 # 2) Scaffold a definePipe module
-npx notionflow pipe create --id demo
+npx pipes pipe create --id demo
 
 # 3) Validate config + auth resolution
-npx notionflow doctor
+npx pipes doctor
 
 # 4) Run one queue tick
-npx notionflow tick --pipe demo
+npx pipes tick --pipe demo
 ```
 
-You can run commands from anywhere in the project tree. NotionFlow walks up
-until it finds `notionflow.config.ts`.
+You can run commands from anywhere in the project tree. Pipes walks up
+until it finds `pipes.config.ts`.
 
 ## Config Discovery Rules
 
-- Default: walk up from current working directory to find `notionflow.config.ts`
+- Default: walk up from current working directory to find `pipes.config.ts`
 - Override: pass `--config <path>` on project-scoped commands (`doctor`,
   `pipe create`, `run`, `tick`, `start`, `integrations notion sync`)
 - Project root is the directory containing the resolved config file
@@ -66,10 +66,10 @@ export default defineConfig({
 ```
 
 Shared board setup uses `name` from `defineConfig(...)` as the Notion database
-title. If `name` is omitted, NotionFlow falls back to a title derived from the
+title. If `name` is omitted, Pipes falls back to a title derived from the
 project directory name.
 
-If `pipes` is omitted or empty, NotionFlow scans loadable modules in the
+If `pipes` is omitted or empty, Pipes scans loadable modules in the
 top-level `./pipes/` directory.
 
 Use `pipes` only when you want custom locations or tighter filtering:
@@ -91,7 +91,7 @@ Pipe discovery stays deterministic:
 
 ## Workspace Config
 
-NotionFlow supports three workspace forms:
+Pipes supports three workspace forms:
 
 1. Omit `workspace` to use the git repo containing the resolved project root.
 
@@ -126,39 +126,39 @@ export default defineConfig({
 })
 ```
 
-`notionflow doctor` reports which mode will be used before `tick` or `run`
+`pipes doctor` reports which mode will be used before `tick` or `run`
 creates a run workspace.
 
 ## Runtime Artifacts
 
-NotionFlow writes runtime state under `.notionflow/`:
+Pipes stores runtime state under `.pipes-runtime/`:
 
-- `.notionflow/notionflow.db`
-- `.notionflow/runtime.log`
-- `.notionflow/errors.log`
-- `.notionflow/workspace-mirrors/`
-- `.notionflow/workspace-manifests/`
-- `.notionflow/workspaces/`
+- `.pipes-runtime/pipes.db`
+- `.pipes-runtime/runtime.log`
+- `.pipes-runtime/errors.log`
+- `.pipes-runtime/workspace-mirrors/`
+- `.pipes-runtime/workspace-manifests/`
+- `.pipes-runtime/workspaces/`
 
 ## Core Commands
 
 ```bash
-notionflow init
-notionflow doctor [--config <path>]
-notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
-notionflow tick [--config <path>] [--pipe <id>]
-notionflow start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
-notionflow run --task <notion_page_id> [--config <path>]
-notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
-notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
-notionflow integrations notion create-task --pipe <pipe-id> --title "title" [--status <state>] [--config <path>]
-notionflow integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
+pipes init
+pipes doctor [--config <path>]
+pipes pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
+pipes tick [--config <path>] [--pipe <id>]
+pipes start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
+pipes run --task <notion_page_id> [--config <path>]
+pipes integrations notion setup [--url <notion-database-url>] [--config <path>]
+pipes integrations notion repair-task --task <notion_page_id> [--config <path>]
+pipes integrations notion create-task --pipe <pipe-id> --title "title" [--status <state>] [--config <path>]
+pipes integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
 ```
 
 ## Start
 
 ```bash
-notionflow start
+pipes start
 ```
 
 `start` opens the interactive operator dashboard and runs the background tick
@@ -251,11 +251,11 @@ export default definePipe({
 
 Common live loop:
 
-1. `notionflow tick --pipe <pipe-id>` pauses in `feedback`.
+1. `pipes tick --pipe <pipe-id>` pauses in `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --run` detects new comments, re-queues
+3. `pipes integrations notion sync --run` detects new comments, re-queues
    feedback tasks, and runs queued work.
-4. `notionflow integrations notion setup --config notionflow.config.ts` creates
+4. `pipes integrations notion setup --config pipes.config.ts` creates
    or resolves the shared board once before starting tick loops.
 
 ## Agent Wrappers (`defineAgent`)
@@ -334,7 +334,7 @@ back to the same default mapping above.
 
 Project-style examples are in [`example-factories/`](./example-factories):
 
-- explicit `notionflow.config.ts`
+- explicit `pipes.config.ts`
 - definePipe-only pipes under `pipes/`
 - shared helper import patterns for reusable steps/selectors
 
@@ -359,7 +359,7 @@ export NOTION_API_TOKEN="<integration-token>"
 # optional: reuse a previously created shared tasks database
 export NOTION_TASKS_DATABASE_ID="<database-id>"
 # optional: use local DB feedback injection instead of Notion comments
-export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
+export PIPES_VERIFY_FEEDBACK_MODE=local
 ```
 
 2. Run live smoke + primitive live suites.

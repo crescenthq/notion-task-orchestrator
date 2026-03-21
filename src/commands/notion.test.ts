@@ -327,7 +327,7 @@ describe('notion command shared board registration', () => {
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
       pipeId: 'alpha',
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
       runQueued: false,
     })
@@ -373,7 +373,7 @@ describe('notion command shared board registration', () => {
     const {syncNotionBoards} = await import('./notion')
     await expect(
       syncNotionBoards({
-        configPath: path.join(projectRoot, 'notionflow.config.ts'),
+        configPath: path.join(projectRoot, 'pipes.config.ts'),
         startDir: projectRoot,
         runQueued: false,
       }),
@@ -424,7 +424,7 @@ describe('notion command shared board registration', () => {
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
       pipeId: 'alpha',
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
       runQueued: false,
     })
@@ -625,7 +625,7 @@ describe('notion command shared board registration', () => {
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
       pipeId: 'alpha',
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
       runQueued: false,
     })
@@ -722,7 +722,7 @@ describe('notion command shared board registration', () => {
 
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
       runQueued: false,
     })
@@ -771,7 +771,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-quarantined`.',
+        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `pipes integrations notion repair-task --task page-quarantined`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -799,7 +799,7 @@ describe('notion command shared board registration', () => {
 
     const {syncNotionBoards} = await import('./notion')
     await syncNotionBoards({
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
       runQueued: false,
     })
@@ -828,7 +828,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'pipe_invalid: Missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair`.',
+        'pipe_invalid: Missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `pipes integrations notion repair-task --task page-repair`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -848,7 +848,7 @@ describe('notion command shared board registration', () => {
     const {repairQuarantinedSharedBoardTask} = await import('./notion')
     await repairQuarantinedSharedBoardTask({
       taskExternalId: 'page-repair',
-      configPath: path.join(projectRoot, 'notionflow.config.ts'),
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
       startDir: projectRoot,
     })
 
@@ -891,7 +891,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-wrong`.',
+        'pipe_mismatch: shared-board Pipe changed from alpha to beta. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `pipes integrations notion repair-task --task page-repair-wrong`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -913,7 +913,7 @@ describe('notion command shared board registration', () => {
     await expect(
       repairQuarantinedSharedBoardTask({
         taskExternalId: 'page-repair-wrong',
-        configPath: path.join(projectRoot, 'notionflow.config.ts'),
+        configPath: path.join(projectRoot, 'pipes.config.ts'),
         startDir: projectRoot,
       }),
     ).rejects.toThrow(/still quarantined because its shared-board Pipe is beta/)
@@ -948,7 +948,7 @@ describe('notion command shared board registration', () => {
       lockToken: null,
       lockExpiresAt: null,
       lastError:
-        'pipe_invalid: missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `notionflow integrations notion repair-task --task page-repair-missing`.',
+        'pipe_invalid: missing Pipe on shared-board page. You may have changed the Pipe property by mistake. Restore Pipe to `alpha` in Notion, then run `pipes integrations notion repair-task --task page-repair-missing`.',
       createdAt: now,
       updatedAt: now,
     })
@@ -968,7 +968,7 @@ describe('notion command shared board registration', () => {
     await expect(
       runNotionSubcommand('repair-task', {
         task: 'page-repair-missing',
-        config: path.join(projectRoot, 'notionflow.config.ts'),
+        config: path.join(projectRoot, 'pipes.config.ts'),
       }),
     ).rejects.toThrow(/Restore Pipe to `alpha` in Notion first/)
 

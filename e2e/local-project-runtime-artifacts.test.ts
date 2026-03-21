@@ -3,9 +3,9 @@ import {spawn} from 'node:child_process'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
@@ -21,17 +21,17 @@ describe('local project runtime artifacts', () => {
     fixture = null
   })
 
-  it('writes db and runtime logs under project-local .notionflow with no global writes', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+  it('writes db and runtime logs under project-local .pipes-runtime with no global writes', async () => {
+    const before = await snapshotGlobalPipesWrites()
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
     await execCli(['pipe', 'list'], fixture.projectDir)
     await execCli(['pipe', 'list'], fixture.projectDir)
 
-    const runtimeDir = path.join(fixture.projectDir, '.notionflow')
+    const runtimeDir = path.join(fixture.projectDir, '.pipes-runtime')
     await expect(
-      stat(path.join(runtimeDir, 'notionflow.db')),
+      stat(path.join(runtimeDir, 'pipes.db')),
     ).resolves.toBeTruthy()
     await expect(
       stat(path.join(runtimeDir, 'runtime.log')),
@@ -40,8 +40,8 @@ describe('local project runtime artifacts', () => {
       stat(path.join(runtimeDir, 'errors.log')),
     ).resolves.toBeTruthy()
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 })
 
@@ -80,7 +80,7 @@ async function execCli(args: string[], cwd: string): Promise<void> {
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })

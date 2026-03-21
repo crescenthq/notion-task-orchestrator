@@ -37,13 +37,13 @@ afterEach(async () => {
 describe('workspaceRuntime', () => {
   it('creates a managed mirror and run workspace for project-repo mode', async () => {
     const repoRoot = await createFixture(
-      'notionflow-workspace-runtime-project-',
+      'pipes-workspace-runtime-project-',
     )
     await initGitRepo(repoRoot)
 
     const projectRoot = path.join(repoRoot, 'packages', 'app')
     await mkdir(projectRoot, {recursive: true})
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, 'export default {};\n', 'utf8')
     await writeFile(
       path.join(projectRoot, 'README.md'),
@@ -100,7 +100,7 @@ describe('workspaceRuntime', () => {
 
   it('creates a managed mirror and run workspace for explicit repo mode', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-source-',
+      'pipes-workspace-runtime-source-',
     )
     await initGitRepo(sourceRepo)
     await mkdir(path.join(sourceRepo, 'packages', 'api'), {recursive: true})
@@ -120,9 +120,9 @@ describe('workspaceRuntime', () => {
     const sourceRepoUrl = `file://${await realpath(sourceRepo)}`
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-explicit-',
+      'pipes-workspace-runtime-explicit-',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       [
@@ -168,7 +168,7 @@ describe('workspaceRuntime', () => {
 
   it('validates project workspaces without creating mirrors or run worktrees', async () => {
     const repoRoot = await createFixture(
-      'notionflow-workspace-runtime-validate-project-',
+      'pipes-workspace-runtime-validate-project-',
     )
     await initGitRepo(repoRoot)
 
@@ -179,7 +179,7 @@ describe('workspaceRuntime', () => {
       'workspace validation\n',
       'utf8',
     )
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(
       configPath,
       [
@@ -223,7 +223,7 @@ describe('workspaceRuntime', () => {
 
   it('validates explicit remote repo shorthands without provisioning a checkout', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-source-',
+      'pipes-workspace-runtime-validate-remote-source-',
     )
     await initGitRepo(sourceRepo)
     await mkdir(path.join(sourceRepo, 'packages', 'api'), {recursive: true})
@@ -235,7 +235,7 @@ describe('workspaceRuntime', () => {
     const head = await commitAll(sourceRepo, 'workspace validation remote')
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-project-',
+      'pipes-workspace-runtime-validate-remote-project-',
     )
     const workspace = createExplicitWorkspaceConfig(
       `file://${await realpath(sourceRepo)}`,
@@ -261,7 +261,7 @@ describe('workspaceRuntime', () => {
 
   it('validates explicit remote refs without requiring remote HEAD when the ref is concrete', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-no-head-',
+      'pipes-workspace-runtime-validate-remote-no-head-',
     )
     await initGitRepo(sourceRepo)
     await writeFile(path.join(sourceRepo, 'README.md'), 'remote ref\n', 'utf8')
@@ -274,7 +274,7 @@ describe('workspaceRuntime', () => {
     await runGit(['symbolic-ref', 'HEAD', 'refs/heads/missing-head'], sourceRepo)
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-no-head-project-',
+      'pipes-workspace-runtime-validate-remote-no-head-project-',
     )
     const workspace = {
       ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
@@ -298,14 +298,14 @@ describe('workspaceRuntime', () => {
 
   it('rejects unknown explicit remote commit refs during validation', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-sha-',
+      'pipes-workspace-runtime-validate-remote-sha-',
     )
     await initGitRepo(sourceRepo)
     await writeFile(path.join(sourceRepo, 'README.md'), 'remote sha\n', 'utf8')
     await commitAll(sourceRepo, 'workspace validation remote sha')
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-sha-project-',
+      'pipes-workspace-runtime-validate-remote-sha-project-',
     )
     const workspace = {
       ...createExplicitWorkspaceConfig(`file://${await realpath(sourceRepo)}`),
@@ -322,7 +322,7 @@ describe('workspaceRuntime', () => {
 
   it('resolves explicit remote ref names with the same precedence as checkout', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-ambiguous-',
+      'pipes-workspace-runtime-validate-remote-ambiguous-',
     )
     await initGitRepo(sourceRepo)
     await writeFile(
@@ -341,7 +341,7 @@ describe('workspaceRuntime', () => {
     await commitAll(sourceRepo, 'release branch commit')
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-validate-remote-ambiguous-project-',
+      'pipes-workspace-runtime-validate-remote-ambiguous-project-',
     )
     const runtimePaths = resolveRuntimePaths(projectRoot)
     const workspace = {
@@ -374,7 +374,7 @@ describe('workspaceRuntime', () => {
 
   it('fails fast when the configured explicit repo is not a git repository', async () => {
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-invalid-repo-',
+      'pipes-workspace-runtime-invalid-repo-',
     )
     const invalidRepo = path.join(projectRoot, 'not-a-repo')
     await mkdir(invalidRepo, {recursive: true})
@@ -406,14 +406,14 @@ describe('workspaceRuntime', () => {
 
   it('fails fast when the configured ref cannot be resolved from the managed mirror', async () => {
     const sourceRepo = await createFixture(
-      'notionflow-workspace-runtime-invalid-ref-source-',
+      'pipes-workspace-runtime-invalid-ref-source-',
     )
     await initGitRepo(sourceRepo)
     await writeFile(path.join(sourceRepo, 'README.md'), 'root\n', 'utf8')
     await commitAll(sourceRepo, 'initial source repo')
 
     const projectRoot = await createFixture(
-      'notionflow-workspace-runtime-invalid-ref-project-',
+      'pipes-workspace-runtime-invalid-ref-project-',
     )
     const runtimePaths = resolveRuntimePaths(projectRoot)
 
@@ -432,13 +432,13 @@ describe('workspaceRuntime', () => {
 
   it('removes run worktrees and manifests when cleanup is requested', async () => {
     const repoRoot = await createFixture(
-      'notionflow-workspace-runtime-cleanup-project-',
+      'pipes-workspace-runtime-cleanup-project-',
     )
     await initGitRepo(repoRoot)
 
     const projectRoot = path.join(repoRoot, 'packages', 'app')
     await mkdir(projectRoot, {recursive: true})
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, 'export default {};\n', 'utf8')
     await writeFile(path.join(projectRoot, 'README.md'), 'cleanup me\n', 'utf8')
     await commitAll(repoRoot, 'initial cleanup project')
@@ -484,13 +484,13 @@ describe('workspaceRuntime', () => {
 
   it('prunes stale worktree registrations and orphaned workspace directories', async () => {
     const repoRoot = await createFixture(
-      'notionflow-workspace-runtime-prune-project-',
+      'pipes-workspace-runtime-prune-project-',
     )
     await initGitRepo(repoRoot)
 
     const projectRoot = path.join(repoRoot, 'packages', 'app')
     await mkdir(projectRoot, {recursive: true})
-    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    const configPath = path.join(projectRoot, 'pipes.config.ts')
     await writeFile(configPath, 'export default {};\n', 'utf8')
     await writeFile(path.join(projectRoot, 'README.md'), 'prune me\n', 'utf8')
     await commitAll(repoRoot, 'initial prune project')
@@ -574,8 +574,8 @@ function createExplicitWorkspaceConfig(repo: string): ResolvedWorkspaceConfig {
 
 async function initGitRepo(repoRoot: string): Promise<void> {
   await runGit(['init'], repoRoot)
-  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
-  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+  await runGit(['config', 'user.name', 'Pipes Test'], repoRoot)
+  await runGit(['config', 'user.email', 'pipes@example.com'], repoRoot)
 }
 
 async function commitAll(repoRoot: string, message: string): Promise<string> {

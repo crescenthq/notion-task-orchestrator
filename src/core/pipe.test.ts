@@ -7,7 +7,7 @@ import {isPipeModuleDefinition, loadPipeFromPath} from './pipe'
 const createdDirs: string[] = []
 
 async function createTempDir(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), 'notionflow-factory-test-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'pipes-factory-test-'))
   createdDirs.push(dir)
   return dir
 }

@@ -43,10 +43,10 @@ if (liveSuiteEnabled) {
     })
 
     it('appends rendered write output to the Notion task page via writePage adapter', async () => {
-      fixture = await createTempProjectFixture('notionflow-write-live-')
+      fixture = await createTempProjectFixture('pipes-write-live-')
       await execCli(['init'], fixture.projectDir)
       await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
+        path.join(fixture.projectDir, 'pipes.config.ts'),
         writeLiveConfigSource(),
         'utf8',
       )
@@ -177,7 +177,7 @@ async function execCli(
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })

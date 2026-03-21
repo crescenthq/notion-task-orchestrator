@@ -43,7 +43,7 @@ export async function createProjectFixture(
   } = {},
 ) {
   const projectRoot = await mkdtemp(
-    path.join(tmpdir(), 'notionflow-notion-command-test-'),
+    path.join(tmpdir(), 'pipes-notion-command-test-'),
   )
   tempDirs.push(projectRoot)
 
@@ -51,7 +51,7 @@ export async function createProjectFixture(
   const pipesDir = path.join(projectRoot, 'pipes')
   await mkdir(pipesDir, {recursive: true})
   await writeFile(
-    path.join(projectRoot, 'notionflow.config.ts'),
+    path.join(projectRoot, 'pipes.config.ts'),
     [
       'export default {',
       ...(options.name ? [`  name: ${JSON.stringify(options.name)},`] : []),

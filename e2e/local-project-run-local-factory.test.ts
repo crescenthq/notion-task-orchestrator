@@ -7,11 +7,11 @@ import {afterEach, describe, expect, it} from 'vitest'
 import {nowIso, openApp} from '../src/app/context'
 import {boards, runTraces, tasks, workflows} from '../src/db/schema'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   commitAll,
   createTempProjectFixture,
   initGitRepo,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
@@ -28,7 +28,7 @@ describe('local project run command', () => {
   })
 
   it('loads pipes directly from project config and picks up edits without install', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
@@ -44,7 +44,7 @@ describe('local project run command', () => {
       'utf8',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       configSource('./pipes/smoke.ts'),
       'utf8',
     )
@@ -71,12 +71,12 @@ describe('local project run command', () => {
       readTaskState(fixture.projectDir, externalTaskId),
     ).resolves.toBe('failed')
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('pauses on ask feedback and resumes to done in local mode', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
@@ -92,7 +92,7 @@ describe('local project run command', () => {
       'utf8',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       configSource('./pipes/ask-resume.ts'),
       'utf8',
     )
@@ -135,12 +135,12 @@ describe('local project run command', () => {
     expect(traceTypes.has('resumed')).toBe(true)
     expect(traceTypes.has('completed')).toBe(true)
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('runs direct definePipe pipes and resumes feedback in local mode', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
@@ -156,7 +156,7 @@ describe('local project run command', () => {
       'utf8',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       configSource('./pipes/pipe-resume.ts'),
       'utf8',
     )
@@ -207,8 +207,8 @@ describe('local project run command', () => {
     expect(traceTypes.has('resumed')).toBe(true)
     expect(traceTypes.has('completed')).toBe(true)
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 
   it('does not expose the removed pipe install command', async () => {
@@ -231,7 +231,7 @@ async function execCli(args: string[], cwd: string): Promise<void> {
   }
 
   throw new Error(
-    `Command failed (${result.code ?? -1}): notionflow ${args.join(' ')}\n${result.stderr}`,
+    `Command failed (${result.code ?? -1}): pipes ${args.join(' ')}\n${result.stderr}`,
   )
 }
 
@@ -399,7 +399,7 @@ function factorySource(
   return [
     `import {definePipe} from ${JSON.stringify(canonicalModuleUrl)};`,
     '',
-    'const controlBrand = Symbol.for("notionflow.control")',
+    'const controlBrand = Symbol.for("pipes.control")',
     '',
     'export default definePipe({',
     '  id: "smoke",',

@@ -22,12 +22,12 @@ type EndSignal = {
 type PageOutput = string | {markdown: string; body?: string}
 
 const mockWorkspace: PipeWorkspace = {
-  root: '/tmp/notionflow-workspace',
-  cwd: '/tmp/notionflow-workspace/app',
+  root: '/tmp/pipes-workspace',
+  cwd: '/tmp/pipes-workspace/app',
   ref: 'deadbeef',
   source: {
     mode: 'project',
-    repo: '/tmp/notionflow-source',
+    repo: '/tmp/pipes-source',
     requestedRef: 'HEAD',
   },
 }
@@ -200,7 +200,7 @@ describe('example pipes smoke', () => {
     const second = await intentFactory.run({
       ctx: awaitIntent.ctx as typeof intentFactory.initial,
       feedback:
-        'repo=https://github.com/notionflow/example.git; feature=Add a clear progress dashboard for task runs.; decision=approve',
+        'repo=https://github.com/pipes/example.git; feature=Add a clear progress dashboard for task runs.; decision=approve',
       workspace: mockWorkspace,
       runId: 'run-intent-2',
       tickId: 'tick-intent-2',

@@ -1,17 +1,17 @@
 {
-  "name": "notionflow-example-factories",
+  "name": "pipes-example-factories",
   "version": "0.0.1",
   "private": true,
-  "description": "Example NotionFlow pipes demonstrating project-local architecture",
+  "description": "Example Pipes project demonstrating project-local architecture",
   "type": "module",
   "scripts": {
-    "doctor": "tsx ../src/cli.ts doctor --config ./notionflow.config.ts",
-    "notion:setup": "tsx ../src/cli.ts integrations notion setup --config ./notionflow.config.ts",
-    "notion:sync": "tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts",
-    "notion:create-task": "tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts",
-    "notion:repair-task": "tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts",
-    "tick": "tsx ../src/cli.ts tick --config ./notionflow.config.ts",
-    "tick:demo": "tsx ../src/cli.ts tick --pipe shared-helper-demo --config ./notionflow.config.ts",
+    "doctor": "tsx ../src/cli.ts doctor --config ./pipes.config.ts",
+    "notion:setup": "tsx ../src/cli.ts integrations notion setup --config ./pipes.config.ts",
+    "notion:sync": "tsx ../src/cli.ts integrations notion sync --config ./pipes.config.ts",
+    "notion:create-task": "tsx ../src/cli.ts integrations notion create-task --config ./pipes.config.ts",
+    "notion:repair-task": "tsx ../src/cli.ts integrations notion repair-task --config ./pipes.config.ts",
+    "tick": "tsx ../src/cli.ts tick --config ./pipes.config.ts",
+    "tick:demo": "tsx ../src/cli.ts tick --pipe shared-helper-demo --config ./pipes.config.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

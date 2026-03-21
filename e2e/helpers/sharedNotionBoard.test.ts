@@ -12,7 +12,7 @@ const originalEnv = {
 
 async function createWorkspace(initialEnv = 'NOTION_API_TOKEN=test-token\n') {
   const dir = await mkdtemp(
-    path.join(tmpdir(), 'notionflow-shared-board-test-'),
+    path.join(tmpdir(), 'pipes-shared-board-test-'),
   )
   tempDirs.push(dir)
   await writeFile(path.join(dir, '.env'), initialEnv, 'utf8')
@@ -97,7 +97,7 @@ describe('shared Notion board helper', () => {
     expect(notionCreateBoardDataSource).toHaveBeenCalledTimes(1)
     expect(notionCreateBoardDataSource).toHaveBeenCalledWith(
       'test-token',
-      expect.stringMatching(/^NotionFlow E2E /),
+      expect.stringMatching(/^Pipes E2E /),
       [],
       [],
       {parentPageId: 'page-parent'},

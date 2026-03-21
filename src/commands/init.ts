@@ -2,16 +2,16 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {defineCommand} from 'citty'
 
-const CONFIG_FILE = 'notionflow.config.ts'
+const CONFIG_FILE = 'pipes.config.ts'
 const PIPES_DIR = 'pipes'
-const RUNTIME_DIR = '.notionflow'
+const RUNTIME_DIR = '.pipes-runtime'
 const GITIGNORE_FILE = '.gitignore'
-const RUNTIME_GITIGNORE_ENTRY = '.notionflow/'
+const RUNTIME_GITIGNORE_ENTRY = '.pipes-runtime/'
 
 export const initCmd = defineCommand({
   meta: {
     name: 'init',
-    description: '[common] Initialize a local NotionFlow project',
+    description: '[common] Initialize a local Pipes project',
   },
   async run() {
     const projectRoot = process.cwd()
@@ -34,7 +34,7 @@ export const initCmd = defineCommand({
 
     await ensureRuntimeDirGitIgnored(path.join(projectRoot, GITIGNORE_FILE))
 
-    console.log('NotionFlow project initialized')
+    console.log('Pipes project initialized')
     console.log(`Project root: ${projectRoot}`)
     console.log(`Config: ${configPath}`)
   },
@@ -51,7 +51,7 @@ export default defineConfig({
 
 function defaultProjectName(projectRoot: string): string {
   const baseName = path.basename(projectRoot).trim()
-  if (!baseName) return 'NotionFlow'
+  if (!baseName) return 'Pipes'
 
   const parts = baseName
     .split(/[-_]+/)

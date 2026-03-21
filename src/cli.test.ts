@@ -48,14 +48,14 @@ describe('CLI bootstrap flow', () => {
   })
 
   it('uses init as the canonical bootstrap and supports a basic orchestration command', () => {
-    const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
-    const project = mkdtempSync(path.join(tmpdir(), 'notionflow-project-test-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'pipes-cli-test-'))
+    const project = mkdtempSync(path.join(tmpdir(), 'pipes-project-test-'))
     createdHomes.push(home)
     createdProjects.push(project)
 
     const init = runCli(['init'], home, {}, project)
     expect(init.status).toBe(0)
-    expect(init.stdout).toContain('NotionFlow project initialized')
+    expect(init.stdout).toContain('Pipes project initialized')
 
     const listPipes = runCli(['pipe', 'list'], home, {}, project)
     expect(listPipes.status).toBe(0)
@@ -63,7 +63,7 @@ describe('CLI bootstrap flow', () => {
   })
 
   it('rejects removed legacy commands', () => {
-    const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'pipes-cli-test-'))
     createdHomes.push(home)
 
     for (const args of [
@@ -81,8 +81,8 @@ describe('CLI bootstrap flow', () => {
   })
 
   it('routes Notion commands through integrations and rejects top-level notion', () => {
-    const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
-    const project = mkdtempSync(path.join(tmpdir(), 'notionflow-project-test-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'pipes-cli-test-'))
+    const project = mkdtempSync(path.join(tmpdir(), 'pipes-project-test-'))
     createdHomes.push(home)
     createdProjects.push(project)
 
@@ -92,7 +92,7 @@ describe('CLI bootstrap flow', () => {
     expect(legacyOutput).toContain('unknown command')
 
     writeFileSync(
-      path.join(project, 'notionflow.config.ts'),
+      path.join(project, 'pipes.config.ts'),
       'export default { pipes: [] };\n',
       'utf8',
     )
@@ -111,12 +111,12 @@ describe('CLI bootstrap flow', () => {
   })
 
   it('loads .env from the project resolved via --config', () => {
-    const home = mkdtempSync(path.join(tmpdir(), 'notionflow-cli-test-'))
-    const project = mkdtempSync(path.join(tmpdir(), 'notionflow-project-test-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'pipes-cli-test-'))
+    const project = mkdtempSync(path.join(tmpdir(), 'pipes-project-test-'))
     createdHomes.push(home)
     createdProjects.push(project)
 
-    const configPath = path.join(project, 'notionflow.config.ts')
+    const configPath = path.join(project, 'pipes.config.ts')
     writeFileSync(configPath, 'export default { pipes: [] };\n', 'utf8')
     writeFileSync(
       path.join(project, '.env'),

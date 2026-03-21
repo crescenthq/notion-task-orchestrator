@@ -2,7 +2,7 @@
 
 ## Canonical Authoring Model
 
-NotionFlow authoring is `definePipe`-only.
+Pipes authoring is `definePipe`-only.
 
 Use these package-root APIs:
 
@@ -130,11 +130,11 @@ Feedback sources consumed by `ask`:
 
 Typical Notion loop:
 
-1. `notionflow tick --pipe <pipe-id>` pauses task in `feedback`.
+1. `pipes tick --pipe <pipe-id>` pauses task in `feedback`.
 2. Human replies in Notion comments.
-3. `notionflow integrations notion sync --run` detects new comments, stores
+3. `pipes integrations notion sync --run` detects new comments, stores
    `human_feedback`, re-queues the task, and runs queued work.
-4. `notionflow integrations notion setup --config <path>` creates or resolves
+4. `pipes integrations notion setup --config <path>` creates or resolves
    the shared board in a new environment before running the first tick.
 
 ## Agent Wrapper Setup (`defineAgent`)
@@ -234,7 +234,7 @@ its own timeout window.
 
 Customize `mapError` when your workflow needs stable, branchable error codes
 from upstream providers or CLI wrappers (for example `provider_unavailable`). If
-custom `mapError` throws, NotionFlow falls back to the default mapping.
+custom `mapError` throws, Pipes falls back to the default mapping.
 
 ### Test Wrapper Swaps
 
@@ -261,17 +261,17 @@ workspace override before running `doctor`, `tick`, or `run`.
 1. Initialize project structure.
 
 ```bash
-npx notionflow init
+npx pipes init
 ```
 
 2. Scaffold a pipe.
 
 ```bash
-npx notionflow pipe create --id my-pipe
+npx pipes pipe create --id my-pipe
 ```
 
 3. Optional: set project name or customize pipe discovery in
-   `notionflow.config.ts`.
+   `pipes.config.ts`.
 
 ```ts
 import {defineConfig} from 'notionflow'
@@ -281,9 +281,9 @@ export default defineConfig({
 })
 ```
 
-If you want `notionflow integrations notion setup` to create a human-friendly
+If you want `pipes integrations notion setup` to create a human-friendly
 shared tasks database title, set `name` in `defineConfig(...)`. If `name` is
-omitted, NotionFlow falls back to a title derived from the project directory
+omitted, Pipes falls back to a title derived from the project directory
 name.
 
 `pipe create` writes to `pipes/`, so the default project layout does not need
@@ -293,14 +293,14 @@ directory scans.
 4. Validate context and auth.
 
 ```bash
-npx notionflow doctor
+npx pipes doctor
 ```
 
 5. Run work via queue or direct task execution.
 
 ```bash
-npx notionflow tick --pipe <pipe-id>
-npx notionflow run --task <notion_page_id>
+npx pipes tick --pipe <pipe-id>
+npx pipes run --task <notion_page_id>
 ```
 
 ## Authoring Tips
@@ -317,7 +317,7 @@ npx notionflow run --task <notion_page_id>
 Local gate:
 
 ```bash
-npx notionflow doctor
+npx pipes doctor
 npm run check
 npm run lint
 npm run test
@@ -334,7 +334,7 @@ export NOTION_API_TOKEN="<integration-token>"
 # optional: reuse a previously created shared tasks database
 export NOTION_TASKS_DATABASE_ID="<database-id>"
 # optional: local DB feedback injection for verification suite
-export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
+export PIPES_VERIFY_FEEDBACK_MODE=local
 ```
 
 2. Live command sequence.

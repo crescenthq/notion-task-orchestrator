@@ -2,9 +2,9 @@ import {spawn} from 'node:child_process'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
@@ -21,15 +21,15 @@ describe('E2E helper infrastructure', () => {
   })
 
   it('creates and cleans temp project fixture without global writes', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
+    const before = await snapshotGlobalPipesWrites()
     fixture = await createTempProjectFixture()
 
-    expect(fixture.projectDir).toContain('notionflow-e2e-')
+    expect(fixture.projectDir).toContain('pipes-e2e-')
 
     await execCli(['--help'], fixture.projectDir)
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   })
 })
 
@@ -68,7 +68,7 @@ async function execCli(args: string[], cwd: string): Promise<void> {
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })

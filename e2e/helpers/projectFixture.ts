@@ -16,10 +16,10 @@ export type TempProjectFixture = {
   cleanup: () => Promise<void>
 }
 
-const GLOBAL_NOTIONFLOW_DIR = path.join(os.homedir(), '.config', 'notionflow')
+const GLOBAL_PIPES_DIR = path.join(os.homedir(), '.config', 'pipes')
 
 export async function createTempProjectFixture(
-  prefix = 'notionflow-e2e-',
+  prefix = 'pipes-e2e-',
 ): Promise<TempProjectFixture> {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), prefix))
   return {
@@ -32,8 +32,8 @@ export async function createTempProjectFixture(
 
 export async function initGitRepo(projectDir: string): Promise<void> {
   await runGit(['init'], projectDir)
-  await runGit(['config', 'user.name', 'NotionFlow E2E'], projectDir)
-  await runGit(['config', 'user.email', 'notionflow-e2e@example.com'], projectDir)
+  await runGit(['config', 'user.name', 'Pipes E2E'], projectDir)
+  await runGit(['config', 'user.email', 'pipes-e2e@example.com'], projectDir)
 }
 
 export async function commitAll(
@@ -44,11 +44,11 @@ export async function commitAll(
   await runGit(['commit', '-m', message], projectDir)
 }
 
-export async function snapshotGlobalNotionflowWrites(): Promise<FilesystemSnapshot> {
-  return snapshotFilesystemTree(GLOBAL_NOTIONFLOW_DIR)
+export async function snapshotGlobalPipesWrites(): Promise<FilesystemSnapshot> {
+  return snapshotFilesystemTree(GLOBAL_PIPES_DIR)
 }
 
-export function assertNoNewGlobalNotionflowWrites(
+export function assertNoNewGlobalPipesWrites(
   before: FilesystemSnapshot,
   after: FilesystemSnapshot,
 ): void {
@@ -81,7 +81,7 @@ export function assertNoNewGlobalNotionflowWrites(
 
   throw new Error(
     [
-      `Detected writes under ${GLOBAL_NOTIONFLOW_DIR} during E2E execution.`,
+      `Detected writes under ${GLOBAL_PIPES_DIR} during E2E execution.`,
       ...detailLines,
     ].join('\n'),
   )

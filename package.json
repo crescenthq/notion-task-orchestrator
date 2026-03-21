@@ -1,11 +1,12 @@
 {
   "name": "notionflow",
   "version": "0.0.6",
-  "description": "Agent-agnostic workflow orchestrator for Notion",
+  "description": "Pipes from Notionflow orchestration CLI and library",
   "license": "MIT",
   "author": "Kamal <https://github.com/Kamalnrf>",
   "bin": {
-    "notionflow": "./dist/cli.js"
+    "notionflow": "./dist/cli.js",
+    "pipes": "./dist/cli.js"
   },
   "type": "module",
   "types": "./src/index.ts",
@@ -17,7 +18,7 @@
   },
   "scripts": {
     "dev": "npx tsx src/cli.ts",
-    "notionflow": "npx tsx src/cli.ts",
+    "pipes": "npx tsx src/cli.ts",
     "playground": "node --import tsx playground/server.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",

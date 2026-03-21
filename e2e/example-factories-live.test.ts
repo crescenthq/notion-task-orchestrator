@@ -7,9 +7,9 @@ import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {openApp} from '../src/app/context'
 import {tasks} from '../src/db/schema'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   createTempProjectFixture,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type TempProjectFixture,
 } from './helpers/projectFixture'
 import {hasLiveNotionEnv} from './helpers/liveNotionEnv'
@@ -39,8 +39,8 @@ if (liveSuiteEnabled) {
   })
 
   it('runs rewritten shared-helper-demo example through CLI run in live Notion mode', async () => {
-    const before = await snapshotGlobalNotionflowWrites()
-    fixture = await createTempProjectFixture('notionflow-example-live-')
+    const before = await snapshotGlobalPipesWrites()
+    fixture = await createTempProjectFixture('pipes-example-live-')
 
     await execCli(['init'], fixture.projectDir)
     await initGitRepo(fixture.projectDir)
@@ -52,7 +52,7 @@ if (liveSuiteEnabled) {
       'shared-helper-demo.ts',
     )
     await writeFile(
-      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      path.join(fixture.projectDir, 'pipes.config.ts'),
       exampleConfigSource(exampleFactoryPath),
       'utf8',
     )
@@ -92,8 +92,8 @@ if (liveSuiteEnabled) {
       readTaskState(fixture.projectDir, taskExternalId),
     ).resolves.toBe('done')
 
-    const after = await snapshotGlobalNotionflowWrites()
-    assertNoNewGlobalNotionflowWrites(before, after)
+    const after = await snapshotGlobalPipesWrites()
+    assertNoNewGlobalPipesWrites(before, after)
   }, 180_000)
 })
 
@@ -141,7 +141,7 @@ async function execCli(
 
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}\n${stderr}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}\n${stderr}`,
         ),
       )
     })
@@ -176,8 +176,8 @@ function exampleConfigSource(factoryPath: string): string {
 
 async function initGitRepo(repoRoot: string): Promise<void> {
   await runGit(['init'], repoRoot)
-  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
-  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+  await runGit(['config', 'user.name', 'Pipes Test'], repoRoot)
+  await runGit(['config', 'user.email', 'pipes@example.com'], repoRoot)
 }
 
 async function commitAll(repoRoot: string, message: string): Promise<void> {

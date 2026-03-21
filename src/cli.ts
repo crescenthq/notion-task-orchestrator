@@ -20,8 +20,8 @@ const {tickCmd} = await import('./commands/tick')
 
 const main = defineCommand({
   meta: {
-    name: 'notionflow',
-    description: 'Library-first, project-local orchestration CLI',
+    name: 'pipes',
+    description: 'Project-local orchestration CLI',
     version: '0.1.0',
   },
   args: {

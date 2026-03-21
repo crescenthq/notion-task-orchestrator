@@ -18,11 +18,11 @@ describe('pipe command', () => {
   })
 
   it('creates a scaffold that does not import notionflow from the project tree', async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), 'notionflow-pipe-'))
+    const projectRoot = await mkdtemp(path.join(tmpdir(), 'pipes-pipe-'))
     tempDirs.push(projectRoot)
 
     await writeFile(
-      path.join(projectRoot, 'notionflow.config.ts'),
+      path.join(projectRoot, 'pipes.config.ts'),
       'export default { pipes: [] }\n',
       'utf8',
     )

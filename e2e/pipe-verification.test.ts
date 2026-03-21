@@ -14,11 +14,11 @@ import {
   notionUpdateTaskPageState,
 } from '../src/services/notion'
 import {
-  assertNoNewGlobalNotionflowWrites,
+  assertNoNewGlobalPipesWrites,
   commitAll,
   createTempProjectFixture,
   initGitRepo,
-  snapshotGlobalNotionflowWrites,
+  snapshotGlobalPipesWrites,
   type FilesystemSnapshot,
   type TempProjectFixture,
 } from './helpers/projectFixture'
@@ -117,7 +117,7 @@ async function execCli(args: string[]): Promise<void> {
       }
       reject(
         new Error(
-          `Command failed (${code ?? -1}): notionflow ${args.join(' ')}`,
+          `Command failed (${code ?? -1}): pipes ${args.join(' ')}`,
         ),
       )
     })
@@ -268,7 +268,7 @@ async function writeVerificationProjectConfig(
   ].join('\n')
 
   await writeFile(
-    path.join(projectRoot, 'notionflow.config.ts'),
+    path.join(projectRoot, 'pipes.config.ts'),
     configContent,
     'utf8',
   )
@@ -376,8 +376,8 @@ let globalWritesBefore: FilesystemSnapshot | null = null
 
 ;(liveSuiteEnabled ? describe : describe.skip)('Live pipe verification', () => {
   beforeAll(async () => {
-    globalWritesBefore = await snapshotGlobalNotionflowWrites()
-    fixture = await createTempProjectFixture('notionflow-live-verify-')
+    globalWritesBefore = await snapshotGlobalPipesWrites()
+    fixture = await createTempProjectFixture('pipes-live-verify-')
     await execCli(['init'])
     await initGitRepo(requireProjectRoot())
     await writeVerificationProjectConfig(requireProjectRoot())
@@ -414,8 +414,8 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     }
 
     if (globalWritesBefore) {
-      const globalWritesAfter = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(globalWritesBefore, globalWritesAfter)
+      const globalWritesAfter = await snapshotGlobalPipesWrites()
+      assertNoNewGlobalPipesWrites(globalWritesBefore, globalWritesAfter)
     }
 
     if (fixture) {
@@ -476,7 +476,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
       },
     )
     const token = notionToken()!
-    const feedbackMode = process.env.NOTIONFLOW_VERIFY_FEEDBACK_MODE ?? 'local'
+    const feedbackMode = process.env.PIPES_VERIFY_FEEDBACK_MODE ?? 'local'
 
     if (feedbackMode === 'notion-comment') {
       await notionPostComment(
@@ -517,7 +517,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
       }
     } else {
       throw new Error(
-        `Unsupported NOTIONFLOW_VERIFY_FEEDBACK_MODE=${feedbackMode}. Use notion-comment|local`,
+        `Unsupported PIPES_VERIFY_FEEDBACK_MODE=${feedbackMode}. Use notion-comment|local`,
       )
     }
 
