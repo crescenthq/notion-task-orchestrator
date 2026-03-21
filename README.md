@@ -20,6 +20,7 @@ declarations in `notionflow.config.ts`.
 
 - Node.js 20+
 - `NOTION_API_TOKEN`
+- An interactive terminal if you want to use `notionflow start`
 
 ## Quickstart
 
@@ -44,7 +45,7 @@ until it finds `notionflow.config.ts`.
 
 - Default: walk up from current working directory to find `notionflow.config.ts`
 - Override: pass `--config <path>` on project-scoped commands (`doctor`,
-  `pipe create`, `run`, `tick`, `integrations notion sync`)
+  `pipe create`, `run`, `tick`, `start`, `integrations notion sync`)
 - Project root is the directory containing the resolved config file
 
 ## Config Format
@@ -94,14 +95,27 @@ NotionFlow writes runtime state under `.notionflow/`:
 ```bash
 notionflow init
 notionflow doctor [--config <path>]
-notionflow pipe create --id <pipe-id> [--config <path>]
-notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--pipe <id>]
+notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
+notionflow tick [--config <path>] [--pipe <id>]
+notionflow start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
 notionflow run --task <notion_page_id> [--config <path>]
 notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
 notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
 notionflow integrations notion create-task --pipe <pipe-id> --title "title" [--status <state>] [--config <path>]
 notionflow integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
 ```
+
+## Start
+
+```bash
+notionflow start
+```
+
+`start` opens the interactive operator dashboard and runs the background tick
+loop in the same session. `tick` remains the one-shot queue advancement command.
+The dashboard now renders directly in the terminal with ANSI screen redraws, so
+`start` stays on the normal Node runtime and no longer requires Bun. Use `q` to
+quit or `r` to refresh immediately.
 
 ## Canonical Library API
 

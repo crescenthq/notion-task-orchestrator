@@ -6,6 +6,7 @@ Top-level commands:
 
 - `init`
 - `doctor`
+- `start`
 - `tick`
 - `run`
 - `status`
@@ -23,6 +24,7 @@ Supported `--config <path>` override:
 - `pipe create`
 - `run`
 - `tick`
+- `start`
 - `integrations notion setup`
 - `integrations notion repair-task`
 - `integrations notion sync`
@@ -59,9 +61,39 @@ notionflow doctor [--config <path>]
 
 Prints resolved project root and config path.
 
+### `start`
+
+Start the interactive operator session and background tick loop.
+
+```bash
+notionflow start [--config <path>] [--interval-ms <ms>] [--refresh-ms <ms>] [--limit <n>]
+```
+
+Options:
+
+- `--config <path>`
+- `--interval-ms <n>`
+- `--refresh-ms <n>`
+- `--limit <n>`
+- `--pipe <id>`
+- `--max-transitions-per-tick <n>`
+- `--run-concurrency <n>`
+- `--lease-ms <n>`
+- `--lease-mode <strict|best-effort>`
+- `--worker-id <id>`
+
+Notes:
+
+- `start` replaces the old loop-oriented `tick --loop` behavior.
+- `start` renders the dashboard directly in the terminal with ANSI screen
+  redraws.
+- `start` requires an interactive TTY.
+- `q` quits the session.
+- `r` triggers an immediate dashboard refresh.
+
 ### `tick`
 
-Run queue-driven orchestration.
+Run exactly one queue-driven orchestration tick.
 
 ```bash
 notionflow tick [options]
@@ -70,23 +102,17 @@ notionflow tick [options]
 Options:
 
 - `--config <path>`
-- `--board <id>`
 - `--pipe <id>`
-- `--loop`
-- `--interval-ms <n>`
 - `--max-transitions-per-tick <n>`
 - `--run-concurrency <n>`
 - `--lease-ms <n>`
 - `--lease-mode <strict|best-effort>`
 - `--worker-id <id>`
 
-Loop behavior defaults:
+Notes:
 
-- one-shot unless `--loop` is set
-- 2000ms successful cycle delay
-- queued task runs are dispatched asynchronously in loop mode
-- retryable Notion errors: `429` and transient `5xx`
-- exponential backoff with jitter and cap
+- `tick` is always one-shot.
+- For a long-lived worker loop and interactive status view, use `start`.
 
 ### `run`
 

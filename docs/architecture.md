@@ -52,16 +52,18 @@ All runtime state is project-local.
 
 ## Tick Execution
 
-`tick` defaults to one-shot execution.
+`tick` is one-shot execution.
 
-With `--loop`, tick:
+`start` owns the long-lived operator session:
 
-- repeats until signal-based shutdown
+- opens the terminal dashboard
+- runs the queue worker loop until signal-based shutdown
 - waits 2000ms between successful cycles
 - applies exponential backoff for retryable Notion API errors (`429`, transient
   `5xx`)
 - handles `SIGINT`/`SIGTERM` gracefully by finishing in-flight cycle and
   stopping scheduling
+- redraws the dashboard frame directly with ANSI terminal control sequences
 
 ## Task State Model
 

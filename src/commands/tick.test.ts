@@ -109,6 +109,42 @@ describe('tick command loop execution', () => {
     ).toBe(true)
   })
 
+  it('captures worker console output into runtime logs when requested', async () => {
+    const logger = createMemoryLogger()
+
+    await executeTick(
+      {
+        startDir: process.cwd(),
+        leaseMode: 'strict',
+        loop: false,
+        loopDelayMs: 2_000,
+      },
+      {
+        runTick: async () => {
+          console.log('syncing board notion-shared')
+          console.error('task failed inside worker')
+        },
+        createLogger: async () => ({
+          runtimeLog: async line => {
+            logger.runtimeLines.push(line)
+          },
+          errorLog: async line => {
+            logger.errorLines.push(line)
+          },
+        }),
+        random: () => 0,
+        signalSource: new EventEmitter() as unknown as Pick<
+          NodeJS.Process,
+          'on' | 'off'
+        >,
+        captureConsoleOutput: true,
+      },
+    )
+
+    expect(logger.runtimeLines).toContain('syncing board notion-shared')
+    expect(logger.errorLines).toContain('task failed inside worker')
+  })
+
   it('completes the current cycle after SIGINT and exits without scheduling a new cycle', async () => {
     vi.useFakeTimers()
     const logger = createMemoryLogger()

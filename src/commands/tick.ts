@@ -1,9 +1,10 @@
 import {defineCommand} from 'citty'
 import {appendFile} from 'node:fs/promises'
+import {format} from 'node:util'
 import {openApp} from '../app/context'
 import {syncNotionBoards} from './notion'
 
-const DEFAULT_LOOP_DELAY_MS = 2_000
+export const DEFAULT_LOOP_DELAY_MS = 2_000
 const BACKOFF_MAX_MS = 15_000
 const BACKOFF_JITTER_MAX_MS = 250
 
@@ -19,7 +20,7 @@ type TickArgs = {
   intervalMs?: string
 }
 
-type TickExecutionOptions = {
+export type TickExecutionOptions = {
   pipeId?: string
   configPath?: string
   startDir: string
@@ -37,7 +38,7 @@ type TickRuntimeLogger = {
   errorLog: (line: string) => Promise<void>
 }
 
-type TickLoopDeps = {
+export type TickLoopDeps = {
   runTick: (
     options: Omit<TickExecutionOptions, 'loop' | 'loopDelayMs'>,
   ) => Promise<void>
@@ -47,6 +48,7 @@ type TickLoopDeps = {
   }) => Promise<TickRuntimeLogger>
   random: () => number
   signalSource: Pick<NodeJS.Process, 'on' | 'off'>
+  captureConsoleOutput: boolean
 }
 
 const defaultTickLoopDeps: TickLoopDeps = {
@@ -88,9 +90,12 @@ const defaultTickLoopDeps: TickLoopDeps = {
   },
   random: () => Math.random(),
   signalSource: process,
+  captureConsoleOutput: false,
 }
 
-function parseTickExecutionOptions(args: TickArgs): TickExecutionOptions {
+export function parseTickExecutionOptions(
+  args: TickArgs,
+): TickExecutionOptions {
   const maxTransitionsPerTick = args.maxTransitionsPerTick
     ? Number.parseInt(String(args.maxTransitionsPerTick), 10)
     : undefined
@@ -151,15 +156,33 @@ function computeBackoffMs(attempt: number, random: () => number): number {
 
 export async function executeTick(
   options: TickExecutionOptions,
-  deps: TickLoopDeps = defaultTickLoopDeps,
+  deps: Partial<TickLoopDeps> = {},
 ): Promise<void> {
-  const logger = await deps.createLogger({
+  const resolvedDeps: TickLoopDeps = {
+    ...defaultTickLoopDeps,
+    ...deps,
+  }
+
+  const logger = await resolvedDeps.createLogger({
     configPath: options.configPath,
     startDir: options.startDir,
   })
 
+  const runTickCycle = async (
+    cycleOptions: Omit<TickExecutionOptions, 'loop' | 'loopDelayMs'>,
+  ) => {
+    if (!resolvedDeps.captureConsoleOutput) {
+      await resolvedDeps.runTick(cycleOptions)
+      return
+    }
+
+    await withCapturedConsoleOutput(logger, async () => {
+      await resolvedDeps.runTick(cycleOptions)
+    })
+  }
+
   if (!options.loop) {
-    await deps.runTick(options)
+    await runTickCycle(options)
     return
   }
 
@@ -200,8 +223,8 @@ export async function executeTick(
     })
   }
 
-  deps.signalSource.on('SIGINT', onSignal)
-  deps.signalSource.on('SIGTERM', onSignal)
+  resolvedDeps.signalSource.on('SIGINT', onSignal)
+  resolvedDeps.signalSource.on('SIGTERM', onSignal)
 
   await logger.runtimeLog(`tick loop started delay_ms=${options.loopDelayMs}`)
 
@@ -211,7 +234,7 @@ export async function executeTick(
       await logger.runtimeLog(`tick cycle start index=${cycleCount}`)
 
       try {
-        await deps.runTick(options)
+        await runTickCycle(options)
         retryAttempt = 0
         await logger.runtimeLog(`tick cycle complete index=${cycleCount}`)
       } catch (error) {
@@ -228,7 +251,7 @@ export async function executeTick(
         }
 
         retryAttempt += 1
-        const backoffMs = computeBackoffMs(retryAttempt, deps.random)
+        const backoffMs = computeBackoffMs(retryAttempt, resolvedDeps.random)
         await logger.runtimeLog(
           `tick cycle retryable error index=${cycleCount} backoff_attempt=${retryAttempt} backoff_ms=${backoffMs}`,
         )
@@ -251,9 +274,58 @@ export async function executeTick(
       pendingTimer = null
     }
     resolvePendingWait = null
-    deps.signalSource.off('SIGINT', onSignal)
-    deps.signalSource.off('SIGTERM', onSignal)
+    resolvedDeps.signalSource.off('SIGINT', onSignal)
+    resolvedDeps.signalSource.off('SIGTERM', onSignal)
     await logger.runtimeLog(`tick loop stopped cycles=${cycleCount}`)
+  }
+}
+
+async function withCapturedConsoleOutput(
+  logger: TickRuntimeLogger,
+  run: () => Promise<void>,
+): Promise<void> {
+  const originalConsole = {
+    log: console.log.bind(console),
+    info: console.info.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+  }
+  const pendingWrites = new Set<Promise<void>>()
+
+  const enqueue = (
+    writer: (line: string) => Promise<void>,
+    args: unknown[],
+  ): void => {
+    const line = format(...args)
+    const write = writer(line)
+      .catch(() => {})
+      .finally(() => {
+        pendingWrites.delete(write)
+      })
+    pendingWrites.add(write)
+  }
+
+  console.log = (...args: unknown[]) => {
+    enqueue(logger.runtimeLog, args)
+  }
+  console.info = (...args: unknown[]) => {
+    enqueue(logger.runtimeLog, args)
+  }
+  console.warn = (...args: unknown[]) => {
+    enqueue(logger.errorLog, args)
+  }
+  console.error = (...args: unknown[]) => {
+    enqueue(logger.errorLog, args)
+  }
+
+  try {
+    await run()
+  } finally {
+    console.log = originalConsole.log
+    console.info = originalConsole.info
+    console.warn = originalConsole.warn
+    console.error = originalConsole.error
+    await Promise.allSettled(Array.from(pendingWrites))
   }
 }
 
@@ -265,8 +337,6 @@ export const tickCmd = defineCommand({
   args: {
     pipe: {type: 'string', required: false},
     config: {type: 'string', required: false},
-    loop: {type: 'boolean', required: false},
-    intervalMs: {type: 'string', required: false, alias: 'interval-ms'},
     maxTransitionsPerTick: {
       type: 'string',
       required: false,
@@ -282,6 +352,10 @@ export const tickCmd = defineCommand({
     workerId: {type: 'string', required: false, alias: 'worker-id'},
   },
   async run({args}) {
-    await executeTick(parseTickExecutionOptions(args))
+    await executeTick({
+      ...parseTickExecutionOptions(args),
+      loop: false,
+      loopDelayMs: DEFAULT_LOOP_DELAY_MS,
+    })
   },
 })

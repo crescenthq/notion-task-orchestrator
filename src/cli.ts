@@ -14,6 +14,7 @@ const {pipeCmd} = await import('./commands/pipe')
 const {initCmd} = await import('./commands/init')
 const {integrationsCmd} = await import('./commands/integrations')
 const {runCmd} = await import('./commands/run')
+const {startCmd} = await import('./commands/start')
 const {statusCmd} = await import('./commands/status')
 const {tickCmd} = await import('./commands/tick')
 
@@ -34,6 +35,7 @@ const main = defineCommand({
   subCommands: {
     init: initCmd,
     doctor: doctorCmd,
+    start: startCmd,
     tick: tickCmd,
     run: runCmd,
     status: statusCmd,
