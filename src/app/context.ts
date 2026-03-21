@@ -20,6 +20,9 @@ export async function openApp(options: OpenAppOptions = {}) {
   await ensureDbDirectory(runtimePaths.db)
   await mkdir(runtimePaths.agentsDir, {recursive: true})
   await mkdir(runtimePaths.workflowsDir, {recursive: true})
+  await mkdir(runtimePaths.workspaceMirrorsDir, {recursive: true})
+  await mkdir(runtimePaths.workspaceManifestsDir, {recursive: true})
+  await mkdir(runtimePaths.workspacesDir, {recursive: true})
   await touchRuntimeLogFiles(runtimePaths)
 
   const {db, client} = openDatabase(runtimePaths.db)

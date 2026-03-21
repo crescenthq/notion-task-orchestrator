@@ -6,6 +6,7 @@ import {
   step,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type LoopE2ECtx = {
   count: number
@@ -19,6 +20,7 @@ function createInput(
 ): PipeInput<LoopE2ECtx> {
   return {
     ctx,
+    workspace: mockPipeWorkspace,
     runId: 'run-loop-e2e-1',
     tickId,
     task: {

@@ -7,6 +7,7 @@ import {
   step,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type DecideE2ECtx = {
   score: number
@@ -20,6 +21,7 @@ function createInput(
 ): PipeInput<DecideE2ECtx> {
   return {
     ctx,
+    workspace: mockPipeWorkspace,
     runId: 'run-decide-e2e-1',
     tickId,
     task: {

@@ -1,9 +1,18 @@
 import {defineCommand} from 'citty'
+import {
+  validateWorkspaceSetup,
+  WorkspaceProvisionError,
+} from '../core/workspaceRuntime'
 import {notionToken} from '../config/env'
 import {
   ProjectConfigResolutionError,
   resolveProjectConfig,
 } from '../project/discoverConfig'
+import {
+  loadProjectConfig,
+  ProjectConfigLoadError,
+  resolveWorkspaceConfig,
+} from '../project/projectConfig'
 import {notionWhoAmI} from '../services/notion'
 
 export const doctorCmd = defineCommand({
@@ -35,9 +44,54 @@ export const doctorCmd = defineCommand({
       return
     }
 
+    let workspaceValidation
+    try {
+      const config = await loadProjectConfig(resolvedProject.configPath)
+      const workspace = await resolveWorkspaceConfig({
+        config,
+        projectRoot: resolvedProject.projectRoot,
+        configPath: resolvedProject.configPath,
+      })
+      workspaceValidation = await validateWorkspaceSetup({
+        projectRoot: resolvedProject.projectRoot,
+        workspace,
+      })
+    } catch (error) {
+      if (
+        !(
+          error instanceof ProjectConfigLoadError ||
+          error instanceof WorkspaceProvisionError
+        )
+      ) {
+        throw error
+      }
+
+      console.error(`[error] ${error.message}`)
+      process.exitCode = 1
+      return
+    }
+
     console.log('[ok] Local project config resolved')
     console.log(`Project root: ${resolvedProject.projectRoot}`)
     console.log(`Config path: ${resolvedProject.configPath}`)
+    console.log(
+      `[ok] Workspace execution: ${
+        workspaceValidation.source === 'project'
+          ? 'default project repo'
+          : 'explicit workspace override'
+      }`,
+    )
+    console.log(`Workspace repo: ${workspaceValidation.repo}`)
+    console.log(
+      `Workspace ref: ${workspaceValidation.requestedRef} -> ${workspaceValidation.ref}`,
+    )
+    console.log(`Workspace cwd: ${workspaceValidation.relativeCwd}`)
+    if (workspaceValidation.repoKind === 'remote') {
+      console.log(
+        'Workspace cwd check: remote repo contents are validated when the checkout is created',
+      )
+    }
+    console.log('[ok] Git workspace prerequisites validated')
 
     const token = notionToken()
     if (!token) {

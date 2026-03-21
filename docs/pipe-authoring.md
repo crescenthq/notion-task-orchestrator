@@ -194,13 +194,13 @@ const gitStatus = defineAgent<{cwd: string}, {stdout: string}>({
   },
 })
 
-const runPlanning = step('run-planning', async ctx => {
+const runPlanning = step('run-planning', async (ctx, input) => {
   const repo = await selectRepo.invoke({
     prompt: 'Select repository for rollout',
   })
   if (!repo.ok) return {...ctx, failure: repo.error.message}
 
-  const status = await gitStatus.invoke({cwd: process.cwd()})
+  const status = await gitStatus.invoke({cwd: input.workspace.cwd})
   if (!status.ok) return {...ctx, failure: status.error.message}
 
   return {
@@ -253,6 +253,10 @@ const betaPlanner = defineAgent<{prompt: string}, {text: string}>({
 ```
 
 ## Local Project Workflow
+
+Run the local workflow from a git repo with a valid `HEAD` commit. If the
+project itself should not be the workspace source, configure an explicit
+workspace override before running `doctor`, `tick`, or `run`.
 
 1. Initialize project structure.
 

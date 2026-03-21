@@ -13,6 +13,17 @@ import {
   type Step,
 } from 'notionflow'
 
+const workspace = {
+  root: '/tmp/notionflow-workspace',
+  cwd: '/tmp/notionflow-workspace/app',
+  ref: 'deadbeef',
+  source: {
+    mode: 'project',
+    repo: '/tmp/notionflow-source',
+    requestedRef: 'HEAD',
+  },
+} as const
+
 type WorkflowCtx = {
   score: number
   approved: boolean
@@ -20,6 +31,7 @@ type WorkflowCtx = {
 
 const input: PipeInput<WorkflowCtx> = {
   ctx: {score: 0, approved: false},
+  workspace,
   task: {id: 'task-1', title: 'Contract typing'},
   runId: 'run-1',
   tickId: 'tick-1',

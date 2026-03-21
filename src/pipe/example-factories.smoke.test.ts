@@ -4,6 +4,7 @@ import intentFactory from '../../example-factories/pipes/intent'
 import magic8Factory from '../../example-factories/pipes/magic-8'
 import sharedHelperDemo from '../../example-factories/pipes/shared-helper-demo'
 import wouldYouRatherFactory from '../../example-factories/pipes/would-you-rather'
+import type {PipeWorkspace} from './canonical'
 
 type AwaitFeedbackSignal = {
   type: 'await_feedback'
@@ -19,6 +20,17 @@ type EndSignal = {
 }
 
 type PageOutput = string | {markdown: string; body?: string}
+
+const mockWorkspace: PipeWorkspace = {
+  root: '/tmp/notionflow-workspace',
+  cwd: '/tmp/notionflow-workspace/app',
+  ref: 'deadbeef',
+  source: {
+    mode: 'project',
+    repo: '/tmp/notionflow-source',
+    requestedRef: 'HEAD',
+  },
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -61,6 +73,7 @@ describe('example pipes smoke', () => {
     const result = await expressivePrimitives.run({
       ctx: expressivePrimitives.initial,
       feedback: 'approve',
+      workspace: mockWorkspace,
       runId: 'run-expressive',
       tickId: 'tick-expressive',
       writePage: async output => {
@@ -82,6 +95,7 @@ describe('example pipes smoke', () => {
 
     const result = await sharedHelperDemo.run({
       ctx: sharedHelperDemo.initial,
+      workspace: mockWorkspace,
       runId: 'run-shared',
       tickId: 'tick-shared',
       writePage: async output => {
@@ -99,6 +113,7 @@ describe('example pipes smoke', () => {
   it('supports pause/resume in magic-8 flow', async () => {
     const first = await magic8Factory.run({
       ctx: magic8Factory.initial,
+      workspace: mockWorkspace,
       runId: 'run-magic-1',
       tickId: 'tick-magic-1',
     })
@@ -108,6 +123,7 @@ describe('example pipes smoke', () => {
     const second = await magic8Factory.run({
       ctx: firstAwait.ctx as typeof magic8Factory.initial,
       feedback: 'Will this release go smoothly?',
+      workspace: mockWorkspace,
       runId: 'run-magic-2',
       tickId: 'tick-magic-2',
     })
@@ -118,6 +134,7 @@ describe('example pipes smoke', () => {
     const third = await magic8Factory.run({
       ctx: secondAwait.ctx as typeof magic8Factory.initial,
       feedback: 'no',
+      workspace: mockWorkspace,
       runId: 'run-magic-3',
       tickId: 'tick-magic-3',
       writePage: async output => {
@@ -134,6 +151,7 @@ describe('example pipes smoke', () => {
   it('handles invalid then valid input in would-you-rather', async () => {
     const first = await wouldYouRatherFactory.run({
       ctx: wouldYouRatherFactory.initial,
+      workspace: mockWorkspace,
       runId: 'run-rather-1',
       tickId: 'tick-rather-1',
     })
@@ -143,6 +161,7 @@ describe('example pipes smoke', () => {
     const second = await wouldYouRatherFactory.run({
       ctx: firstAwait.ctx as typeof wouldYouRatherFactory.initial,
       feedback: 'maybe',
+      workspace: mockWorkspace,
       runId: 'run-rather-2',
       tickId: 'tick-rather-2',
     })
@@ -153,6 +172,7 @@ describe('example pipes smoke', () => {
     const third = await wouldYouRatherFactory.run({
       ctx: secondAwait.ctx as typeof wouldYouRatherFactory.initial,
       feedback: 'A',
+      workspace: mockWorkspace,
       runId: 'run-rather-3',
       tickId: 'tick-rather-3',
       writePage: async output => {
@@ -169,6 +189,7 @@ describe('example pipes smoke', () => {
   it('captures an intent brief and completes in one reviewed pass', async () => {
     const first = await intentFactory.run({
       ctx: intentFactory.initial,
+      workspace: mockWorkspace,
       runId: 'run-intent-1',
       tickId: 'tick-intent-1',
     })
@@ -180,6 +201,7 @@ describe('example pipes smoke', () => {
       ctx: awaitIntent.ctx as typeof intentFactory.initial,
       feedback:
         'repo=https://github.com/notionflow/example.git; feature=Add a clear progress dashboard for task runs.; decision=approve',
+      workspace: mockWorkspace,
       runId: 'run-intent-2',
       tickId: 'tick-intent-2',
       writePage: async output => {

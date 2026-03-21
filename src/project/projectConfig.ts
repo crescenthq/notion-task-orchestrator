@@ -1,31 +1,70 @@
+import {execFile} from 'node:child_process'
 import path from 'node:path'
-import {access, constants, readdir, stat} from 'node:fs/promises'
+import {access, constants, readdir, realpath, stat} from 'node:fs/promises'
 import {pathToFileURL} from 'node:url'
 import {z} from 'zod'
 import {loadPipeFromPath} from '../core/pipe'
 import type {LoadedPipeDefinition} from '../core/pipe'
 
 const pipeDeclarationSchema = z.string().trim().min(1)
+const workspaceCleanupPolicySchema = z.enum(['on-success', 'never'])
+const workspaceConfigObjectSchema = z
+  .object({
+    repo: z.string().trim().min(1).optional(),
+    ref: z.string().trim().min(1).optional(),
+    cwd: z.string().trim().min(1).optional(),
+    cleanup: workspaceCleanupPolicySchema.optional(),
+  })
+  .strict()
+const workspaceConfigInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .or(workspaceConfigObjectSchema)
 
 const projectConfigInputSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
     pipes: z.array(pipeDeclarationSchema).optional(),
+    workspace: workspaceConfigInputSchema.optional(),
   })
   .strict()
 
 const projectConfigSchema = projectConfigInputSchema.transform(config => ({
   name: config.name,
   pipes: config.pipes ?? [],
+  workspace: normalizeWorkspaceConfig(config.workspace),
 }))
 
 const DEFAULT_PIPE_DIRECTORY = './pipes'
+export const DEFAULT_WORKSPACE_REF = 'HEAD'
+export const DEFAULT_WORKSPACE_CWD = '.'
+export const DEFAULT_WORKSPACE_CLEANUP = 'on-success' as const
 const PIPE_MODULE_FILE_PATTERN =
   /^(?!.*\.d\.(?:cts|mts|ts)$).+\.(?:cts|mts|ts|cjs|mjs|js)$/
 
 export type PipeDeclaration = z.output<typeof pipeDeclarationSchema>
+export type WorkspaceCleanupPolicy = z.output<
+  typeof workspaceCleanupPolicySchema
+>
+export type WorkspaceConfigInput = z.input<typeof workspaceConfigInputSchema>
 export type ProjectConfigInput = z.input<typeof projectConfigInputSchema>
 export type ProjectConfig = z.output<typeof projectConfigSchema>
+export type WorkspaceConfig = {
+  repo?: string
+  ref: string
+  cwd: string
+  cleanup: WorkspaceCleanupPolicy
+}
+export type ResolvedWorkspaceSource = 'project' | 'repo'
+export type ResolvedWorkspaceConfig = {
+  source: ResolvedWorkspaceSource
+  repo: string
+  checkoutBase: string
+  ref: string
+  cwd: string
+  cleanup: WorkspaceCleanupPolicy
+}
 
 export type LoadedDeclaredPipe = {
   declaredSource: string
@@ -59,6 +98,10 @@ export function defineConfig(config: ProjectConfigInput): ProjectConfigInput {
   return config
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function loadProjectConfig(
   configPath: string,
 ): Promise<ProjectConfig> {
@@ -71,7 +114,7 @@ export async function loadProjectConfig(
     const mod = await import(configModuleUrl.href)
     loaded = (mod as {default?: unknown}).default
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = getErrorMessage(error)
     throw new ProjectConfigLoadError(
       `Failed to load project config module: ${resolvedConfigPath}\n${reason}`,
       resolvedConfigPath,
@@ -80,21 +123,40 @@ export async function loadProjectConfig(
 
   const parsed = projectConfigSchema.safeParse(loaded)
   if (!parsed.success) {
-    const details = parsed.error.issues
-      .map(issue => {
-        const issuePath =
-          issue.path.length > 0 ? issue.path.join('.') : '<root>'
-        return `${issuePath}: ${issue.message}`
-      })
-      .join('\n')
-
     throw new ProjectConfigLoadError(
-      `Invalid project config: ${resolvedConfigPath}\n${details}`,
+      [
+        `Invalid project config: ${resolvedConfigPath}`,
+        formatProjectConfigIssues(parsed.error),
+      ].join('\n'),
       resolvedConfigPath,
     )
   }
 
   return parsed.data
+}
+
+export async function resolveWorkspaceConfig(options: {
+  config: ProjectConfig
+  projectRoot: string
+  configPath: string
+}): Promise<ResolvedWorkspaceConfig> {
+  const resolvedProjectRoot = path.resolve(options.projectRoot)
+  const resolvedConfigPath = path.resolve(options.configPath)
+  const explicitRepo = options.config.workspace.repo
+  const resolvedLocation = explicitRepo
+    ? resolveExplicitWorkspaceLocation(explicitRepo, resolvedConfigPath)
+    : await resolveProjectWorkspaceLocation({
+        projectRoot: resolvedProjectRoot,
+        configPath: resolvedConfigPath,
+      })
+
+  return {
+    source: explicitRepo ? 'repo' : 'project',
+    ref: options.config.workspace.ref,
+    cwd: options.config.workspace.cwd,
+    cleanup: options.config.workspace.cleanup,
+    ...resolvedLocation,
+  }
 }
 
 export async function resolvePipePaths(
@@ -170,7 +232,7 @@ export async function loadDeclaredPipes(options: {
         throw error
       }
 
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = getErrorMessage(error)
       throw new ProjectConfigLoadError(
         [
           `Failed loading declared pipe path: ${declaredSource}`,
@@ -330,4 +392,199 @@ function dedupeResolvedPipePaths(
 
 function toPortableRelativePath(from: string, to: string): string {
   return path.relative(from, to).split(path.sep).join('/')
+}
+
+function normalizeWorkspaceConfig(
+  workspace: WorkspaceConfigInput | undefined,
+): WorkspaceConfig {
+  if (typeof workspace === 'string') {
+    return createWorkspaceConfig({repo: workspace})
+  }
+
+  if (!workspace) {
+    return createWorkspaceConfig()
+  }
+
+  return createWorkspaceConfig(workspace)
+}
+
+function createWorkspaceConfig(workspace: Partial<WorkspaceConfig> = {}) {
+  return workspace.repo
+    ? {
+        repo: workspace.repo,
+        ref: workspace.ref ?? DEFAULT_WORKSPACE_REF,
+        cwd: workspace.cwd ?? DEFAULT_WORKSPACE_CWD,
+        cleanup: workspace.cleanup ?? DEFAULT_WORKSPACE_CLEANUP,
+      }
+    : {
+        ref: workspace.ref ?? DEFAULT_WORKSPACE_REF,
+        cwd: workspace.cwd ?? DEFAULT_WORKSPACE_CWD,
+        cleanup: workspace.cleanup ?? DEFAULT_WORKSPACE_CLEANUP,
+      }
+}
+
+function formatProjectConfigIssues(error: z.ZodError): string {
+  const issues = flattenProjectConfigIssues(error.issues)
+  const seenIssues = new Set<string>()
+  const lines: string[] = []
+
+  for (const issue of issues) {
+    const issuePath =
+      issue.path.length > 0 ? issue.path.map(String).join('.') : '<root>'
+    const line = `${issuePath}: ${issue.message}`
+    if (seenIssues.has(line)) {
+      continue
+    }
+
+    seenIssues.add(line)
+    lines.push(line)
+  }
+
+  return lines.join('\n')
+}
+
+function flattenProjectConfigIssues(
+  issues: z.ZodIssue[],
+  parentPath: PropertyKey[] = [],
+): Array<{path: PropertyKey[]; message: string}> {
+  const flattened: Array<{path: PropertyKey[]; message: string}> = []
+
+  for (const issue of issues) {
+    const issuePath = [...parentPath, ...issue.path]
+    if (issue.code === 'invalid_union') {
+      flattened.push(
+        ...issue.errors.flatMap(branch =>
+          flattenProjectConfigIssues(branch, issuePath),
+        ),
+      )
+      continue
+    }
+
+    flattened.push({path: issuePath, message: issue.message})
+  }
+
+  return flattened
+}
+
+async function resolveProjectRepoRoot(options: {
+  projectRoot: string
+  configPath: string
+}): Promise<string> {
+  try {
+    const repoRoot = await runGitCommand(
+      ['-C', options.projectRoot, 'rev-parse', '--show-toplevel'],
+      options.projectRoot,
+    )
+    if (repoRoot.length === 0) {
+      throw new Error('git did not report a repository root.')
+    }
+
+    return path.resolve(repoRoot)
+  } catch (error) {
+    const reason = getErrorMessage(error)
+    throw new ProjectConfigLoadError(
+      [
+        `Invalid project config: ${options.configPath}`,
+        'workspace: default workspace mode requires the project root to be inside a git repo',
+        `projectRoot: ${options.projectRoot}`,
+        `git: ${reason}`,
+      ].join('\n'),
+      options.configPath,
+    )
+  }
+}
+
+async function resolveProjectWorkspaceLocation(options: {
+  projectRoot: string
+  configPath: string
+}): Promise<{
+  repo: string
+  checkoutBase: string
+}> {
+  const repo = await resolveProjectRepoRoot(options)
+  const canonicalRepo = await realpath(repo).catch(() => repo)
+  const canonicalProjectRoot = await realpath(options.projectRoot).catch(
+    () => options.projectRoot,
+  )
+  return {
+    repo: canonicalRepo,
+    checkoutBase: resolveWorkspaceCheckoutBase({
+      repoRoot: canonicalRepo,
+      projectRoot: canonicalProjectRoot,
+      configPath: options.configPath,
+    }),
+  }
+}
+
+function resolveExplicitWorkspaceLocation(repo: string, configPath: string): {
+  repo: string
+  checkoutBase: string
+} {
+  return {
+    repo: assertWorkspaceRepoUrl(repo, configPath),
+    checkoutBase: '.',
+  }
+}
+
+function resolveWorkspaceCheckoutBase(options: {
+  repoRoot: string
+  projectRoot: string
+  configPath: string
+}): string {
+  const relativeProjectRoot = path.relative(
+    options.repoRoot,
+    options.projectRoot,
+  )
+  if (
+    relativeProjectRoot.startsWith('..') ||
+    path.isAbsolute(relativeProjectRoot)
+  ) {
+    throw new ProjectConfigLoadError(
+      [
+        `Invalid project config: ${options.configPath}`,
+        'workspace: resolved project root must stay inside the resolved git repo',
+        `projectRoot: ${options.projectRoot}`,
+        `repoRoot: ${options.repoRoot}`,
+      ].join('\n'),
+      options.configPath,
+    )
+  }
+
+  return relativeProjectRoot.length > 0
+    ? toPortableRelativePath(options.repoRoot, options.projectRoot)
+    : '.'
+}
+
+function assertWorkspaceRepoUrl(repo: string, configPath: string): string {
+  if (looksLikeGitUrl(repo)) {
+    return repo
+  }
+
+  throw new ProjectConfigLoadError(
+    [
+      `Invalid project config: ${configPath}`,
+      'workspace: explicit workspace overrides must use a git URL',
+      `repo: ${repo}`,
+    ].join('\n'),
+    configPath,
+  )
+}
+
+function looksLikeGitUrl(repo: string): boolean {
+  return (
+    /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
+  )
+}
+
+function runGitCommand(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }

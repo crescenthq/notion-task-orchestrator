@@ -11,11 +11,20 @@ import {
   parseCheckpoint,
 } from '../pipe/checkpoint'
 import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
+import type {PipeWorkspace} from '../pipe/canonical'
 import {
   type ResolvedProjectConfig,
   resolveProjectConfig,
 } from '../project/discoverConfig'
-import {loadDeclaredPipes} from '../project/projectConfig'
+import {
+  DEFAULT_WORKSPACE_CLEANUP,
+  DEFAULT_WORKSPACE_CWD,
+  DEFAULT_WORKSPACE_REF,
+  loadDeclaredPipes,
+  loadProjectConfig,
+  type ResolvedWorkspaceConfig,
+  resolveWorkspaceConfig,
+} from '../project/projectConfig'
 import {formatStatusLabel} from '../services/statusIcons'
 import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
 import {parseRunTrace, type RunTraceReasonCode} from './runTraces'
@@ -25,6 +34,13 @@ import {
   type TaskBoardAdapter,
   type TaskBoardState,
 } from './taskBoardAdapter'
+import {
+  cleanupRunWorkspace,
+  loadRunWorkspaceForResume,
+  type ProvisionedRunWorkspace,
+  pruneWorkspaceArtifacts,
+  provisionRunWorkspace,
+} from './workspaceRuntime'
 
 type JsonObject = Record<string, unknown>
 
@@ -191,6 +207,130 @@ function normalizeRuntimeRunOptions(
   return {maxTransitionsPerTick, leaseMs, leaseMode, workerId}
 }
 
+function resolveRuntimeStartDir(options: RuntimeRunOptions): string {
+  if (options.startDir !== undefined) {
+    return options.startDir
+  }
+
+  const projectRootOverride = process.env.NOTIONFLOW_PROJECT_ROOT?.trim()
+  return projectRootOverride && projectRootOverride.length > 0
+    ? projectRootOverride
+    : process.cwd()
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function pruneWorkspaceArtifactsBestEffort(options: {
+  paths: Awaited<ReturnType<typeof openApp>>['paths']
+  projectRoot: string
+}): Promise<void> {
+  try {
+    await pruneWorkspaceArtifacts(options)
+  } catch (error) {
+    const message = getErrorMessage(error)
+    console.log(`[warn] failed to prune workspace artifacts: ${message}`)
+  }
+}
+
+async function provisionRuntimeWorkspace(options: {
+  paths: Awaited<ReturnType<typeof openApp>>['paths']
+  projectConfig: ResolvedProjectConfig | null
+  runId: string
+  resume: boolean
+}): Promise<{
+  cleanup: ResolvedWorkspaceConfig['cleanup']
+  workspace: PipeWorkspace
+}> {
+  const projectRoot =
+    options.projectConfig?.projectRoot ?? options.paths.projectRoot
+  await pruneWorkspaceArtifactsBestEffort({
+    paths: options.paths,
+    projectRoot,
+  })
+  if (options.resume) {
+    const provisioned = await loadRunWorkspaceForResume({
+      paths: options.paths,
+      projectRoot,
+      runId: options.runId,
+    })
+
+    return {
+      cleanup: provisioned.cleanup,
+      workspace: createPipeWorkspaceHandle(provisioned),
+    }
+  }
+
+  const workspace = options.projectConfig
+    ? await resolveConfiguredRuntimeWorkspace(options.projectConfig)
+    : createDefaultRuntimeWorkspace(projectRoot)
+
+  const provisioned = await provisionRunWorkspace({
+    paths: options.paths,
+    projectRoot,
+    workspace,
+    runId: options.runId,
+    resume: options.resume,
+  })
+
+  return {
+    cleanup: workspace.cleanup,
+    workspace: createPipeWorkspaceHandle(provisioned),
+  }
+}
+
+async function resolveConfiguredRuntimeWorkspace(
+  projectConfig: ResolvedProjectConfig,
+): Promise<ResolvedWorkspaceConfig> {
+  const config = await loadProjectConfig(projectConfig.configPath)
+  return resolveWorkspaceConfig({
+    config,
+    projectRoot: projectConfig.projectRoot,
+    configPath: projectConfig.configPath,
+  })
+}
+
+function createDefaultRuntimeWorkspace(
+  projectRoot: string,
+): ResolvedWorkspaceConfig {
+  return {
+    source: 'project',
+    repo: projectRoot,
+    checkoutBase: '.',
+    ref: DEFAULT_WORKSPACE_REF,
+    cwd: DEFAULT_WORKSPACE_CWD,
+    cleanup: DEFAULT_WORKSPACE_CLEANUP,
+  }
+}
+
+function createPipeWorkspaceHandle(
+  provisioned: ProvisionedRunWorkspace,
+): PipeWorkspace {
+  return {
+    root: provisioned.root,
+    cwd: provisioned.cwd,
+    ref: provisioned.ref,
+    source: {
+      mode: provisioned.source,
+      repo: provisioned.repo,
+      requestedRef: provisioned.requestedRef,
+    },
+  }
+}
+
+function selectMostRecentOpenRun<
+  T extends {updatedAt: string; createdAt: string},
+>(openRuns: T[]): T | undefined {
+  return [...openRuns]
+    .sort((left, right) => {
+      const updatedAtComparison = left.updatedAt.localeCompare(right.updatedAt)
+      if (updatedAtComparison !== 0) return updatedAtComparison
+      return left.createdAt.localeCompare(right.createdAt)
+    })
+    .at(-1)
+}
+
 function leaseExpiryIso(leaseMs: number): string {
   return new Date(Date.now() + leaseMs).toISOString()
 }
@@ -261,7 +401,7 @@ export async function runPipeTaskByExternalId(
   options: RuntimeRunOptions = {},
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options)
-  const startDir = options.startDir ?? process.cwd()
+  const startDir = resolveRuntimeStartDir(options)
   const {db, paths} = await openApp({
     startDir,
     configPath: options.configPath,
@@ -410,16 +550,11 @@ export async function runPipeTaskByExternalId(
   let currentStateId = task.currentStepId ? task.currentStepId : initialStateId
   const resumed = task.currentStepId !== null || task.stepVarsJson !== null
 
-  const [activeRun] = await db
+  const openRuns = await db
     .select()
     .from(runs)
-    .where(
-      and(
-        eq(runs.taskId, task.id),
-        isNull(runs.endedAt),
-        eq(runs.status, 'running'),
-      ),
-    )
+    .where(and(eq(runs.taskId, task.id), isNull(runs.endedAt)))
+  const activeRun = selectMostRecentOpenRun(openRuns)
   const runId = activeRun?.id ?? crypto.randomUUID()
   const now = nowIso()
   if (!activeRun) {
@@ -507,6 +642,7 @@ export async function runPipeTaskByExternalId(
   let leaseRenewalError: Error | null = null
   let leaseHeartbeatTimer: NodeJS.Timeout | null = null
   let leaseHeartbeatInFlight: Promise<void> | null = null
+  let workspaceCleanupPolicy: ResolvedWorkspaceConfig['cleanup'] = 'on-success'
 
   const asError = (error: unknown): Error =>
     error instanceof Error ? error : new Error(String(error))
@@ -630,6 +766,25 @@ export async function runPipeTaskByExternalId(
         ? 'Pipe reached terminal done state.'
         : String(ctx.last_error ?? 'no detail'),
     )
+  }
+
+  const cleanupSuccessfulRunWorkspace = async (): Promise<void> => {
+    if (workspaceCleanupPolicy !== 'on-success') {
+      return
+    }
+
+    try {
+      await cleanupRunWorkspace({
+        paths,
+        projectRoot: resolvedProjectConfig?.projectRoot ?? paths.projectRoot,
+        runId,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(
+        `[warn] failed to cleanup successful run workspace (${runId}): ${message}`,
+      )
+    }
   }
 
   const failRun = async (message: string): Promise<never> => {
@@ -819,6 +974,14 @@ export async function runPipeTaskByExternalId(
 
     let result: unknown
     try {
+      const provisionedWorkspace = await provisionRuntimeWorkspace({
+        paths,
+        projectConfig: resolvedProjectConfig,
+        runId,
+        resume: resumed,
+      })
+      workspaceCleanupPolicy = provisionedWorkspace.cleanup
+
       const runPipe = async (
         checkpoint: Checkpoint | undefined,
       ): Promise<unknown> =>
@@ -832,6 +995,7 @@ export async function runPipeTaskByExternalId(
             prompt: taskPrompt,
             context: taskContext,
           },
+          workspace: provisionedWorkspace.workspace,
           writePage,
           onStepStart: onPipeStepStart,
           runId,
@@ -965,6 +1129,9 @@ export async function runPipeTaskByExternalId(
       )
       currentStateId = transitionMeta.toStateId
       await finalizeRun(result.status)
+      if (result.status === 'done') {
+        await cleanupSuccessfulRunWorkspace()
+      }
       console.log(`Task run complete: ${result.status}`)
       return
     }
@@ -986,6 +1153,7 @@ export async function runPipeTaskByExternalId(
     )
     currentStateId = PIPE_DONE_STATE_ID
     await finalizeRun('done')
+    await cleanupSuccessfulRunWorkspace()
     console.log('Task run complete: done')
     return
   } catch (error) {
