@@ -1,0 +1,31 @@
+src/core/pipe.ts
+  99fd675ab4c85e3f 4,10
+src/index.ts
+  99fd675ab4c85e3f 16-17
+src/core/pipeRuntime.ts
+  99fd675ab4c85e3f 3,14,19-23,34-38,74-153,159-214,419,435-438,573,786,829,896-920,922-935,937,962,969,976,1035
+src/core/pipeRuntime.test.ts
+  99fd675ab4c85e3f 1-2,5,13,15-57,59,62-69,74-75,80,85,139,206-428
+src/pipe/canonical.ts
+  99fd675ab4c85e3f 51-62,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "b3e07cd2fdf25fd13d7d11f843d9a8394ee03edb",
+  "prompts": {
+    "99fd675ab4c85e3f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d10d7-45f2-7740-bd35-eaa34a573953",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 510,
+      "total_deletions": 15,
+      "accepted_lines": 509,
+      "overriden_lines": 0
+    }
+  }
+}
