@@ -760,7 +760,7 @@ export default definePipe({
       .update(schema.tasks)
       .set({
         state: 'blocked',
-        lastError: 'factory_mismatch: local=alpha remote=beta task=page-1',
+        lastError: 'pipe_mismatch: local=alpha remote=beta task=page-1',
         updatedAt: new Date().toISOString(),
       })
       .where(eq(schema.tasks.externalTaskId, externalTaskId))

@@ -59,7 +59,7 @@ const PIPE_BLOCKED_STATE_ID = '__pipe_blocked__'
 const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
-const OWNERSHIP_QUARANTINE_PREFIXES = ['factory_mismatch:', 'factory_invalid:']
+const OWNERSHIP_QUARANTINE_PREFIXES = ['pipe_mismatch:', 'pipe_invalid:']
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
