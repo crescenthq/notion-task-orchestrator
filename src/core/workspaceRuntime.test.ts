@@ -21,6 +21,7 @@ import {
   cleanupRunWorkspace,
   provisionRunWorkspace,
   pruneWorkspaceArtifacts,
+  validateWorkspaceSetup,
 } from './workspaceRuntime'
 
 const fixtures: string[] = []
@@ -162,6 +163,99 @@ describe('workspaceRuntime', () => {
     expect(
       await readFile(path.join(provisioned.cwd, 'service.txt'), 'utf8'),
     ).toBe('feature branch\n')
+  })
+
+  it('validates project workspaces without creating mirrors or run worktrees', async () => {
+    const repoRoot = await createFixture(
+      'notionflow-workspace-runtime-validate-project-',
+    )
+    await initGitRepo(repoRoot)
+
+    const projectRoot = path.join(repoRoot, 'packages', 'app')
+    await mkdir(path.join(projectRoot, 'docs'), {recursive: true})
+    await writeFile(
+      path.join(projectRoot, 'docs', 'guide.md'),
+      'workspace validation\n',
+      'utf8',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      [
+        'export default {',
+        '  workspace: {',
+        '    cwd: "docs",',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+    const head = await commitAll(repoRoot, 'workspace validation project')
+
+    const config = await loadProjectConfig(configPath)
+    const workspace = await resolveWorkspaceConfig({
+      config,
+      projectRoot,
+      configPath,
+    })
+    const runtimePaths = resolveRuntimePaths(projectRoot)
+
+    await expect(
+      validateWorkspaceSetup({
+        projectRoot,
+        workspace,
+      }),
+    ).resolves.toEqual({
+      source: 'project',
+      repo: await realpath(repoRoot),
+      repoKind: 'local',
+      requestedRef: 'HEAD',
+      ref: head,
+      relativeCwd: 'packages/app/docs',
+    })
+
+    expect(await pathExists(runtimePaths.workspaceMirrorsDir)).toBe(false)
+    expect(await pathExists(runtimePaths.workspaceManifestsDir)).toBe(false)
+    expect(await pathExists(runtimePaths.workspacesDir)).toBe(false)
+  })
+
+  it('validates explicit remote repo shorthands without provisioning a checkout', async () => {
+    const sourceRepo = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-source-',
+    )
+    await initGitRepo(sourceRepo)
+    await mkdir(path.join(sourceRepo, 'packages', 'api'), {recursive: true})
+    await writeFile(
+      path.join(sourceRepo, 'packages', 'api', 'service.txt'),
+      'remote validation\n',
+      'utf8',
+    )
+    const head = await commitAll(sourceRepo, 'workspace validation remote')
+
+    const projectRoot = await createFixture(
+      'notionflow-workspace-runtime-validate-remote-project-',
+    )
+    const workspace = createExplicitWorkspaceConfig(
+      `file://${await realpath(sourceRepo)}`,
+    )
+
+    await expect(
+      validateWorkspaceSetup({
+        projectRoot,
+        workspace: {
+          ...workspace,
+          cwd: 'packages/api',
+        },
+      }),
+    ).resolves.toEqual({
+      source: 'repo',
+      repo: `file://${await realpath(sourceRepo)}`,
+      repoKind: 'remote',
+      requestedRef: 'HEAD',
+      ref: head,
+      relativeCwd: 'packages/api',
+    })
   })
 
   it('fails fast when the configured explicit repo is not a git repository', async () => {
@@ -355,7 +449,11 @@ async function createFixture(prefix: string): Promise<string> {
 function createExplicitWorkspaceConfig(repo: string): ResolvedWorkspaceConfig {
   return {
     source: 'repo',
-    repo: path.resolve(repo),
+    repo:
+      /^[a-z][a-z\d+.-]*:\/\//i.test(repo) ||
+      /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
+        ? repo
+        : path.resolve(repo),
     ref: 'HEAD',
     cwd: '.',
     cleanup: 'on-success',

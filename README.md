@@ -7,6 +7,11 @@ Project-local orchestration CLI and typed library for running TypeScript
 
 NotionFlow runs inside your project directory.
 
+Default execution is git-backed: when `workspace` is omitted, each run gets an
+isolated checkout from the git repo containing `notionflow.config.ts`.
+Run NotionFlow from an existing git checkout with a valid `HEAD` commit, or set
+an explicit workspace override.
+
 Each project contains:
 
 - `notionflow.config.ts`
@@ -22,6 +27,8 @@ declarations in `notionflow.config.ts`.
 - `NOTION_API_TOKEN`
 
 ## Quickstart
+
+Run this from a git repo that already has a valid `HEAD` commit.
 
 ```bash
 # 1) Initialize a local project
@@ -81,6 +88,46 @@ Pipe discovery stays deterministic:
 - Missing explicit paths fail fast with diagnostics
 - Duplicate pipe IDs fail startup with conflict diagnostics
 
+## Workspace Config
+
+NotionFlow supports three workspace forms:
+
+1. Omit `workspace` to use the git repo containing the resolved project root.
+
+```ts
+import {defineConfig} from 'notionflow'
+
+export default defineConfig({})
+```
+
+2. Use a string to point at an explicit local repo path or remote repo URL.
+
+```ts
+import {defineConfig} from 'notionflow'
+
+export default defineConfig({
+  workspace: '../service-repo',
+})
+```
+
+3. Use an object when you need repo, ref, cwd, or cleanup overrides.
+
+```ts
+import {defineConfig} from 'notionflow'
+
+export default defineConfig({
+  workspace: {
+    repo: 'https://github.com/acme/service.git',
+    ref: 'main',
+    cwd: 'packages/api',
+    cleanup: 'never',
+  },
+})
+```
+
+`notionflow doctor` reports which mode will be used before `tick` or `run`
+creates a run workspace.
+
 ## Runtime Artifacts
 
 NotionFlow writes runtime state under `.notionflow/`:
@@ -88,6 +135,9 @@ NotionFlow writes runtime state under `.notionflow/`:
 - `.notionflow/notionflow.db`
 - `.notionflow/runtime.log`
 - `.notionflow/errors.log`
+- `.notionflow/workspace-mirrors/`
+- `.notionflow/workspace-manifests/`
+- `.notionflow/workspaces/`
 
 ## Core Commands
 

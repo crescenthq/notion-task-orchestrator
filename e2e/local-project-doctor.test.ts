@@ -1,5 +1,6 @@
-import {mkdir, realpath} from 'node:fs/promises'
-import {spawn} from 'node:child_process'
+import {execFile, spawn} from 'node:child_process'
+import {existsSync} from 'node:fs'
+import {mkdir, realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
 import {
@@ -29,6 +30,13 @@ describe('local project doctor', () => {
     fixtures.push(fixture)
 
     await execCli(['init'], fixture.projectDir)
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      'export default {};\n',
+      'utf8',
+    )
+    await initGitRepo(fixture.projectDir)
+    await commitAll(fixture.projectDir, 'doctor project fixture')
 
     const nestedDir = path.join(fixture.projectDir, 'nested', 'child')
     await mkdir(nestedDir, {recursive: true})
@@ -39,6 +47,14 @@ describe('local project doctor', () => {
     expect(doctorOutput).toContain(
       `Config path: ${path.join(canonicalProjectRoot, 'notionflow.config.ts')}`,
     )
+    expect(doctorOutput).toContain(
+      'Workspace execution: default project repo',
+    )
+    expect(doctorOutput).toContain(`Workspace repo: ${canonicalProjectRoot}`)
+    expect(doctorOutput).toContain('Workspace cwd: .')
+    expect(
+      existsSync(path.join(fixture.projectDir, '.notionflow', 'workspaces')),
+    ).toBe(false)
 
     const after = await snapshotGlobalNotionflowWrites()
     assertNoNewGlobalNotionflowWrites(before, after)
@@ -52,6 +68,13 @@ describe('local project doctor', () => {
     fixtures.push(outsider)
 
     await execCli(['init'], fixture.projectDir)
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      'export default {};\n',
+      'utf8',
+    )
+    await initGitRepo(fixture.projectDir)
+    await commitAll(fixture.projectDir, 'doctor config override fixture')
 
     const canonicalProjectRoot = await realpath(fixture.projectDir)
     const configPath = path.join(canonicalProjectRoot, 'notionflow.config.ts')
@@ -61,6 +84,52 @@ describe('local project doctor', () => {
     )
     expect(doctorOutput).toContain(`Project root: ${canonicalProjectRoot}`)
     expect(doctorOutput).toContain(`Config path: ${configPath}`)
+    expect(doctorOutput).toContain(
+      'Workspace execution: default project repo',
+    )
+
+    const after = await snapshotGlobalNotionflowWrites()
+    assertNoNewGlobalNotionflowWrites(before, after)
+  })
+
+  it('reports explicit workspace overrides from projects outside git repos', async () => {
+    const before = await snapshotGlobalNotionflowWrites()
+    const sourceRepo = await createTempProjectFixture('notionflow-e2e-source-')
+    fixtures.push(sourceRepo)
+    const project = await createTempProjectFixture('notionflow-e2e-explicit-')
+    fixtures.push(project)
+
+    await initGitRepo(sourceRepo.projectDir)
+    await writeFile(
+      path.join(sourceRepo.projectDir, 'README.md'),
+      'explicit workspace source\n',
+      'utf8',
+    )
+    await commitAll(sourceRepo.projectDir, 'explicit workspace source')
+
+    await execCli(['init'], project.projectDir)
+    await writeFile(
+      path.join(project.projectDir, 'notionflow.config.ts'),
+      [
+        'export default {',
+        `  workspace: ${JSON.stringify(sourceRepo.projectDir)},`,
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const doctorOutput = await execCli(['doctor'], project.projectDir)
+    expect(doctorOutput).toContain(
+      'Workspace execution: explicit workspace override',
+    )
+    expect(doctorOutput).toContain(
+      `Workspace repo: ${await realpath(sourceRepo.projectDir)}`,
+    )
+    expect(doctorOutput).toContain('Workspace cwd: .')
+    expect(
+      existsSync(path.join(project.projectDir, '.notionflow', 'workspaces')),
+    ).toBe(false)
 
     const after = await snapshotGlobalNotionflowWrites()
     assertNoNewGlobalNotionflowWrites(before, after)
@@ -79,6 +148,17 @@ describe('local project doctor', () => {
     expect(result.stderr).toContain(`Start directory: ${canonicalStartDir}`)
   })
 })
+
+async function initGitRepo(repoRoot: string): Promise<void> {
+  await runGit(['init'], repoRoot)
+  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
+  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+}
+
+async function commitAll(repoRoot: string, message: string): Promise<void> {
+  await runGit(['add', '.'], repoRoot)
+  await runGit(['commit', '-m', message], repoRoot)
+}
 
 async function execCli(args: string[], cwd: string): Promise<string> {
   const result = await execCliRaw(args, cwd)
@@ -131,4 +211,17 @@ async function execCliRaw(
       })
     },
   )
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }

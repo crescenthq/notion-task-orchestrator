@@ -57,7 +57,38 @@ Validate project resolution and Notion auth.
 notionflow doctor [--config <path>]
 ```
 
-Prints resolved project root and config path.
+Prints resolved project root and config path, reports whether execution will use
+the default project repo or an explicit workspace override, and validates git
+workspace prerequisites without creating a run worktree.
+
+## Workspace Config
+
+`notionflow.config.ts` supports three workspace forms:
+
+1. Omit `workspace` to use the git repo containing the resolved project root.
+2. Set `workspace` to a string for an explicit local repo path or remote repo
+   URL.
+3. Set `workspace` to an object when you need `repo`, `ref`, `cwd`, or
+   `cleanup` overrides.
+
+Examples:
+
+```ts
+export default {
+  workspace: '../service-repo',
+}
+```
+
+```ts
+export default {
+  workspace: {
+    repo: 'https://github.com/acme/service.git',
+    ref: 'main',
+    cwd: 'packages/api',
+    cleanup: 'never',
+  },
+}
+```
 
 ### `tick`
 
@@ -193,8 +224,14 @@ All runtime artifacts are project-local:
 - `<project-root>/.notionflow/notionflow.db`
 - `<project-root>/.notionflow/runtime.log`
 - `<project-root>/.notionflow/errors.log`
+- `<project-root>/.notionflow/workspace-mirrors/`
+- `<project-root>/.notionflow/workspace-manifests/`
+- `<project-root>/.notionflow/workspaces/`
 
 ## Quickstart Sequence
+
+Run the quickstart from a git repo with a valid `HEAD` commit, or configure an
+explicit workspace override first.
 
 ```bash
 notionflow init

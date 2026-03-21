@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process'
+import {execFile, spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
 import {mkdir, symlink} from 'node:fs/promises'
 import {realpath, writeFile} from 'node:fs/promises'
@@ -47,6 +47,7 @@ if (liveSuiteEnabled) {
       fixture = await createTempProjectFixture('notionflow-docs-live-')
 
       await execCli(['init'], fixture.projectDir)
+      await initGitRepo(fixture.projectDir)
       await ensureNotionflowDependencyAvailable(fixture.projectDir)
       await execCli(['pipe', 'create', '--id', 'docs-live'], fixture.projectDir)
 
@@ -60,12 +61,16 @@ if (liveSuiteEnabled) {
         docsFactorySource(),
         'utf8',
       )
+      await commitAll(fixture.projectDir, 'docs quickstart fixture')
 
       const doctor = await execCli(['doctor'], fixture.projectDir)
       const resolvedProjectRoot = await realpath(fixture.projectDir)
       expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
       expect(doctor.stdout).toContain(
         `Config path: ${path.join(resolvedProjectRoot, 'notionflow.config.ts')}`,
+      )
+      expect(doctor.stdout).toContain(
+        'Workspace execution: default project repo',
       )
 
       const board = await resolveSharedBoardConnection()
@@ -224,6 +229,30 @@ function docsFactorySource(): string {
     '});',
     '',
   ].join('\n')
+}
+
+async function initGitRepo(repoRoot: string): Promise<void> {
+  await runGit(['init'], repoRoot)
+  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
+  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+}
+
+async function commitAll(repoRoot: string, message: string): Promise<void> {
+  await runGit(['add', '.'], repoRoot)
+  await runGit(['commit', '-m', message], repoRoot)
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }
 
 async function ensureWorkflowRegistered(

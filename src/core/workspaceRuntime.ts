@@ -53,6 +53,15 @@ export type PruneWorkspaceArtifactsOptions = {
   projectRoot: string
 }
 
+export type ValidatedWorkspaceSetup = {
+  source: ResolvedWorkspaceConfig['source']
+  repo: string
+  repoKind: 'local' | 'remote'
+  requestedRef: string
+  ref: string
+  relativeCwd: string
+}
+
 export class WorkspaceProvisionError extends Error {
   constructor(message: string) {
     super(message)
@@ -178,6 +187,70 @@ export async function cleanupRunWorkspace(
   return true
 }
 
+export async function validateWorkspaceSetup(options: {
+  projectRoot: string
+  workspace: ResolvedWorkspaceConfig
+}): Promise<ValidatedWorkspaceSetup> {
+  const projectRoot = path.resolve(options.projectRoot)
+  const canonicalProjectRoot = await realpath(projectRoot).catch(
+    () => projectRoot,
+  )
+
+  await ensureGitCliAvailable(projectRoot)
+
+  const sourceRepo = await resolveWorkspaceSourceRepo({
+    repo: options.workspace.repo,
+    projectRoot,
+  })
+
+  const relativeCwd = resolveValidatedRelativeWorkspaceCwd({
+    repoRoot:
+      options.workspace.source === 'project'
+        ? sourceRepo
+        : undefined,
+    projectRoot: canonicalProjectRoot,
+    workspace: options.workspace,
+  })
+
+  if (looksLikeRemoteRepoSpecifier(sourceRepo)) {
+    const ref = await resolveRemoteWorkspaceRef({
+      requestedRef: options.workspace.ref,
+      sourceRepo,
+      projectRoot,
+    })
+
+    return {
+      source: options.workspace.source,
+      repo: sourceRepo,
+      repoKind: 'remote',
+      requestedRef: options.workspace.ref,
+      ref,
+      relativeCwd,
+    }
+  }
+
+  const ref = await resolveLocalWorkspaceRef({
+    requestedRef: options.workspace.ref,
+    sourceRepo,
+    projectRoot,
+  })
+  await assertWorkspaceDirectoryAtRef({
+    repoRoot: sourceRepo,
+    ref,
+    relativeCwd,
+    projectRoot,
+  })
+
+  return {
+    source: options.workspace.source,
+    repo: sourceRepo,
+    repoKind: 'local',
+    requestedRef: options.workspace.ref,
+    ref,
+    relativeCwd,
+  }
+}
+
 export async function pruneWorkspaceArtifacts(
   options: PruneWorkspaceArtifactsOptions,
 ): Promise<void> {
@@ -229,6 +302,21 @@ async function ensureWorkspaceRuntimeDirs(paths: RuntimePaths): Promise<void> {
   await mkdir(paths.workspaceMirrorsDir, {recursive: true})
   await mkdir(paths.workspaceManifestsDir, {recursive: true})
   await mkdir(paths.workspacesDir, {recursive: true})
+}
+
+async function ensureGitCliAvailable(projectRoot: string): Promise<void> {
+  try {
+    await runGit(['--version'], projectRoot)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        'Git CLI is required for workspace execution.',
+        `projectRoot: ${projectRoot}`,
+        `git: ${reason}`,
+      ].join('\n'),
+    )
+  }
 }
 
 async function loadRunWorkspaceManifest(
@@ -309,6 +397,99 @@ async function resolveWorkspaceSourceRepo(options: {
       ].join('\n'),
     )
   }
+}
+
+async function resolveLocalWorkspaceRef(options: {
+  requestedRef: string
+  sourceRepo: string
+  projectRoot: string
+}): Promise<string> {
+  try {
+    return await runGit(
+      [
+        '-C',
+        options.sourceRepo,
+        'rev-parse',
+        '--verify',
+        `${options.requestedRef}^{commit}`,
+      ],
+      options.projectRoot,
+    )
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
+        `sourceRepo: ${options.sourceRepo}`,
+        `git: ${reason}`,
+      ].join('\n'),
+    )
+  }
+}
+
+async function resolveRemoteWorkspaceRef(options: {
+  requestedRef: string
+  sourceRepo: string
+  projectRoot: string
+}): Promise<string> {
+  const headOutput = await runGit(
+    ['ls-remote', options.sourceRepo, 'HEAD'],
+    options.projectRoot,
+  ).catch(error => {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        `Workspace source is not a reachable git repo: ${options.sourceRepo}`,
+        `projectRoot: ${options.projectRoot}`,
+        `git: ${reason}`,
+      ].join('\n'),
+    )
+  })
+
+  const headHashes = parseGitRemoteHashes(headOutput)
+  const headRef = headHashes[0]
+  if (!headRef) {
+    throw new WorkspaceProvisionError(
+      [
+        `Workspace source is not a reachable git repo: ${options.sourceRepo}`,
+        `projectRoot: ${options.projectRoot}`,
+        'git: ls-remote did not return HEAD',
+      ].join('\n'),
+    )
+  }
+
+  if (options.requestedRef === 'HEAD') {
+    return headRef
+  }
+
+  const refOutput = await runGit(
+    [
+      'ls-remote',
+      options.sourceRepo,
+      options.requestedRef,
+      `refs/heads/${options.requestedRef}`,
+      `refs/tags/${options.requestedRef}`,
+      `refs/tags/${options.requestedRef}^{}`,
+    ],
+    options.projectRoot,
+  )
+  const matches = parseGitRemoteHashes(refOutput)
+  const resolvedRef = matches[0]
+  if (resolvedRef) {
+    return resolvedRef
+  }
+
+  if (/^[a-f\d]{7,40}$/i.test(options.requestedRef)) {
+    return options.requestedRef
+  }
+
+  throw new WorkspaceProvisionError(
+    [
+      `Failed to resolve workspace ref \`${options.requestedRef}\`.`,
+      `sourceRepo: ${options.sourceRepo}`,
+      'git: ls-remote did not match the requested ref',
+    ].join('\n'),
+  )
 }
 
 async function ensureManagedMirror(options: {
@@ -655,6 +836,55 @@ async function resolveWorktreeHead(
   }
 }
 
+function resolveValidatedRelativeWorkspaceCwd(options: {
+  repoRoot?: string
+  projectRoot: string
+  workspace: ResolvedWorkspaceConfig
+}): string {
+  const worktreeRoot =
+    options.repoRoot ?? path.resolve(path.sep, '__notionflow__', 'workspace')
+  const {relativeCwd} = resolveWorkspaceCwd({
+    worktreeRoot,
+    projectRoot: options.projectRoot,
+    repoRoot: options.repoRoot ?? worktreeRoot,
+    workspace: options.workspace,
+  })
+
+  return toPortableWorkspacePath(relativeCwd)
+}
+
+async function assertWorkspaceDirectoryAtRef(options: {
+  repoRoot: string
+  ref: string
+  relativeCwd: string
+  projectRoot: string
+}): Promise<void> {
+  if (options.relativeCwd === '.') {
+    return
+  }
+
+  const gitObject = `${options.ref}:${options.relativeCwd}`
+  try {
+    const objectType = await runGit(
+      ['-C', options.repoRoot, 'cat-file', '-t', gitObject],
+      options.projectRoot,
+    )
+    if (objectType !== 'tree') {
+      throw new Error(`expected tree, received ${objectType}`)
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new WorkspaceProvisionError(
+      [
+        `Workspace cwd does not exist inside the requested ref: ${options.relativeCwd}`,
+        `sourceRepo: ${options.repoRoot}`,
+        `ref: ${options.ref}`,
+        `git: ${reason}`,
+      ].join('\n'),
+    )
+  }
+}
+
 function resolveWorkspaceCwd(options: {
   worktreeRoot: string
   projectRoot: string
@@ -738,6 +968,10 @@ function toRelativeWorkspacePath(root: string, targetPath: string): string {
   return relativePath.length > 0 ? relativePath : '.'
 }
 
+function toPortableWorkspacePath(relativePath: string): string {
+  return relativePath.split(path.sep).join('/')
+}
+
 function normalizeRunId(runId: string): string {
   const trimmed = runId.trim()
   if (trimmed.length === 0) {
@@ -772,6 +1006,19 @@ function sanitizePathSegment(value: string): string {
 function looksLikeRemoteRepoSpecifier(repo: string): boolean {
   return (
     /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
+  )
+}
+
+function parseGitRemoteHashes(output: string): string[] {
+  return Array.from(
+    new Set(
+      output
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(line => line.split(/\s+/)[0] ?? '')
+        .filter(value => value.length > 0),
+    ),
   )
 }
 

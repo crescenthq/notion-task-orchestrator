@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process'
+import {execFile, spawn} from 'node:child_process'
 import {existsSync, readFileSync} from 'node:fs'
 import {realpath, writeFile} from 'node:fs/promises'
 import path from 'node:path'
@@ -43,6 +43,7 @@ if (liveSuiteEnabled) {
     fixture = await createTempProjectFixture('notionflow-example-live-')
 
     await execCli(['init'], fixture.projectDir)
+    await initGitRepo(fixture.projectDir)
 
     const exampleFactoryPath = path.resolve(
       process.cwd(),
@@ -55,10 +56,14 @@ if (liveSuiteEnabled) {
       exampleConfigSource(exampleFactoryPath),
       'utf8',
     )
+    await commitAll(fixture.projectDir, 'example factories live fixture')
 
     const doctor = await execCli(['doctor'], fixture.projectDir)
     const resolvedProjectRoot = await realpath(fixture.projectDir)
     expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
+    expect(doctor.stdout).toContain(
+      'Workspace execution: default project repo',
+    )
 
     const board = await resolveSharedBoardConnection()
     await execCli(
@@ -167,6 +172,30 @@ function exampleConfigSource(factoryPath: string): string {
     '};',
     '',
   ].join('\n')
+}
+
+async function initGitRepo(repoRoot: string): Promise<void> {
+  await runGit(['init'], repoRoot)
+  await runGit(['config', 'user.name', 'NotionFlow Test'], repoRoot)
+  await runGit(['config', 'user.email', 'notionflow@example.com'], repoRoot)
+}
+
+async function commitAll(repoRoot: string, message: string): Promise<void> {
+  await runGit(['add', '.'], repoRoot)
+  await runGit(['commit', '-m', message], repoRoot)
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }
 
 function extractTaskExternalId(stdout: string): string {

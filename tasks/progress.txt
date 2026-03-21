@@ -21,6 +21,9 @@ Workspace-Backed Pipe Execution Progress:
   - US-006: Extended `src/core/workspaceRuntime.ts` with explicit cleanup and pruning helpers that remove successful run worktrees/manifests, prune stale mirror registrations with `git worktree prune --expire=now`, and delete orphaned workspace directories that are no longer referenced by a manifest or live worktree.
   - US-006: Updated `src/core/pipeRuntime.ts` so runtime startup opportunistically prunes stale workspace artifacts before provisioning and successful runs apply the default `on-success` cleanup policy without deleting feedback, blocked, or failed workspaces.
   - US-006: Added coverage in `src/core/workspaceRuntime.test.ts` and `src/core/pipeRuntime.test.ts` for helper-level cleanup/pruning, default success cleanup, and retention of feedback/blocked/failed workspaces, while preserving `cleanup: "never"` fixtures for tests that need post-run manifests.
+  - US-007: Updated `src/commands/doctor.ts` to load and resolve the active workspace config, report whether execution will use the default project repo or an explicit workspace override, and fail early when git workspace prerequisites are invalid.
+  - US-007: Added side-effect-free workspace validation in `src/core/workspaceRuntime.ts` so doctor can verify git availability, ref resolution, and local workspace `cwd` paths against the requested ref without creating managed mirrors or run worktrees.
+  - US-007: Updated `README.md`, `docs/cli-reference.md`, and `docs/pipe-authoring.md` to document the default git-backed workspace model, the three supported workspace config forms, and the expectation that doctor/tick/run execute from a repo with a valid `HEAD` commit; refreshed doctor/live coverage in `e2e/local-project-doctor.test.ts`, `e2e/local-project-docs-quickstart-live.test.ts`, and `e2e/example-factories-live.test.ts`.
 - Notes:
   - Verification:
     - `npm run check` (pass)
@@ -31,7 +34,11 @@ Workspace-Backed Pipe Execution Progress:
     - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
     - `npm run check` (pass)
+    - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` (pass)
     - `npm run check` (pass)
     - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
     - `npx vitest run src/core/pipeRuntime.test.ts` (pass)
+    - `npm run check` (pass)
+    - `npx vitest run src/core/workspaceRuntime.test.ts` (pass)
+    - `npx vitest run --config vitest.e2e.config.ts e2e/local-project-doctor.test.ts` (pass)
