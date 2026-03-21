@@ -7,10 +7,7 @@ import {
   type Checkpoint,
   type CheckpointSegment,
 } from './checkpoint'
-import {
-  brandControlSignal,
-  hasControlSignalBrand,
-} from './controlSignal'
+import {brandControlSignal, hasControlSignalBrand} from './controlSignal'
 
 export {CheckpointMismatchError}
 export type {Checkpoint, CheckpointSegment} from './checkpoint'
@@ -49,9 +46,7 @@ export type EndSignal<C> = {
 
 export type Control<C> = AwaitFeedback<C> | EndSignal<C>
 
-export type WritePage = (
-  output: PageOutput,
-) => PipeResult<void>
+export type WritePage = (output: PageOutput) => PipeResult<void>
 
 export type PipeInput<C> = {
   ctx: C
@@ -76,10 +71,7 @@ export type PipeDefinition<C> = {
 
 export type AskPrompt<C> = string | ((ctx: C) => string)
 
-export type AskParse<C> = (
-  ctx: C,
-  reply: string,
-) => PipeResult<C | Control<C>>
+export type AskParse<C> = (ctx: C, reply: string) => PipeResult<C | Control<C>>
 
 export type DecideOptions<C> = {
   otherwise?: Step<C>
@@ -142,7 +134,11 @@ function makeAwaitFeedback<C>(input: {
   ) as AwaitFeedback<C>
 }
 
-function makeEndSignal<C>(status: EndStatus, ctx: C, message?: string): EndSignal<C> {
+function makeEndSignal<C>(
+  status: EndStatus,
+  ctx: C,
+  message?: string,
+): EndSignal<C> {
   return brandControlSignal<EndSignal<C>>({
     type: 'end',
     status,
@@ -200,7 +196,10 @@ function normalizePageOutput(value: unknown): PageOutput {
   )
 }
 
-function readAskReply(input: {feedback?: string; ctx: unknown}): string | undefined {
+function readAskReply(input: {
+  feedback?: string
+  ctx: unknown
+}): string | undefined {
   if (isRecord(input.ctx) && ASK_FEEDBACK_CONTEXT_KEY in input.ctx) {
     const persistedReply = input.ctx[ASK_FEEDBACK_CONTEXT_KEY]
     if (
@@ -247,7 +246,9 @@ async function notifyStepStart<C>(
   })
 }
 
-export function definePipe<C>(definition: PipeDefinition<C>): PipeDefinition<C> {
+export function definePipe<C>(
+  definition: PipeDefinition<C>,
+): PipeDefinition<C> {
   return definition
 }
 
@@ -271,7 +272,11 @@ export function flow<C>(...steps: readonly Step<C>[]): Step<C> {
     for (let index = startAt; index < steps.length; index += 1) {
       const currentStep = steps[index]
       const stepCheckpoint = index === startAt ? remainder : undefined
-      const stepResult = await currentStep({...input, ctx, checkpoint: stepCheckpoint})
+      const stepResult = await currentStep({
+        ...input,
+        ctx,
+        checkpoint: stepCheckpoint,
+      })
       if (isControlSignal(stepResult)) {
         if (stepResult.type === 'await_feedback') {
           return brandControlSignal({
@@ -317,10 +322,7 @@ export function step<C, O>(
   }
 }
 
-export function ask<C>(
-  prompt: AskPrompt<C>,
-  parse: AskParse<C>,
-): Step<C> {
+export function ask<C>(prompt: AskPrompt<C>, parse: AskParse<C>): Step<C> {
   return async (input: PipeInput<C>) => {
     const checkpoint = parseCheckpoint(input.checkpoint, {location: 'ask'})
     assertNoCheckpointRemainder(checkpoint, 'ask')
@@ -415,7 +417,10 @@ export function decide<C, K extends string>(
       checkpoint: segment ? remainder : undefined,
     })
 
-    if (isControlSignal(branchResult) && branchResult.type === 'await_feedback') {
+    if (
+      isControlSignal(branchResult) &&
+      branchResult.type === 'await_feedback'
+    ) {
       if (!selectedBranch) {
         return branchResult
       }

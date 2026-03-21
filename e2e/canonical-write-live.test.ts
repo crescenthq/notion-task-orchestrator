@@ -4,7 +4,7 @@ import {writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
-import {definePipe, write} from '../src/factory/canonical'
+import {definePipe, write} from '../src/pipe/canonical'
 import {
   notionAppendMarkdownToPage,
   notionGetPageBodyText,

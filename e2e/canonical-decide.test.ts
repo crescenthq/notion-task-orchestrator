@@ -1,5 +1,12 @@
 import {describe, expect, it} from 'vitest'
-import {decide, definePipe, end, flow, step, type PipeInput} from '../src/factory/canonical'
+import {
+  decide,
+  definePipe,
+  end,
+  flow,
+  step,
+  type PipeInput,
+} from '../src/pipe/canonical'
 
 type DecideE2ECtx = {
   score: number
@@ -80,12 +87,9 @@ describe('canonical decide e2e scenarios', () => {
           ...ctx,
           trail: [...ctx.trail, 'prepared'],
         })),
-        decide<DecideE2ECtx, string>(
-          () => 'non-existent-branch',
-          {
-            approve: end.done<DecideE2ECtx>('approved'),
-          },
-        ),
+        decide<DecideE2ECtx, string>(() => 'non-existent-branch', {
+          approve: end.done<DecideE2ECtx>('approved'),
+        }),
       ),
     })
 

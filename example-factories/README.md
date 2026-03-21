@@ -97,16 +97,16 @@ npm run tick -- --factory expressive-primitives
 
 ## Available scripts
 
-| Script | Command | Description |
-| --- | --- | --- |
-| `doctor` | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts` | Validate config and factory resolution |
-| `notion:connect` | `tsx ../src/cli.ts integrations notion connect --config ./notionflow.config.ts` | Register the shared Notion board used by this example |
-| `notion:sync` | `tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts` | Pull tasks and feedback from the shared Notion board |
-| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts` | Create a task in the shared board for a declared factory |
-| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts` | Re-queue a quarantined task after restoring `Factory` |
-| `tick` | `tsx ../src/cli.ts tick --config ./notionflow.config.ts` | Sync and run queued work across all factories |
-| `tick:demo` | `tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts` | Sync and run queued work for `shared-helper-demo` |
-| `check` | `tsc --noEmit` | Type-check all factory files |
+| Script               | Command                                                                               | Description                                              |
+| -------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `doctor`             | `tsx ../src/cli.ts doctor --config ./notionflow.config.ts`                            | Validate config and factory resolution                   |
+| `notion:connect`     | `tsx ../src/cli.ts integrations notion connect --config ./notionflow.config.ts`       | Register the shared Notion board used by this example    |
+| `notion:sync`        | `tsx ../src/cli.ts integrations notion sync --config ./notionflow.config.ts`          | Pull tasks and feedback from the shared Notion board     |
+| `notion:create-task` | `tsx ../src/cli.ts integrations notion create-task --config ./notionflow.config.ts`   | Create a task in the shared board for a declared factory |
+| `notion:repair-task` | `tsx ../src/cli.ts integrations notion repair-task --config ./notionflow.config.ts`   | Re-queue a quarantined task after restoring `Factory`    |
+| `tick`               | `tsx ../src/cli.ts tick --config ./notionflow.config.ts`                              | Sync and run queued work across all factories            |
+| `tick:demo`          | `tsx ../src/cli.ts tick --factory shared-helper-demo --config ./notionflow.config.ts` | Sync and run queued work for `shared-helper-demo`        |
+| `check`              | `tsc --noEmit`                                                                        | Type-check all factory files                             |
 
 ## Common command examples
 

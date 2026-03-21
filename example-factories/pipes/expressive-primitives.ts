@@ -7,7 +7,7 @@ import {
   loop,
   step,
   write,
-} from '../../src/factory/canonical'
+} from '../../src/pipe/canonical'
 
 type PrimitiveDemoContext = {
   decision: 'approve' | 'revise' | 'clarify' | ''
@@ -111,12 +111,9 @@ export default definePipe({
   run: flow(
     startDraft,
     collectDecision,
-    decide(
-      ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'),
-      {
-        publish: flow(markApproved, publishResult, end.done()),
-        revise: flow(revisionLoop, publishResult, end.done()),
-      },
-    ),
+    decide(ctx => (ctx.decision === 'revise' ? 'revise' : 'publish'), {
+      publish: flow(markApproved, publishResult, end.done()),
+      revise: flow(revisionLoop, publishResult, end.done()),
+    }),
   ),
 })

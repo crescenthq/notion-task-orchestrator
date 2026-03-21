@@ -2,17 +2,17 @@ import {readFile} from 'node:fs/promises'
 import path from 'node:path'
 import {pathToFileURL} from 'node:url'
 
-export type PipeFactoryDefinition = {
+export type PipeModuleDefinition = {
   id: string
   name?: string
   initial: unknown
   run: (input: unknown) => unknown
 }
 
-export type LoadedFactoryDefinition = PipeFactoryDefinition
+export type LoadedPipeDefinition = PipeModuleDefinition
 
-export type LoadedFactoryModule = {
-  definition: LoadedFactoryDefinition
+export type LoadedPipeModule = {
+  definition: LoadedPipeDefinition
   sourcePath: string
   sourceText: string
 }
@@ -20,15 +20,15 @@ export type LoadedFactoryModule = {
 function formatDiagnostic(filePath: string, messages: string[]): Error {
   return new Error(
     [
-      `Invalid factory module: ${filePath}`,
+      `Invalid pipe module: ${filePath}`,
       ...messages.map(message => `- ${message}`),
     ].join('\n'),
   )
 }
 
-function isPipeFactoryDefinitionCandidate(
+function isPipeModuleDefinitionCandidate(
   value: unknown,
-): value is PipeFactoryDefinition {
+): value is PipeModuleDefinition {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
   return (
@@ -39,15 +39,15 @@ function isPipeFactoryDefinitionCandidate(
   )
 }
 
-export function isPipeFactoryDefinition(
+export function isPipeModuleDefinition(
   definition: unknown,
-): definition is PipeFactoryDefinition {
-  return isPipeFactoryDefinitionCandidate(definition)
+): definition is PipeModuleDefinition {
+  return isPipeModuleDefinitionCandidate(definition)
 }
 
-export async function loadFactoryFromPath(
+export async function loadPipeFromPath(
   inputPath: string,
-): Promise<LoadedFactoryModule> {
+): Promise<LoadedPipeModule> {
   const sourcePath = path.resolve(inputPath)
   const sourceText = await readFile(sourcePath, 'utf8')
 
@@ -59,13 +59,13 @@ export async function loadFactoryFromPath(
 
   if (!maybeFactory || typeof maybeFactory !== 'object') {
     throw formatDiagnostic(sourcePath, [
-      'Module must export a factory object as default export',
+      'Module must export a pipe object as default export',
     ])
   }
 
-  if (!isPipeFactoryDefinitionCandidate(maybeFactory)) {
+  if (!isPipeModuleDefinitionCandidate(maybeFactory)) {
     throw formatDiagnostic(sourcePath, [
-      'Module must export a definePipe factory with shape { id, initial, run }',
+      'Module must export a definePipe pipe with shape { id, initial, run }',
     ])
   }
 

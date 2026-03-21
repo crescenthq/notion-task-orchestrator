@@ -111,7 +111,9 @@ function parseTickExecutionOptions(args: TickArgs): TickExecutionOptions {
     maxTransitionsPerTick: Number.isFinite(maxTransitionsPerTick)
       ? maxTransitionsPerTick
       : undefined,
-    runConcurrency: Number.isFinite(runConcurrency) ? runConcurrency : undefined,
+    runConcurrency: Number.isFinite(runConcurrency)
+      ? runConcurrency
+      : undefined,
     leaseMs: Number.isFinite(leaseMs) ? leaseMs : undefined,
     leaseMode: args.leaseMode === 'strict' ? 'strict' : 'best-effort',
     workerId: args.workerId ? String(args.workerId) : undefined,

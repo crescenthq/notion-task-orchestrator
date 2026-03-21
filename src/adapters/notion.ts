@@ -44,7 +44,10 @@ export function createNotionTaskBoardAdapter(token: string): TaskBoardAdapter {
     ): Promise<void> {
       await notionAppendTaskPageLog(token, ref.externalTaskId, title, detail)
     },
-    async appendPageContent(ref: BoardTaskRef, markdown: string): Promise<void> {
+    async appendPageContent(
+      ref: BoardTaskRef,
+      markdown: string,
+    ): Promise<void> {
       await notionAppendMarkdownToPage(token, ref.externalTaskId, markdown)
     },
     async postComment(ref: BoardTaskRef, body: string): Promise<void> {

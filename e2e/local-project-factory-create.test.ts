@@ -50,14 +50,7 @@ describe('local project factory create', () => {
     const configPath = path.join(fixture.projectDir, 'notionflow.config.ts')
 
     await execCli(
-      [
-        'factory',
-        'create',
-        '--id',
-        'external',
-        '--config',
-        configPath,
-      ],
+      ['factory', 'create', '--id', 'external', '--config', configPath],
       outsider.projectDir,
     )
 
@@ -85,9 +78,9 @@ async function execCli(args: string[], cwd: string): Promise<void> {
       process.execPath,
       ['--import', tsxLoaderPath, cliPath, ...args],
       {
-      cwd,
-      stdio: 'pipe',
-      env: process.env,
+        cwd,
+        stdio: 'pipe',
+        env: process.env,
       },
     )
 

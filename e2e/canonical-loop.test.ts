@@ -1,5 +1,11 @@
 import {describe, expect, it} from 'vitest'
-import {definePipe, flow, loop, step, type PipeInput} from '../src/factory/canonical'
+import {
+  definePipe,
+  flow,
+  loop,
+  step,
+  type PipeInput,
+} from '../src/pipe/canonical'
 
 type LoopE2ECtx = {
   count: number

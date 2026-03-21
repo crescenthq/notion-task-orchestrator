@@ -29,7 +29,9 @@ describe('runTraces', () => {
       ...baseTrace(),
       toStateId: null,
     }
-    expect(() => parseRunTrace(candidate)).toThrow('step traces require toStateId')
+    expect(() => parseRunTrace(candidate)).toThrow(
+      'step traces require toStateId',
+    )
   })
 
   it('rejects retry traces with invalid attempt counters', () => {

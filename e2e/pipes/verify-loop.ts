@@ -1,4 +1,4 @@
-import {definePipe, end, flow, loop, step} from '../../src/factory/canonical'
+import {definePipe, end, flow, loop, step} from '../../src/pipe/canonical'
 
 export default definePipe({
   id: 'verify-loop',

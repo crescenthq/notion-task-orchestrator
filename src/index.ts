@@ -17,7 +17,7 @@ export {
   type StepKind,
   type StepLifecycle,
   type StepLifecycleObserver,
-} from './factory/canonical'
+} from './pipe/canonical'
 export {
   defineAgent,
   defaultMapAgentError,
@@ -32,4 +32,4 @@ export {
   type DefineAgentOptions,
   type KnownAgentErrorCode,
   type RetryPolicy,
-} from './factory/defineAgent'
+} from './pipe/defineAgent'

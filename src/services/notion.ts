@@ -203,9 +203,7 @@ export async function notionArchiveDatabase(
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(
-      `Notion database archive failed (${res.status}): ${text}`,
-    )
+    throw new Error(`Notion database archive failed (${res.status}): ${text}`)
   }
 }
 

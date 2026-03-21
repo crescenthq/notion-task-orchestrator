@@ -208,7 +208,10 @@ describe('notion board schema provisioning', () => {
       return jsonResponse({})
     }) as typeof fetch
 
-    const result = await notionCreateBoardDataSource('token-1', 'Workspace Board')
+    const result = await notionCreateBoardDataSource(
+      'token-1',
+      'Workspace Board',
+    )
 
     expect(result).toEqual({
       dataSourceId: 'ds-workspace',
@@ -253,13 +256,9 @@ describe('notion board schema provisioning', () => {
       return jsonResponse({})
     }) as typeof fetch
 
-    await notionCreateBoardDataSource(
-      'token-1',
-      'Nested Board',
-      [],
-      [],
-      {parentPageId: 'page-123'},
-    )
+    await notionCreateBoardDataSource('token-1', 'Nested Board', [], [], {
+      parentPageId: 'page-123',
+    })
 
     const createPayload = JSON.parse(String(calls[0]?.init?.body))
     expect(createPayload.parent).toEqual({

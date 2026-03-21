@@ -388,7 +388,7 @@ describe('pipeRuntime (definePipe only)', () => {
     const canonicalPath = path.join(
       process.cwd(),
       'src',
-      'factory',
+      'pipe',
       'canonical.ts',
     )
 
@@ -494,7 +494,7 @@ export default definePipe({
     const canonicalPath = path.join(
       process.cwd(),
       'src',
-      'factory',
+      'pipe',
       'canonical.ts',
     )
 
@@ -656,7 +656,7 @@ export default definePipe({
     const canonicalPath = path.join(
       process.cwd(),
       'src',
-      'factory',
+      'pipe',
       'canonical.ts',
     )
 
@@ -702,7 +702,7 @@ export default definePipe({
     const canonicalPath = path.join(
       process.cwd(),
       'src',
-      'factory',
+      'pipe',
       'canonical.ts',
     )
 
@@ -778,7 +778,7 @@ export default definePipe({
     const canonicalPath = path.join(
       process.cwd(),
       'src',
-      'factory',
+      'pipe',
       'canonical.ts',
     )
 

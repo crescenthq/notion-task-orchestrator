@@ -4,7 +4,7 @@ import {and, eq, isNull, lte, or} from 'drizzle-orm'
 import {nowIso, openApp} from '../app/context'
 import {notionToken} from '../config/env'
 import {createNotionTaskBoardAdapter} from '../adapters/notion'
-import {loadFactoryFromPath, type PipeFactoryDefinition} from './factory'
+import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
 import {boards, runTraces, runs, tasks} from '../db/schema'
 import {
   resolveProjectConfig,
@@ -23,11 +23,8 @@ import {
   CheckpointMismatchError,
   parseCheckpoint,
   type Checkpoint,
-} from '../factory/checkpoint'
-import {
-  brandControlSignal,
-  hasControlSignalBrand,
-} from '../factory/controlSignal'
+} from '../pipe/checkpoint'
+import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
 
 type JsonObject = Record<string, unknown>
 
@@ -339,8 +336,8 @@ export async function runPipeTaskByExternalId(
     projectConfig: resolvedProjectConfig,
     workflowsDir: paths.workflowsDir,
   })
-  const {definition} = await loadFactoryFromPath(pipePath)
-  const pipeDefinition: PipeFactoryDefinition = definition
+  const {definition} = await loadPipeFromPath(pipePath)
+  const pipeDefinition: PipeModuleDefinition = definition
 
   let taskTitle = task.externalTaskId
   let taskContext = ''

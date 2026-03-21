@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-import {bootstrapRuntimeEnv, inferConfigPathFromArgv} from './config/envBootstrap'
+import {
+  bootstrapRuntimeEnv,
+  inferConfigPathFromArgv,
+} from './config/envBootstrap'
 
-await bootstrapRuntimeEnv({configPath: inferConfigPathFromArgv(process.argv) ?? undefined})
+await bootstrapRuntimeEnv({
+  configPath: inferConfigPathFromArgv(process.argv) ?? undefined,
+})
 
 const {defineCommand, runMain} = await import('citty')
 const {doctorCmd} = await import('./commands/doctor')

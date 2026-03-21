@@ -33,7 +33,7 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'smoke.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     await writeFile(
       factoryPath,
@@ -78,7 +78,7 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'ask-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     await writeFile(
       factoryPath,
@@ -140,7 +140,7 @@ describe('local project run command', () => {
 
     const factoryPath = path.join(fixture.projectDir, 'pipes', 'pipe-resume.ts')
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     await writeFile(
       factoryPath,

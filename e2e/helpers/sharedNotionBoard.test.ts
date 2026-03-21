@@ -90,7 +90,10 @@ describe('shared Notion board helper', () => {
       'test-token',
       'db-existing',
     )
-    expect(notionGetDataSource).toHaveBeenCalledWith('test-token', 'ds-existing')
+    expect(notionGetDataSource).toHaveBeenCalledWith(
+      'test-token',
+      'ds-existing',
+    )
     expect(notionCreateBoardDataSource).toHaveBeenCalledTimes(1)
     expect(notionCreateBoardDataSource).toHaveBeenCalledWith(
       'test-token',
@@ -102,7 +105,10 @@ describe('shared Notion board helper', () => {
     expect(notionArchiveDatabase).not.toHaveBeenCalled()
 
     const persisted = JSON.parse(
-      await readFile(path.join(process.cwd(), '.context/live-e2e-board.json'), 'utf8'),
+      await readFile(
+        path.join(process.cwd(), '.context/live-e2e-board.json'),
+        'utf8',
+      ),
     ) as {databaseId: string}
     expect(persisted.databaseId).toBe('db-fresh')
   })

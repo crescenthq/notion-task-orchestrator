@@ -41,7 +41,7 @@ if (liveSuiteEnabled) {
     await execCli(['init'], fixture.projectDir)
 
     const canonicalModuleUrl = pathToFileURL(
-      path.resolve(process.cwd(), 'src/factory/canonical.ts'),
+      path.resolve(process.cwd(), 'src/pipe/canonical.ts'),
     ).href
     const pipesDir = path.join(fixture.projectDir, 'pipes')
     await mkdir(pipesDir, {recursive: true})

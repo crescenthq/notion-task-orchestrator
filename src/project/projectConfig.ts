@@ -2,8 +2,8 @@ import path from 'node:path'
 import {access, constants, readdir, stat} from 'node:fs/promises'
 import {pathToFileURL} from 'node:url'
 import {z} from 'zod'
-import {loadFactoryFromPath} from '../core/factory'
-import type {LoadedFactoryDefinition} from '../core/factory'
+import {loadPipeFromPath} from '../core/pipe'
+import type {LoadedPipeDefinition} from '../core/pipe'
 
 const pipeDeclarationSchema = z.string().trim().min(1)
 
@@ -30,7 +30,7 @@ export type ProjectConfig = z.output<typeof projectConfigSchema>
 export type LoadedDeclaredPipe = {
   declaredSource: string
   resolvedPath: string
-  definition: LoadedFactoryDefinition
+  definition: LoadedPipeDefinition
 }
 
 type ResolvedPipePath = {
@@ -142,7 +142,7 @@ export async function loadDeclaredPipes(options: {
     }
 
     try {
-      const loaded = await loadFactoryFromPath(resolvedPath)
+      const loaded = await loadPipeFromPath(resolvedPath)
       const loadedEntry: LoadedDeclaredPipe = {
         declaredSource,
         resolvedPath,

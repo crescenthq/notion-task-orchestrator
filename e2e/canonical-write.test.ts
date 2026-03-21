@@ -1,5 +1,11 @@
 import {describe, expect, it} from 'vitest'
-import {definePipe, flow, step, write, type PipeInput} from '../src/factory/canonical'
+import {
+  definePipe,
+  flow,
+  step,
+  write,
+  type PipeInput,
+} from '../src/pipe/canonical'
 
 type WriteE2ECtx = {
   score: number

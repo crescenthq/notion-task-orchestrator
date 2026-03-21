@@ -74,6 +74,10 @@ describe('createNotionTaskBoardAdapter', () => {
     )
 
     await adapter.postComment(ref, 'Need approval')
-    expect(postCommentSpy).toHaveBeenCalledWith(token, 'task-1', 'Need approval')
+    expect(postCommentSpy).toHaveBeenCalledWith(
+      token,
+      'task-1',
+      'Need approval',
+    )
   })
 })

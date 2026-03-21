@@ -121,10 +121,7 @@ export const runTraceSchema = z
         }
         break
       case 'await_feedback':
-        requireStringField(
-          'stateId',
-          'await_feedback traces require stateId',
-        )
+        requireStringField('stateId', 'await_feedback traces require stateId')
         break
       case 'write':
         requireStringField('stateId', 'write traces require stateId')

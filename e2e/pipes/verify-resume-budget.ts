@@ -1,4 +1,4 @@
-import {ask, definePipe, end, flow, step} from '../../src/factory/canonical'
+import {ask, definePipe, end, flow, step} from '../../src/pipe/canonical'
 
 export default definePipe({
   id: 'verify-resume-budget',

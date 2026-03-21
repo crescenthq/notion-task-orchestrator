@@ -7,7 +7,7 @@ import {
   loop,
   step,
   write,
-} from '../../src/factory/canonical'
+} from '../../src/pipe/canonical'
 
 type IntentContext = {
   request_text: string

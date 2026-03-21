@@ -1,4 +1,4 @@
-import {step, type Step} from '../../../src/factory/canonical'
+import {step, type Step} from '../../../src/pipe/canonical'
 
 export type SharedHelperContext = {
   enriched: boolean
@@ -17,9 +17,7 @@ export const enrichContext: Step<SharedHelperContext> = step(
   }),
 )
 
-export const chooseRoute = (
-  ctx: SharedHelperContext,
-): 'finish' | 'retry' => {
+export const chooseRoute = (ctx: SharedHelperContext): 'finish' | 'retry' => {
   return ctx.attempts >= 2 ? 'finish' : 'retry'
 }
 

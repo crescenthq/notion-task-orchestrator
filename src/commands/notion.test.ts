@@ -255,11 +255,9 @@ describe('notion command shared board registration', () => {
         factoryId: 'alpha',
       },
     )
-    expect(vi.mocked(notionService.notionWaitForTaskFactory)).toHaveBeenCalledWith(
-      'test-token',
-      'page-created-1',
-      'alpha',
-    )
+    expect(
+      vi.mocked(notionService.notionWaitForTaskFactory),
+    ).toHaveBeenCalledWith('test-token', 'page-created-1', 'alpha')
     expect(
       vi.mocked(notionService.notionEnsureBoardSchema),
     ).toHaveBeenCalledWith(
