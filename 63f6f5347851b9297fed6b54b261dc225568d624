@@ -1,0 +1,25 @@
+src/project/projectConfig.test.ts
+  49597dcfbe8a0d72 8,55-128
+src/project/projectConfig.ts
+  49597dcfbe8a0d72 14-18,25,35-48,82-107,382-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "63f6f5347851b9297fed6b54b261dc225568d624",
+  "prompts": {
+    "49597dcfbe8a0d72": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d10c7-85c7-78a2-98ae-e006e40877dd",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 133,
+      "total_deletions": 0,
+      "accepted_lines": 133,
+      "overriden_lines": 0
+    }
+  }
+}
