@@ -33,5 +33,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .notionflow/
 .playground-tmp/
 tasks/
-ralf.sh
-ralf-once.sh
+.conductor/
