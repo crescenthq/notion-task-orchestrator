@@ -28,7 +28,7 @@ declarations in `notionflow.config.ts`.
 npx notionflow init
 
 # 2) Scaffold a definePipe module
-npx notionflow pipe create --id demo --skip-notion-board
+npx notionflow pipe create --id demo
 
 # 3) Validate config + auth resolution
 npx notionflow doctor
@@ -94,7 +94,7 @@ NotionFlow writes runtime state under `.notionflow/`:
 ```bash
 notionflow init
 notionflow doctor [--config <path>]
-notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
+notionflow pipe create --id <pipe-id> [--config <path>]
 notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--pipe <id>]
 notionflow run --task <notion_page_id> [--config <path>]
 notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]

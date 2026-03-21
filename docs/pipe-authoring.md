@@ -263,7 +263,7 @@ npx notionflow init
 2. Scaffold a pipe.
 
 ```bash
-npx notionflow pipe create --id my-pipe --skip-notion-board
+npx notionflow pipe create --id my-pipe
 ```
 
 3. Optional: set project name or customize pipe discovery in

@@ -123,7 +123,7 @@ notionflow status --task <notion_page_id>
 Create a local pipe scaffold.
 
 ```bash
-notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
+notionflow pipe create --id <pipe-id> [--config <path>]
 ```
 
 Writes `pipes/<pipe-id>.ts` in the resolved project root.
@@ -198,7 +198,7 @@ All runtime artifacts are project-local:
 
 ```bash
 notionflow init
-notionflow pipe create --id demo --skip-notion-board
+notionflow pipe create --id demo
 notionflow doctor
 notionflow integrations notion setup
 notionflow integrations notion create-task --pipe demo --title "Try demo" --status queue
