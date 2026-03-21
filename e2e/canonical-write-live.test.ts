@@ -66,7 +66,7 @@ if (liveSuiteEnabled) {
           'integrations',
           'notion',
           'create-task',
-          '--factory',
+          '--pipe',
           'write-live',
           '--title',
           'Canonical write live e2e task',

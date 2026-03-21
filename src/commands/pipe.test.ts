@@ -2,12 +2,12 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {factoryCmd} from './factory'
+import {pipeCmd} from './pipe'
 
 const tempDirs: string[] = []
 const originalCwd = process.cwd()
 
-describe('factory command', () => {
+describe('pipe command', () => {
   afterEach(async () => {
     process.chdir(originalCwd)
     vi.restoreAllMocks()
@@ -18,9 +18,7 @@ describe('factory command', () => {
   })
 
   it('creates a scaffold that does not import notionflow from the project tree', async () => {
-    const projectRoot = await mkdtemp(
-      path.join(tmpdir(), 'notionflow-factory-'),
-    )
+    const projectRoot = await mkdtemp(path.join(tmpdir(), 'notionflow-pipe-'))
     tempDirs.push(projectRoot)
 
     await writeFile(
@@ -33,7 +31,7 @@ describe('factory command', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
 
     const createRun = (
-      factoryCmd as unknown as {
+      pipeCmd as unknown as {
         subCommands: {
           create: {
             run: (input: {args: Record<string, unknown>}) => Promise<void>

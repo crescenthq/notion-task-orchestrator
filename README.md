@@ -1,7 +1,7 @@
 # NotionFlow
 
 Project-local orchestration CLI and typed library for running TypeScript
-`definePipe` factories against Notion tasks.
+`definePipe` pipes against Notion tasks.
 
 ## Local-First Model
 
@@ -13,8 +13,8 @@ Each project contains:
 - `pipes/`
 - `.notionflow/` (runtime DB + logs)
 
-`run` and `tick` load factories from top-level `pipes/` by default, or from
-custom declarations in `notionflow.config.ts`.
+`run` and `tick` load pipes from top-level `pipes/` by default, or from custom
+declarations in `notionflow.config.ts`.
 
 ## Prerequisites
 
@@ -27,14 +27,14 @@ custom declarations in `notionflow.config.ts`.
 # 1) Initialize a local project
 npx notionflow init
 
-# 2) Scaffold a definePipe factory
-npx notionflow factory create --id demo --skip-notion-board
+# 2) Scaffold a definePipe module
+npx notionflow pipe create --id demo --skip-notion-board
 
 # 3) Validate config + auth resolution
 npx notionflow doctor
 
 # 4) Run one queue tick
-npx notionflow tick --factory demo
+npx notionflow tick --pipe demo
 ```
 
 You can run commands from anywhere in the project tree. NotionFlow walks up
@@ -44,7 +44,7 @@ until it finds `notionflow.config.ts`.
 
 - Default: walk up from current working directory to find `notionflow.config.ts`
 - Override: pass `--config <path>` on project-scoped commands (`doctor`,
-  `factory create`, `run`, `tick`, `integrations notion sync`)
+  `pipe create`, `run`, `tick`, `integrations notion sync`)
 - Project root is the directory containing the resolved config file
 
 ## Config Format
@@ -70,19 +70,16 @@ Use `pipes` only when you want custom locations or tighter filtering:
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  pipes: [
-    './pipes',
-    './manual/critical-review.ts',
-  ],
+  pipes: ['./pipes', './manual/critical-review.ts'],
 })
 ```
 
-Factory discovery stays deterministic:
+Pipe discovery stays deterministic:
 
 - Relative file and directory declarations resolve from project root
 - Default `./pipes` discovery is top-level only
 - Missing explicit paths fail fast with diagnostics
-- Duplicate factory IDs fail startup with conflict diagnostics
+- Duplicate pipe IDs fail startup with conflict diagnostics
 
 ## Runtime Artifacts
 
@@ -97,13 +94,13 @@ NotionFlow writes runtime state under `.notionflow/`:
 ```bash
 notionflow init
 notionflow doctor [--config <path>]
-notionflow factory create --id <factory-id> [--config <path>] [--skip-notion-board]
-notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--factory <id>]
+notionflow pipe create --id <pipe-id> [--config <path>] [--skip-notion-board]
+notionflow tick [--loop] [--interval-ms <ms>] [--config <path>] [--board <id>] [--pipe <id>]
 notionflow run --task <notion_page_id> [--config <path>]
 notionflow integrations notion setup [--url <notion-database-url>] [--config <path>]
 notionflow integrations notion repair-task --task <notion_page_id> [--config <path>]
-notionflow integrations notion create-task --factory <factory-id> --title "title" [--status <state>] [--config <path>]
-notionflow integrations notion sync [--config <path>] [--factory <factory-id>] [--run]
+notionflow integrations notion create-task --pipe <pipe-id> --title "title" [--status <state>] [--config <path>]
+notionflow integrations notion sync [--config <path>] [--pipe <pipe-id>] [--run]
 ```
 
 ## Canonical Library API
@@ -190,7 +187,7 @@ export default definePipe({
 
 Common live loop:
 
-1. `notionflow tick --factory <factory-id>` pauses in `feedback`.
+1. `notionflow tick --pipe <pipe-id>` pauses in `feedback`.
 2. Human replies in Notion comments.
 3. `notionflow integrations notion sync --run` detects new comments, re-queues
    feedback tasks, and runs queued work.
@@ -274,7 +271,7 @@ back to the same default mapping above.
 Project-style examples are in [`example-factories/`](./example-factories):
 
 - explicit `notionflow.config.ts`
-- definePipe-only factories under `pipes/`
+- definePipe-only pipes under `pipes/`
 - shared helper import patterns for reusable steps/selectors
 
 ## Verification Checklist
@@ -306,7 +303,7 @@ export NOTIONFLOW_VERIFY_FEEDBACK_MODE=local
 ```bash
 npm run test:e2e -- e2e/local-project-docs-quickstart-live.test.ts
 npm run test:e2e -- e2e/canonical-write-live.test.ts e2e/canonical-end-live.test.ts e2e/example-factories-live.test.ts
-npm run test:e2e -- e2e/factory-verification.test.ts
+npm run test:e2e -- e2e/pipe-verification.test.ts
 ```
 
 3. Validate expected outcomes.
@@ -314,7 +311,7 @@ npm run test:e2e -- e2e/factory-verification.test.ts
 - Quickstart live test output includes `Project root:`, `Config path:`,
   `Task created:`, and `Sync complete:`
 - Verification suite prints
-  `Artifact: .../e2e/artifacts/factory-live-verification-<timestamp>.json`
+  `Artifact: .../e2e/artifacts/pipe-live-verification-<timestamp>.json`
 - Artifact JSON contains `passedScenarios` and per-scenario `finalState`
   terminal outcomes (`done`, `blocked`, `failed`) with tick timelines
 
@@ -331,7 +328,7 @@ Then open `http://127.0.0.1:4173`.
 ## Docs
 
 - [CLI Reference](./docs/cli-reference.md)
-- [Factory Authoring](./docs/factory-authoring.md)
+- [Pipe Authoring](./docs/pipe-authoring.md)
 - [Scratchpad Playground](./docs/scratchpad-playground.md)
 - [definePipe v1 API Contract (TypeScript)](./docs/definepipe-v1-api-contract.ts)
 - [definePipe v1 API Contract (Overview)](./docs/definepipe-v1-api-contract.md)

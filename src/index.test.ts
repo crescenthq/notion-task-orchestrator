@@ -27,10 +27,10 @@ describe('public library API', () => {
     expect(api).not.toHaveProperty('publish')
     expect(api).not.toHaveProperty('retry')
     expect(api).not.toHaveProperty('route')
-    expect(api).not.toHaveProperty('compileExpressiveFactory')
+    expect(api).not.toHaveProperty('compileExpressivePipe')
   })
 
-  it('typechecks package-root imports for config, factory, and helpers', () => {
+  it('typechecks package-root imports for config, pipe, and helpers', () => {
     const result = spawnSync(
       process.execPath,
       [

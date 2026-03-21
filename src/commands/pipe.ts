@@ -8,13 +8,13 @@ import {
   resolveProjectConfig,
 } from '../project/discoverConfig'
 
-export const factoryCmd = defineCommand({
-  meta: {name: 'factory', description: '[advanced] Manage factories'},
+export const pipeCmd = defineCommand({
+  meta: {name: 'pipe', description: '[advanced] Manage pipes'},
   subCommands: {
     create: defineCommand({
       meta: {
         name: 'create',
-        description: 'Create a new TypeScript factory scaffold',
+        description: 'Create a new TypeScript pipe scaffold',
       },
       args: {
         id: {type: 'string', required: true},
@@ -51,17 +51,17 @@ export const factoryCmd = defineCommand({
         await mkdir(targetDir, {recursive: true})
         await writeFile(targetPath, template, 'utf8')
 
-        console.log(`Factory scaffold created: ${id}`)
+        console.log(`Pipe scaffold created: ${id}`)
         console.log(`Path: ${targetPath}`)
       },
     }),
     list: defineCommand({
-      meta: {name: 'list', description: 'List installed factories'},
+      meta: {name: 'list', description: 'List installed pipes'},
       async run() {
         const {db} = await openApp()
         const rows = await db.select().from(workflows)
         if (rows.length === 0) {
-          console.log('No factories configured')
+          console.log('No pipes configured')
           return
         }
         for (const row of rows) console.log(`${row.id}  v${row.version}`)

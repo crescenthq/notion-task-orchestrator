@@ -25,75 +25,72 @@ if (liveSuiteEnabled) {
   registerLiveBoardSuite()
 }
 
-;(liveSuiteEnabled ? describe : describe.skip)(
-  'example factories live e2e',
-  () => {
-    let fixture: TempProjectFixture | null = null
+;(liveSuiteEnabled ? describe : describe.skip)('example pipes live e2e', () => {
+  let fixture: TempProjectFixture | null = null
 
-    afterEach(async () => {
-      if (!fixture) return
-      await fixture.cleanup()
-      fixture = null
-    })
+  afterEach(async () => {
+    if (!fixture) return
+    await fixture.cleanup()
+    fixture = null
+  })
 
-    afterAll(async () => {
-      await finishLiveBoardSuite()
-    })
+  afterAll(async () => {
+    await finishLiveBoardSuite()
+  })
 
-    it('runs rewritten shared-helper-demo example through CLI run in live Notion mode', async () => {
-      const before = await snapshotGlobalNotionflowWrites()
-      fixture = await createTempProjectFixture('notionflow-example-live-')
+  it('runs rewritten shared-helper-demo example through CLI run in live Notion mode', async () => {
+    const before = await snapshotGlobalNotionflowWrites()
+    fixture = await createTempProjectFixture('notionflow-example-live-')
 
-      await execCli(['init'], fixture.projectDir)
+    await execCli(['init'], fixture.projectDir)
 
-      const exampleFactoryPath = path.resolve(
-        process.cwd(),
-        'example-factories',
-        'pipes',
-        'shared-helper-demo.ts',
-      )
-      await writeFile(
-        path.join(fixture.projectDir, 'notionflow.config.ts'),
-        exampleConfigSource(exampleFactoryPath),
-        'utf8',
-      )
+    const exampleFactoryPath = path.resolve(
+      process.cwd(),
+      'example-factories',
+      'pipes',
+      'shared-helper-demo.ts',
+    )
+    await writeFile(
+      path.join(fixture.projectDir, 'notionflow.config.ts'),
+      exampleConfigSource(exampleFactoryPath),
+      'utf8',
+    )
 
-      const doctor = await execCli(['doctor'], fixture.projectDir)
-      const resolvedProjectRoot = await realpath(fixture.projectDir)
-      expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
+    const doctor = await execCli(['doctor'], fixture.projectDir)
+    const resolvedProjectRoot = await realpath(fixture.projectDir)
+    expect(doctor.stdout).toContain(`Project root: ${resolvedProjectRoot}`)
 
-      const board = await resolveSharedBoardConnection()
-      await execCli(
-        ['integrations', 'notion', 'setup', '--url', board.url],
-        fixture.projectDir,
-      )
+    const board = await resolveSharedBoardConnection()
+    await execCli(
+      ['integrations', 'notion', 'setup', '--url', board.url],
+      fixture.projectDir,
+    )
 
-      const created = await execCli(
-        [
-          'integrations',
-          'notion',
-          'create-task',
-          '--factory',
-          'shared-helper-demo',
-          '--title',
-          'Shared helper example live task',
-          '--status',
-          'queue',
-        ],
-        fixture.projectDir,
-      )
-      const taskExternalId = extractTaskExternalId(created.stdout)
+    const created = await execCli(
+      [
+        'integrations',
+        'notion',
+        'create-task',
+        '--pipe',
+        'shared-helper-demo',
+        '--title',
+        'Shared helper example live task',
+        '--status',
+        'queue',
+      ],
+      fixture.projectDir,
+    )
+    const taskExternalId = extractTaskExternalId(created.stdout)
 
-      await execCli(['run', '--task', taskExternalId], fixture.projectDir)
-      await expect(
-        readTaskState(fixture.projectDir, taskExternalId),
-      ).resolves.toBe('done')
+    await execCli(['run', '--task', taskExternalId], fixture.projectDir)
+    await expect(
+      readTaskState(fixture.projectDir, taskExternalId),
+    ).resolves.toBe('done')
 
-      const after = await snapshotGlobalNotionflowWrites()
-      assertNoNewGlobalNotionflowWrites(before, after)
-    }, 180_000)
-  },
-)
+    const after = await snapshotGlobalNotionflowWrites()
+    assertNoNewGlobalNotionflowWrites(before, after)
+  }, 180_000)
+})
 
 async function execCli(
   args: string[],

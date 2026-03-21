@@ -55,22 +55,22 @@ export async function loadPipeFromPath(
   moduleUrl.searchParams.set('nf', String(Date.now()))
 
   const mod = await import(moduleUrl.href)
-  const maybeFactory = (mod as {default?: unknown}).default
+  const maybePipe = (mod as {default?: unknown}).default
 
-  if (!maybeFactory || typeof maybeFactory !== 'object') {
+  if (!maybePipe || typeof maybePipe !== 'object') {
     throw formatDiagnostic(sourcePath, [
       'Module must export a pipe object as default export',
     ])
   }
 
-  if (!isPipeModuleDefinitionCandidate(maybeFactory)) {
+  if (!isPipeModuleDefinitionCandidate(maybePipe)) {
     throw formatDiagnostic(sourcePath, [
       'Module must export a definePipe pipe with shape { id, initial, run }',
     ])
   }
 
   return {
-    definition: maybeFactory,
+    definition: maybePipe,
     sourcePath,
     sourceText,
   }

@@ -54,7 +54,7 @@ function expectEnd(value: unknown): EndSignal {
   return value as EndSignal
 }
 
-describe('example factories smoke', () => {
+describe('example pipes smoke', () => {
   it('runs expressive-primitives through the approve path', async () => {
     const writes: PageOutput[] = []
 

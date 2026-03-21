@@ -85,15 +85,15 @@ export async function notionQueryDataSource(
   input: {
     pageSize?: number
     startCursor?: string
-    factoryId?: string
+    pipeId?: string
   } = {},
 ): Promise<NotionQueryResult> {
   const payload: Record<string, unknown> = {page_size: input.pageSize ?? 20}
   if (input.startCursor) payload.start_cursor = input.startCursor
-  if (input.factoryId) {
+  if (input.pipeId) {
     payload.filter = {
-      property: 'Factory',
-      select: {equals: input.factoryId},
+      property: 'Pipe',
+      select: {equals: input.pipeId},
     }
   }
 
@@ -129,7 +129,7 @@ export async function notionQueryAllDataSourcePages(
   dataSourceId: string,
   input: {
     pageSize?: number
-    factoryId?: string
+    pipeId?: string
   } = {},
 ): Promise<NotionPage[]> {
   const results: NotionPage[] = []
@@ -139,7 +139,7 @@ export async function notionQueryAllDataSourcePages(
     const page = await notionQueryDataSource(token, dataSourceId, {
       pageSize: input.pageSize,
       startCursor,
-      factoryId: input.factoryId,
+      pipeId: input.pipeId,
     })
     results.push(...page.results)
     if (!page.hasMore) return results
@@ -151,7 +151,7 @@ export async function notionCreateBoardDataSource(
   token: string,
   title: string,
   stepStatusOptions: Array<{name: string; color: string}> = [],
-  factoryOptions: Array<{name: string; color: string}> = [],
+  pipeOptions: Array<{name: string; color: string}> = [],
   input: {parentPageId?: string | null} = {},
 ): Promise<NotionDatabaseConnection> {
   const createRes = await fetch('https://api.notion.com/v1/databases', {
@@ -186,7 +186,7 @@ export async function notionCreateBoardDataSource(
     token,
     dataSourceId,
     stepStatusOptions,
-    factoryOptions,
+    pipeOptions,
   )
   return {dataSourceId, databaseId: database.id, url: database.url ?? null}
 }
@@ -246,7 +246,7 @@ export async function notionEnsureBoardSchema(
   token: string,
   dataSourceId: string,
   stepOptions: Array<{name: string; color: string}> = [],
-  factoryOptions: Array<{name: string; color: string}> = [],
+  pipeOptions: Array<{name: string; color: string}> = [],
 ): Promise<void> {
   const currentDataSource = await notionGetDataSource(token, dataSourceId)
   const patchRes = await fetch(
@@ -272,11 +272,11 @@ export async function notionEnsureBoardSchema(
               ),
             },
           },
-          Factory: {
+          Pipe: {
             select: {
               options: mergeSelectOptions(
-                currentDataSource.properties.Factory?.select?.options,
-                factoryOptions,
+                currentDataSource.properties.Pipe?.select?.options,
+                pipeOptions,
               ),
             },
           },
@@ -318,7 +318,7 @@ export function notionAssertSharedBoardSchema(
   const expectedTypes: Array<[property: string, type: string]> = [
     ['State', 'select'],
     ['Status', 'select'],
-    ['Factory', 'select'],
+    ['Pipe', 'select'],
   ]
 
   const issues = expectedTypes.flatMap(([propertyName, expectedType]) => {
@@ -410,14 +410,14 @@ export async function notionResolveDatabaseConnectionFromUrl(
 export async function notionCreateTaskPage(
   token: string,
   dataSourceId: string,
-  input: {title: string; state: string; factoryId?: string},
+  input: {title: string; state: string; pipeId?: string},
 ): Promise<NotionCreatePageResult> {
   const properties: Record<string, unknown> = {
     Name: {title: [{text: {content: input.title}}]},
     State: {select: {name: input.state}},
   }
-  if (input.factoryId !== undefined) {
-    properties.Factory = {select: {name: input.factoryId}}
+  if (input.pipeId !== undefined) {
+    properties.Pipe = {select: {name: input.pipeId}}
   }
 
   const res = await fetch('https://api.notion.com/v1/pages', {
@@ -437,10 +437,10 @@ export async function notionCreateTaskPage(
   return (await res.json()) as NotionCreatePageResult
 }
 
-export async function notionWaitForTaskFactory(
+export async function notionWaitForTaskPipe(
   token: string,
   pageId: string,
-  expectedFactoryId: string,
+  expectedPipeId: string,
   input: {maxAttempts?: number; delayMs?: number} = {},
 ): Promise<void> {
   const maxAttempts = input.maxAttempts ?? 12
@@ -448,7 +448,7 @@ export async function notionWaitForTaskFactory(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const page = await notionGetPage(token, pageId)
-    if (pageFactoryId(page) === expectedFactoryId) {
+    if (pagePipeId(page) === expectedPipeId) {
       return
     }
 
@@ -459,7 +459,7 @@ export async function notionWaitForTaskFactory(
 
   throw new Error(
     [
-      `Timed out waiting for shared-board page ${pageId} to report Factory=${expectedFactoryId}.`,
+      `Timed out waiting for shared-board page ${pageId} to report Pipe=${expectedPipeId}.`,
       'Notion may not have applied the select property yet.',
     ].join(' '),
   )
@@ -764,8 +764,8 @@ export function pageState(page: NotionPage): string | null {
   return null
 }
 
-export function pageFactoryId(page: NotionPage): string | null {
-  const prop = page.properties.Factory
+export function pagePipeId(page: NotionPage): string | null {
+  const prop = page.properties.Pipe
   if (prop?.type === 'select') return prop.select?.name ?? null
   return null
 }

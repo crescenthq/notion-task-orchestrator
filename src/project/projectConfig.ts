@@ -19,8 +19,8 @@ const projectConfigSchema = projectConfigInputSchema.transform(config => ({
   pipes: config.pipes ?? [],
 }))
 
-const DEFAULT_FACTORY_DIRECTORY = './pipes'
-const FACTORY_MODULE_FILE_PATTERN =
+const DEFAULT_PIPE_DIRECTORY = './pipes'
+const PIPE_MODULE_FILE_PATTERN =
   /^(?!.*\.d\.(?:cts|mts|ts)$).+\.(?:cts|mts|ts|cjs|mjs|js)$/
 
 export type PipeDeclaration = z.output<typeof pipeDeclarationSchema>
@@ -192,7 +192,7 @@ async function resolveDeclaredPipePaths(
   const declarations =
     config.pipes.length > 0
       ? config.pipes
-      : ([DEFAULT_FACTORY_DIRECTORY] satisfies PipeDeclaration[])
+      : ([DEFAULT_PIPE_DIRECTORY] satisfies PipeDeclaration[])
   const allowMissingDefaultDirectory = config.pipes.length === 0
 
   const resolvedEntries: ResolvedPipePath[] = []
@@ -203,7 +203,7 @@ async function resolveDeclaredPipePaths(
       {
         allowMissing:
           allowMissingDefaultDirectory &&
-          declaration === DEFAULT_FACTORY_DIRECTORY,
+          declaration === DEFAULT_PIPE_DIRECTORY,
       },
     )
 
@@ -274,7 +274,7 @@ async function listPipeModulesInDirectory(
 
     const entryPath = path.join(directoryPath, entry.name)
     const relativePath = toPortableRelativePath(directoryPath, entryPath)
-    if (!FACTORY_MODULE_FILE_PATTERN.test(relativePath)) {
+    if (!PIPE_MODULE_FILE_PATTERN.test(relativePath)) {
       continue
     }
 

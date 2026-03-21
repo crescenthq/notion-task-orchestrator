@@ -8,7 +8,7 @@ const BACKOFF_MAX_MS = 15_000
 const BACKOFF_JITTER_MAX_MS = 250
 
 type TickArgs = {
-  factory?: string
+  pipe?: string
   config?: string
   maxTransitionsPerTick?: string
   runConcurrency?: string
@@ -20,7 +20,7 @@ type TickArgs = {
 }
 
 type TickExecutionOptions = {
-  factoryId?: string
+  pipeId?: string
   configPath?: string
   startDir: string
   maxTransitionsPerTick?: number
@@ -52,7 +52,7 @@ type TickLoopDeps = {
 const defaultTickLoopDeps: TickLoopDeps = {
   runTick: async options => {
     await syncNotionBoards({
-      factoryId: options.factoryId,
+      pipeId: options.pipeId,
       configPath: options.configPath,
       startDir: options.startDir,
       runQueued: true,
@@ -105,7 +105,7 @@ function parseTickExecutionOptions(args: TickArgs): TickExecutionOptions {
     : undefined
 
   return {
-    factoryId: args.factory ? String(args.factory) : undefined,
+    pipeId: args.pipe ? String(args.pipe) : undefined,
     configPath: args.config ? String(args.config) : undefined,
     startDir: process.cwd(),
     maxTransitionsPerTick: Number.isFinite(maxTransitionsPerTick)
@@ -263,7 +263,7 @@ export const tickCmd = defineCommand({
     description: '[common] Run one orchestration tick across queued tasks',
   },
   args: {
-    factory: {type: 'string', required: false},
+    pipe: {type: 'string', required: false},
     config: {type: 'string', required: false},
     loop: {type: 'boolean', required: false},
     intervalMs: {type: 'string', required: false, alias: 'interval-ms'},

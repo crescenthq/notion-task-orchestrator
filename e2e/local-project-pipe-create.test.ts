@@ -9,7 +9,7 @@ import {
   type TempProjectFixture,
 } from './helpers/projectFixture'
 
-describe('local project factory create', () => {
+describe('local project pipe create', () => {
   const fixtures: TempProjectFixture[] = []
 
   afterEach(async () => {
@@ -29,7 +29,7 @@ describe('local project factory create', () => {
     fixtures.push(fixture)
 
     await execCli(['init'], fixture.projectDir)
-    await execCli(['factory', 'create', '--id', 'smoke'], fixture.projectDir)
+    await execCli(['pipe', 'create', '--id', 'smoke'], fixture.projectDir)
 
     await expect(
       stat(path.join(fixture.projectDir, 'pipes', 'smoke.ts')),
@@ -50,7 +50,7 @@ describe('local project factory create', () => {
     const configPath = path.join(fixture.projectDir, 'notionflow.config.ts')
 
     await execCli(
-      ['factory', 'create', '--id', 'external', '--config', configPath],
+      ['pipe', 'create', '--id', 'external', '--config', configPath],
       outsider.projectDir,
     )
 

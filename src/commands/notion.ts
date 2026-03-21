@@ -15,14 +15,14 @@ import {
   notionCreateBoardDataSource,
   notionEnsureBoardSchema,
   notionGetPage,
-  notionWaitForTaskFactory,
+  notionWaitForTaskPipe,
   notionResolveDatabaseConnection,
   notionResolveDatabaseConnectionFromUrl,
   notionGetDataSource,
   notionGetNewComments,
   notionQueryAllDataSourcePages,
   notionUpdateTaskPageState,
-  pageFactoryId,
+  pagePipeId,
   pageState,
   pageTitle,
 } from '../services/notion'
@@ -50,7 +50,7 @@ const MAX_RUN_CONCURRENCY = 32
 const activeQueuedTaskRuns = new Set<string>()
 export const SHARED_NOTION_BOARD_ID = 'notion-shared'
 const TASKS_DATABASE_ENV_KEY = 'NOTION_TASKS_DATABASE_ID'
-const FACTORY_OPTION_COLORS = [
+const PIPE_OPTION_COLORS = [
   'blue',
   'green',
   'yellow',
@@ -85,8 +85,7 @@ type DeclaredPipeCatalog = {
 function buildPipeSelectOptions(pipeIds: string[]) {
   return pipeIds.map((pipeId, index) => ({
     name: pipeId,
-    color:
-      FACTORY_OPTION_COLORS[index % FACTORY_OPTION_COLORS.length] ?? 'gray',
+    color: PIPE_OPTION_COLORS[index % PIPE_OPTION_COLORS.length] ?? 'gray',
   }))
 }
 
@@ -105,39 +104,39 @@ function defaultProjectName(projectRoot: string): string {
     .join(' ')
 }
 
-const FACTORY_MISMATCH_ERROR_PREFIX = 'factory_mismatch:'
-const FACTORY_INVALID_ERROR_PREFIX = 'factory_invalid:'
+const PIPE_MISMATCH_ERROR_PREFIX = 'pipe_mismatch:'
+const PIPE_INVALID_ERROR_PREFIX = 'pipe_invalid:'
 const REPAIR_TASK_COMMAND = 'notionflow integrations notion repair-task --task'
 
 function isOwnershipQuarantined(lastError: string | null | undefined): boolean {
   return Boolean(
-    lastError?.startsWith(FACTORY_MISMATCH_ERROR_PREFIX) ||
-    lastError?.startsWith(FACTORY_INVALID_ERROR_PREFIX),
+    lastError?.startsWith(PIPE_MISMATCH_ERROR_PREFIX) ||
+    lastError?.startsWith(PIPE_INVALID_ERROR_PREFIX),
   )
 }
 
 function ownershipRepairHint(
   taskExternalId: string,
-  expectedFactory: string,
+  expectedPipe: string,
 ): string {
   return [
-    'You may have changed the Factory property by mistake.',
-    `Restore Factory to \`${expectedFactory}\` in Notion, then run \`${REPAIR_TASK_COMMAND} ${taskExternalId}\`.`,
+    'You may have changed the Pipe property by mistake.',
+    `Restore Pipe to \`${expectedPipe}\` in Notion, then run \`${REPAIR_TASK_COMMAND} ${taskExternalId}\`.`,
   ].join(' ')
 }
 
-function makeFactoryInvalidMessage(
+function makePipeInvalidMessage(
   task: typeof tasks.$inferSelect,
   detail: string,
 ): string {
-  return `${FACTORY_INVALID_ERROR_PREFIX} ${detail}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
+  return `${PIPE_INVALID_ERROR_PREFIX} ${detail}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
 }
 
-function makeFactoryMismatchMessage(
+function makePipeMismatchMessage(
   task: typeof tasks.$inferSelect,
-  remoteFactory: string,
+  remotePipe: string,
 ): string {
-  return `${FACTORY_MISMATCH_ERROR_PREFIX} shared-board Factory changed from ${task.workflowId} to ${remoteFactory}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
+  return `${PIPE_MISMATCH_ERROR_PREFIX} shared-board Pipe changed from ${task.workflowId} to ${remotePipe}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
 }
 
 function parseBoardConfig(configJson: string): {
@@ -431,8 +430,8 @@ async function upsertTask(
   state: string,
 ): Promise<void> {
   const now = nowIso()
-  const mismatchPrefix = `${FACTORY_MISMATCH_ERROR_PREFIX}%`
-  const invalidPrefix = `${FACTORY_INVALID_ERROR_PREFIX}%`
+  const mismatchPrefix = `${PIPE_MISMATCH_ERROR_PREFIX}%`
+  const invalidPrefix = `${PIPE_INVALID_ERROR_PREFIX}%`
   await db
     .insert(tasks)
     .values({
@@ -489,7 +488,7 @@ async function ensureWorkflowRecord(
 }
 
 export async function syncNotionBoards(options: {
-  factoryId?: string
+  pipeId?: string
   configPath?: string
   startDir?: string
   runQueued?: boolean
@@ -503,8 +502,8 @@ export async function syncNotionBoards(options: {
   const token = notionToken()
   if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-  if (options.factoryId) {
-    await assertDeclaredPipeId(options.factoryId, {
+  if (options.pipeId) {
+    await assertDeclaredPipeId(options.pipeId, {
       configPath: options.configPath,
       startDir: options.startDir,
     })
@@ -538,7 +537,7 @@ export async function syncNotionBoards(options: {
     pageSize: 50,
   })
   for (const page of pages) {
-    const workflowId = pageFactoryId(page)
+    const workflowId = pagePipeId(page)
     const [existingTask] = await db
       .select()
       .from(tasks)
@@ -549,61 +548,61 @@ export async function syncNotionBoards(options: {
 
     if (!workflowId) {
       if (existingTask) {
-        const message = makeFactoryInvalidMessage(
+        const message = makePipeInvalidMessage(
           existingTask,
-          'missing Factory on shared-board page',
+          'missing Pipe on shared-board page',
         )
         if (existingTask.lastError !== message) {
           await quarantineTask(db, existingTask, message)
           await reflectTaskQuarantineOnBoard(
             token,
             existingTask,
-            'Factory property changed',
+            'Pipe property changed',
             message,
           )
         }
         console.log(
-          `[warn] quarantined page without Factory: ${page.id} ${pageTitle(page)} ${ownershipRepairHint(existingTask.externalTaskId, existingTask.workflowId)}`,
+          `[warn] quarantined page without Pipe: ${page.id} ${pageTitle(page)} ${ownershipRepairHint(existingTask.externalTaskId, existingTask.workflowId)}`,
         )
       }
       console.log(
-        `[warn] skipping page without Factory: ${page.id} ${pageTitle(page)}`,
+        `[warn] skipping page without Pipe: ${page.id} ${pageTitle(page)}`,
       )
       continue
     }
     if (!declaredPipeIds.has(workflowId)) {
       if (existingTask) {
-        const message = makeFactoryInvalidMessage(
+        const message = makePipeInvalidMessage(
           existingTask,
-          `undeclared Factory ${workflowId} on shared-board page`,
+          `undeclared Pipe ${workflowId} on shared-board page`,
         )
         if (existingTask.lastError !== message) {
           await quarantineTask(db, existingTask, message)
           await reflectTaskQuarantineOnBoard(
             token,
             existingTask,
-            'Factory property changed',
+            'Pipe property changed',
             message,
           )
         }
         console.log(
-          `[warn] quarantined page with undeclared Factory: ${page.id} ${pageTitle(page)} factory=${workflowId} ${ownershipRepairHint(existingTask.externalTaskId, existingTask.workflowId)}`,
+          `[warn] quarantined page with undeclared Pipe: ${page.id} ${pageTitle(page)} pipe=${workflowId} ${ownershipRepairHint(existingTask.externalTaskId, existingTask.workflowId)}`,
         )
       }
       console.log(
-        `[warn] skipping page with undeclared Factory: ${page.id} ${pageTitle(page)} factory=${workflowId}`,
+        `[warn] skipping page with undeclared Pipe: ${page.id} ${pageTitle(page)} pipe=${workflowId}`,
       )
       continue
     }
 
     if (existingTask && existingTask.workflowId !== workflowId) {
-      const message = makeFactoryMismatchMessage(existingTask, workflowId)
+      const message = makePipeMismatchMessage(existingTask, workflowId)
       if (existingTask.lastError !== message) {
         await quarantineTask(db, existingTask, message)
         await reflectTaskQuarantineOnBoard(
           token,
           existingTask,
-          'Factory property changed',
+          'Pipe property changed',
           message,
         )
       }
@@ -620,7 +619,7 @@ export async function syncNotionBoards(options: {
       continue
     }
 
-    if (options.factoryId && workflowId !== options.factoryId) {
+    if (options.pipeId && workflowId !== options.pipeId) {
       continue
     }
 
@@ -647,7 +646,7 @@ export async function syncNotionBoards(options: {
     .where(and(eq(tasks.boardId, board.id), eq(tasks.state, 'feedback')))
 
   for (const ft of feedbackTasks) {
-    if (options.factoryId && ft.workflowId !== options.factoryId) continue
+    if (options.pipeId && ft.workflowId !== options.pipeId) continue
     if (!ft.waitingSince) continue
     if (isOwnershipQuarantined(ft.lastError)) continue
 
@@ -812,12 +811,12 @@ export async function repairQuarantinedSharedBoardTask(options: {
   }
 
   const page = await notionGetPage(token, task.externalTaskId)
-  const remoteFactory = pageFactoryId(page)
-  if (remoteFactory !== task.workflowId) {
+  const remotePipe = pagePipeId(page)
+  if (remotePipe !== task.workflowId) {
     throw new Error(
       [
-        `Task ${task.externalTaskId} is still quarantined because its shared-board Factory is ${remoteFactory ?? '<missing>'}.`,
-        `Restore Factory to \`${task.workflowId}\` in Notion first, then run \`${REPAIR_TASK_COMMAND} ${task.externalTaskId}\`.`,
+        `Task ${task.externalTaskId} is still quarantined because its shared-board Pipe is ${remotePipe ?? '<missing>'}.`,
+        `Restore Pipe to \`${task.workflowId}\` in Notion first, then run \`${REPAIR_TASK_COMMAND} ${task.externalTaskId}\`.`,
       ].join(' '),
     )
   }
@@ -842,8 +841,8 @@ export async function repairQuarantinedSharedBoardTask(options: {
     await notionAppendTaskPageLog(
       token,
       task.externalTaskId,
-      'Factory quarantine cleared',
-      `Factory restored to ${task.workflowId}. Task re-queued after explicit repair.`,
+      'Pipe quarantine cleared',
+      `Pipe restored to ${task.workflowId}. Task re-queued after explicit repair.`,
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -881,7 +880,7 @@ export const notionCmd = defineCommand({
     'repair-task': defineCommand({
       meta: {
         name: 'repair-task',
-        description: 'Clear ownership quarantine after Factory is restored',
+        description: 'Clear ownership quarantine after Pipe is restored',
       },
       args: {
         task: {type: 'string', required: true},
@@ -905,7 +904,7 @@ export const notionCmd = defineCommand({
       },
       args: {
         title: {type: 'string', required: true},
-        factory: {type: 'string', required: true},
+        pipe: {type: 'string', required: true},
         status: {type: 'string', required: false},
         config: {type: 'string', required: false},
       },
@@ -913,8 +912,8 @@ export const notionCmd = defineCommand({
         const token = notionToken()
         if (!token) throw new Error('NOTION_API_TOKEN is required')
 
-        const factoryId = String(args.factory)
-        await assertDeclaredPipeId(factoryId, {
+        const pipeId = String(args.pipe)
+        await assertDeclaredPipeId(pipeId, {
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
         })
@@ -937,16 +936,16 @@ export const notionCmd = defineCommand({
         const page = await notionCreateTaskPage(token, board.externalId, {
           title: String(args.title),
           state: localStateToDisplayStatus(state),
-          factoryId,
+          pipeId,
         })
-        await notionWaitForTaskFactory(token, page.id, factoryId)
+        await notionWaitForTaskPipe(token, page.id, pipeId)
 
-        await ensureWorkflowRecord(db, factoryId)
+        await ensureWorkflowRecord(db, pipeId)
         await upsertTask(
           db,
           board.id,
           page.id,
-          factoryId,
+          pipeId,
           localTaskStateFromNotion(state),
         )
 
@@ -960,7 +959,7 @@ export const notionCmd = defineCommand({
         description: 'Pull tasks from the shared Notion board',
       },
       args: {
-        factory: {type: 'string', required: false},
+        pipe: {type: 'string', required: false},
         config: {type: 'string', required: false},
         run: {type: 'boolean', required: false},
         runConcurrency: {
@@ -975,7 +974,7 @@ export const notionCmd = defineCommand({
           : undefined
 
         await syncNotionBoards({
-          factoryId: args.factory ? String(args.factory) : undefined,
+          pipeId: args.pipe ? String(args.pipe) : undefined,
           configPath: args.config ? String(args.config) : undefined,
           startDir: process.cwd(),
           runQueued: Boolean(args.run),

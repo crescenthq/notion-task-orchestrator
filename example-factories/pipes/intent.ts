@@ -101,8 +101,8 @@ const captureImplementationSummary = step<IntentContext>(
 
 const publishSummary = write<IntentContext>(ctx => ({
   markdown: [
-    '# Intent Factory Summary',
-    `Factory: ${FACTORY_ID}`,
+    '# Intent Pipe Summary',
+    `Pipe: ${FACTORY_ID}`,
     '',
     `Request: ${ctx.request_text}`,
     `Repo: ${ctx.repo_url}`,

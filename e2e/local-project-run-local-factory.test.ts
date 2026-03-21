@@ -25,7 +25,7 @@ describe('local project run command', () => {
     fixture = null
   })
 
-  it('loads factories directly from project config and picks up edits without install', async () => {
+  it('loads pipes directly from project config and picks up edits without install', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture()
 
@@ -132,7 +132,7 @@ describe('local project run command', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('runs direct definePipe factories and resumes feedback in local mode', async () => {
+  it('runs direct definePipe pipes and resumes feedback in local mode', async () => {
     const before = await snapshotGlobalNotionflowWrites()
     fixture = await createTempProjectFixture()
 
@@ -202,10 +202,10 @@ describe('local project run command', () => {
     assertNoNewGlobalNotionflowWrites(before, after)
   })
 
-  it('does not expose the removed factory install command', async () => {
+  it('does not expose the removed pipe install command', async () => {
     fixture = await createTempProjectFixture()
     const result = await execCliResult(
-      ['factory', 'install', '--path', './fake.ts'],
+      ['pipe', 'install', '--path', './fake.ts'],
       fixture.projectDir,
     )
     expect(result.code).not.toBe(0)

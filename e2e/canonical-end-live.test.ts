@@ -85,7 +85,7 @@ if (liveSuiteEnabled) {
           'integrations',
           'notion',
           'create-task',
-          '--factory',
+          '--pipe',
           factoryId,
           '--title',
           `Canonical end live ${status} ${Date.now()}`,

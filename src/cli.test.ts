@@ -57,9 +57,9 @@ describe('CLI bootstrap flow', () => {
     expect(init.status).toBe(0)
     expect(init.stdout).toContain('NotionFlow project initialized')
 
-    const listFactories = runCli(['factory', 'list'], home, {}, project)
-    expect(listFactories.status).toBe(0)
-    expect(listFactories.stdout).toContain('No factories configured')
+    const listPipes = runCli(['pipe', 'list'], home, {}, project)
+    expect(listPipes.status).toBe(0)
+    expect(listPipes.stdout).toContain('No pipes configured')
   })
 
   it('rejects removed legacy commands', () => {

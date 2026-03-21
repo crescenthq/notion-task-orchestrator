@@ -38,7 +38,7 @@ export async function cleanupNotionCommandTestEnv(): Promise<void> {
 
 export async function createProjectFixture(
   options: {
-    factoryIds?: string[]
+    pipeIds?: string[]
     name?: string
   } = {},
 ) {
@@ -47,7 +47,7 @@ export async function createProjectFixture(
   )
   tempDirs.push(projectRoot)
 
-  const factoryIds = options.factoryIds ?? ['alpha', 'beta']
+  const pipeIds = options.pipeIds ?? ['alpha', 'beta']
   const pipesDir = path.join(projectRoot, 'pipes')
   await mkdir(pipesDir, {recursive: true})
   await writeFile(
@@ -55,15 +55,15 @@ export async function createProjectFixture(
     [
       'export default {',
       ...(options.name ? [`  name: ${JSON.stringify(options.name)},`] : []),
-      `  pipes: [${factoryIds.map(id => JSON.stringify(`./pipes/${id}.mjs`)).join(', ')}],`,
+      `  pipes: [${pipeIds.map(id => JSON.stringify(`./pipes/${id}.mjs`)).join(', ')}],`,
       '};',
       '',
     ].join('\n'),
     'utf8',
   )
 
-  for (const factoryId of factoryIds) {
-    await writeFactory(path.join(pipesDir, `${factoryId}.mjs`), factoryId)
+  for (const pipeId of pipeIds) {
+    await writePipe(path.join(pipesDir, `${pipeId}.mjs`), pipeId)
   }
 
   return projectRoot
@@ -75,12 +75,12 @@ export async function setupSharedBoardProject(
     boardExternalId?: string
     boardConfig?: {databaseId?: string; url?: string}
     token?: string
-    factoryIds?: string[]
+    pipeIds?: string[]
     name?: string
   } = {},
 ) {
   const projectRoot = await createProjectFixture({
-    factoryIds: options.factoryIds,
+    pipeIds: options.pipeIds,
     name: options.name,
   })
   process.chdir(projectRoot)
@@ -170,7 +170,7 @@ export function buildNotionPage(
   id: string,
   title: string,
   state: string,
-  factoryId?: string,
+  pipeId?: string,
 ) {
   return {
     id,
@@ -183,11 +183,11 @@ export function buildNotionPage(
         type: 'select',
         select: {name: state},
       },
-      ...(factoryId
+      ...(pipeId
         ? {
-            Factory: {
+            Pipe: {
               type: 'select',
-              select: {name: factoryId},
+              select: {name: pipeId},
             },
           }
         : {}),
@@ -202,12 +202,12 @@ export function buildSharedBoardDataSource(id: string) {
       Name: {type: 'title'},
       State: {type: 'select', select: {options: []}},
       Status: {type: 'select', select: {options: []}},
-      Factory: {type: 'select', select: {options: []}},
+      Pipe: {type: 'select', select: {options: []}},
     },
   }
 }
 
-async function writeFactory(filePath: string, id: string): Promise<void> {
+async function writePipe(filePath: string, id: string): Promise<void> {
   await writeFile(
     filePath,
     [

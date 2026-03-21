@@ -12,7 +12,7 @@ export async function runTaskByExternalId(
 }
 
 export const runCmd = defineCommand({
-  meta: {name: 'run', description: '[common] Run a factory for one task'},
+  meta: {name: 'run', description: '[common] Run a pipe for one task'},
   args: {
     task: {type: 'string', required: true},
     config: {type: 'string', required: false},

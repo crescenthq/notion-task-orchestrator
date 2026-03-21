@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 import {doctorCmd} from './commands/doctor'
-import {factoryCmd} from './commands/factory'
+import {pipeCmd} from './commands/pipe'
 import {integrationsCmd} from './commands/integrations'
 import {runCmd} from './commands/run'
 import {statusCmd} from './commands/status'
@@ -16,7 +16,7 @@ function descriptionOf(command: unknown): string {
 
 describe('CLI command categorization', () => {
   it('marks top-level commands as common, advanced, or integration', () => {
-    expect(descriptionOf(factoryCmd)).toContain('[advanced]')
+    expect(descriptionOf(pipeCmd)).toContain('[advanced]')
     expect(descriptionOf(doctorCmd)).toContain('[common]')
     expect(descriptionOf(tickCmd)).toContain('[common]')
     expect(descriptionOf(runCmd)).toContain('[common]')

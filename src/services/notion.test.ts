@@ -10,8 +10,8 @@ import {
   notionQueryAllDataSourcePages,
   notionQueryDataSource,
   notionResolveDatabaseConnectionFromUrl,
-  notionWaitForTaskFactory,
-  pageFactoryId,
+  notionWaitForTaskPipe,
+  pagePipeId,
 } from './notion'
 
 const originalFetch = globalThis.fetch
@@ -27,7 +27,7 @@ function buildSharedBoardDataSource(
   overrides: Partial<{
     stateOptions: Array<{name: string; color?: string; id?: string}>
     statusOptions: Array<{name: string; color?: string; id?: string}>
-    factoryOptions: Array<{name: string; color?: string; id?: string}>
+    pipeOptions: Array<{name: string; color?: string; id?: string}>
   }> = {},
 ) {
   return {
@@ -42,9 +42,9 @@ function buildSharedBoardDataSource(
         type: 'select',
         select: {options: overrides.statusOptions ?? []},
       },
-      Factory: {
+      Pipe: {
         type: 'select',
-        select: {options: overrides.factoryOptions ?? []},
+        select: {options: overrides.pipeOptions ?? []},
       },
     },
   }
@@ -83,7 +83,7 @@ describe('notion board schema provisioning', () => {
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload).toEqual({
       properties: {
-        Factory: {select: {options: []}},
+        Pipe: {select: {options: []}},
         State: {select: {options: STATE_OPTIONS}},
         Status: {select: {options: []}},
       },
@@ -103,7 +103,7 @@ describe('notion board schema provisioning', () => {
       }
       return jsonResponse(
         buildSharedBoardDataSource({
-          factoryOptions: [{name: 'demo', color: 'default', id: 'opt-demo'}],
+          pipeOptions: [{name: 'demo', color: 'default', id: 'opt-demo'}],
         }),
       )
     }) as typeof fetch
@@ -112,21 +112,16 @@ describe('notion board schema provisioning', () => {
       {name: '🛠️ setup', color: 'purple'},
       {name: '📋 plan', color: 'pink'},
     ]
-    const factoryOptions = [
+    const pipeOptions = [
       {name: 'demo', color: 'blue'},
       {name: 'research', color: 'green'},
     ]
-    await notionEnsureBoardSchema(
-      'token-1',
-      'ds-1',
-      stepOptions,
-      factoryOptions,
-    )
+    await notionEnsureBoardSchema('token-1', 'ds-1', stepOptions, pipeOptions)
 
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload.properties.State.select.options).toEqual(STATE_OPTIONS)
     expect(payload.properties.Status.select.options).toEqual(stepOptions)
-    expect(payload.properties.Factory.select.options).toEqual([
+    expect(payload.properties.Pipe.select.options).toEqual([
       {name: 'demo', color: 'default', id: 'opt-demo'},
       {name: 'research', color: 'green'},
     ])
@@ -177,11 +172,11 @@ describe('notion board schema provisioning', () => {
     const patchPayload = JSON.parse(String(calls[2]?.init?.body))
     expect(patchPayload.properties.State.select.options).toEqual(STATE_OPTIONS)
     expect(patchPayload.properties.Status.select.options).toEqual([])
-    expect(patchPayload.properties.Factory.select.options).toEqual([])
+    expect(patchPayload.properties.Pipe.select.options).toEqual([])
     expect(patchPayload.properties.Ready).toBeUndefined()
   })
 
-  it('provisions a workspace-level board when step and factory options are empty', async () => {
+  it('provisions a workspace-level board when step and pipe options are empty', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -279,9 +274,7 @@ describe('notion board schema provisioning', () => {
       }
       return jsonResponse(
         buildSharedBoardDataSource({
-          factoryOptions: [
-            {name: 'verify-happy', color: 'pink', id: 'factory-1'},
-          ],
+          pipeOptions: [{name: 'verify-happy', color: 'pink', id: 'pipe-1'}],
           statusOptions: [{name: 'complete', color: 'orange', id: 'status-1'}],
         }),
       )
@@ -301,13 +294,13 @@ describe('notion board schema provisioning', () => {
     expect(payload.properties.Status.select.options).toEqual([
       {name: 'complete', color: 'orange', id: 'status-1'},
     ])
-    expect(payload.properties.Factory.select.options).toEqual([
-      {name: 'verify-happy', color: 'pink', id: 'factory-1'},
+    expect(payload.properties.Pipe.select.options).toEqual([
+      {name: 'verify-happy', color: 'pink', id: 'pipe-1'},
       {name: 'verify-feedback', color: 'green'},
     ])
   })
 
-  it('writes Factory when creating a task page', async () => {
+  it('writes Pipe when creating a task page', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -320,14 +313,14 @@ describe('notion board schema provisioning', () => {
     await notionCreateTaskPage('token-1', 'ds-1', {
       title: 'Shared task',
       state: 'Queue',
-      factoryId: 'demo',
+      pipeId: 'demo',
     })
 
     const payload = JSON.parse(String(calls[0]?.init?.body))
-    expect(payload.properties.Factory).toEqual({select: {name: 'demo'}})
+    expect(payload.properties.Pipe).toEqual({select: {name: 'demo'}})
   })
 
-  it('waits for a created task page to report the expected Factory', async () => {
+  it('waits for a created task page to report the expected Pipe', async () => {
     let reads = 0
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -336,7 +329,7 @@ describe('notion board schema provisioning', () => {
         return jsonResponse({
           id: 'page-1',
           properties: {
-            Factory:
+            Pipe:
               reads >= 3
                 ? {type: 'select', select: {name: 'demo'}}
                 : {type: 'select', select: null},
@@ -348,7 +341,7 @@ describe('notion board schema provisioning', () => {
     }) as typeof fetch
 
     await expect(
-      notionWaitForTaskFactory('token-1', 'page-1', 'demo', {
+      notionWaitForTaskPipe('token-1', 'page-1', 'demo', {
         maxAttempts: 3,
         delayMs: 0,
       }),
@@ -356,14 +349,14 @@ describe('notion board schema provisioning', () => {
     expect(reads).toBe(3)
   })
 
-  it('fails when a created task page never reports the expected Factory', async () => {
+  it('fails when a created task page never reports the expected Pipe', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/v1/pages/page-1')) {
         return jsonResponse({
           id: 'page-1',
           properties: {
-            Factory: {type: 'select', select: null},
+            Pipe: {type: 'select', select: null},
           },
         })
       }
@@ -372,7 +365,7 @@ describe('notion board schema provisioning', () => {
     }) as typeof fetch
 
     await expect(
-      notionWaitForTaskFactory('token-1', 'page-1', 'demo', {
+      notionWaitForTaskPipe('token-1', 'page-1', 'demo', {
         maxAttempts: 2,
         delayMs: 0,
       }),
@@ -445,7 +438,7 @@ describe('notion board schema provisioning', () => {
     })
   })
 
-  it('queries a data source page with cursor and factory filter', async () => {
+  it('queries a data source page with cursor and pipe filter', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -463,7 +456,7 @@ describe('notion board schema provisioning', () => {
       notionQueryDataSource('token-1', 'ds-1', {
         pageSize: 50,
         startCursor: 'cursor-1',
-        factoryId: 'alpha',
+        pipeId: 'alpha',
       }),
     ).resolves.toEqual({
       results: [{id: 'page-1', properties: {}}],
@@ -476,7 +469,7 @@ describe('notion board schema provisioning', () => {
       page_size: 50,
       start_cursor: 'cursor-1',
       filter: {
-        property: 'Factory',
+        property: 'Pipe',
         select: {equals: 'alpha'},
       },
     })
@@ -540,7 +533,7 @@ describe('notion board schema provisioning', () => {
         properties: {
           State: {type: 'select'},
           Status: {type: 'select'},
-          Factory: {type: 'select'},
+          Pipe: {type: 'select'},
         },
       }),
     ).not.toThrow()
@@ -556,7 +549,7 @@ describe('notion board schema provisioning', () => {
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: missing Factory',
+      'Shared Notion board schema is invalid for data source ds-1: missing Pipe',
     )
   })
 
@@ -567,20 +560,20 @@ describe('notion board schema provisioning', () => {
         properties: {
           State: {type: 'select'},
           Status: {type: 'select'},
-          Factory: {type: 'rich_text'},
+          Pipe: {type: 'rich_text'},
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: Factory must be select (found rich_text)',
+      'Shared Notion board schema is invalid for data source ds-1: Pipe must be select (found rich_text)',
     )
   })
 
-  it('reads the Factory property from a task page', () => {
+  it('reads the Pipe property from a task page', () => {
     expect(
-      pageFactoryId({
+      pagePipeId({
         id: 'page-1',
         properties: {
-          Factory: {
+          Pipe: {
             type: 'select',
             select: {name: 'research'},
           },

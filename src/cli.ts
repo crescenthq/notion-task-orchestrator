@@ -10,7 +10,7 @@ await bootstrapRuntimeEnv({
 
 const {defineCommand, runMain} = await import('citty')
 const {doctorCmd} = await import('./commands/doctor')
-const {factoryCmd} = await import('./commands/factory')
+const {pipeCmd} = await import('./commands/pipe')
 const {initCmd} = await import('./commands/init')
 const {integrationsCmd} = await import('./commands/integrations')
 const {runCmd} = await import('./commands/run')
@@ -37,7 +37,7 @@ const main = defineCommand({
     tick: tickCmd,
     run: runCmd,
     status: statusCmd,
-    factory: factoryCmd,
+    pipe: pipeCmd,
     integrations: integrationsCmd,
   },
 })

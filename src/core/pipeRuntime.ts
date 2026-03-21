@@ -275,8 +275,8 @@ export async function runPipeTaskByExternalId(
   if (isOwnershipQuarantined(task.lastError)) {
     throw new Error(
       [
-        `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Factory mismatch is resolved: ${task.lastError}`,
-        `Restore the original Factory in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
+        `Task ${task.externalTaskId} is quarantined and cannot run until its shared-board Pipe mismatch is resolved: ${task.lastError}`,
+        `Restore the original Pipe in Notion, then run \`notionflow integrations notion repair-task --task ${task.externalTaskId}\` to re-queue it safely.`,
       ].join(' '),
     )
   }
@@ -618,14 +618,14 @@ export async function runPipeTaskByExternalId(
       status,
       message:
         status === 'done'
-          ? 'Factory reached terminal done state.'
+          ? 'Pipe reached terminal done state.'
           : String(ctx.last_error ?? 'no detail'),
     })
     await syncBoardState(status)
     await syncBoardLog(
       status === 'done' ? 'Task complete' : `Task ${status}`,
       status === 'done'
-        ? 'Factory reached terminal done state.'
+        ? 'Pipe reached terminal done state.'
         : String(ctx.last_error ?? 'no detail'),
     )
   }

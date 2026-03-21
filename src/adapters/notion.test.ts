@@ -58,12 +58,12 @@ describe('createNotionTaskBoardAdapter', () => {
       'Step A',
     )
 
-    await adapter.appendLog(ref, 'Run started', 'Factory: demo')
+    await adapter.appendLog(ref, 'Run started', 'Pipe: demo')
     expect(appendLogSpy).toHaveBeenCalledWith(
       token,
       'task-1',
       'Run started',
-      'Factory: demo',
+      'Pipe: demo',
     )
 
     await adapter.appendPageContent(ref, '# Demo output')

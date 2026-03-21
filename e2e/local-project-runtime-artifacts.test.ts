@@ -26,8 +26,8 @@ describe('local project runtime artifacts', () => {
     fixture = await createTempProjectFixture()
 
     await execCli(['init'], fixture.projectDir)
-    await execCli(['factory', 'list'], fixture.projectDir)
-    await execCli(['factory', 'list'], fixture.projectDir)
+    await execCli(['pipe', 'list'], fixture.projectDir)
+    await execCli(['pipe', 'list'], fixture.projectDir)
 
     const runtimeDir = path.join(fixture.projectDir, '.notionflow')
     await expect(

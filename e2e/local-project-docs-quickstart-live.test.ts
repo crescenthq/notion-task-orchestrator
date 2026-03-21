@@ -42,16 +42,13 @@ if (liveSuiteEnabled) {
       await finishLiveBoardSuite()
     })
 
-    it('runs init -> factory create -> doctor -> tick in local project mode', async () => {
+    it('runs init -> pipe create -> doctor -> tick in local project mode', async () => {
       const before = await snapshotGlobalNotionflowWrites()
       fixture = await createTempProjectFixture('notionflow-docs-live-')
 
       await execCli(['init'], fixture.projectDir)
       await ensureNotionflowDependencyAvailable(fixture.projectDir)
-      await execCli(
-        ['factory', 'create', '--id', 'docs-live'],
-        fixture.projectDir,
-      )
+      await execCli(['pipe', 'create', '--id', 'docs-live'], fixture.projectDir)
 
       await writeFile(
         path.join(fixture.projectDir, 'notionflow.config.ts'),
@@ -83,7 +80,7 @@ if (liveSuiteEnabled) {
           'integrations',
           'notion',
           'create-task',
-          '--factory',
+          '--pipe',
           'docs-live',
           '--title',
           'Docs quickstart live task',
@@ -95,7 +92,7 @@ if (liveSuiteEnabled) {
       const taskExternalId = extractTaskExternalId(created.stdout)
 
       const tick = await execCli(
-        ['tick', '--factory', 'docs-live'],
+        ['tick', '--pipe', 'docs-live'],
         fixture.projectDir,
       )
       expect(tick.stdout).toContain('Sync complete')
