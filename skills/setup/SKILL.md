@@ -19,8 +19,8 @@ input (Notion token, pipe shape). Use AskUserQuestion for all decisions.
 npx notionflow init
 ```
 
-This creates `notionflow.config.ts`, `pipes/`, and `.notionflow/` in the
-current directory.
+This creates `notionflow.config.ts`, `pipes/`, and `.notionflow/` in the current
+directory.
 
 If this fails, ensure Node.js ≥20 is installed.
 
@@ -155,10 +155,10 @@ is resolved and auth is valid. Check that at least one pipe exists under the
 top-level `pipes/` directory, or that `notionflow.config.ts` points to the
 custom location you intended.
 
-**Pipe load error:** Check that the TypeScript file exports a valid pipe
-object and that the file lives under the default `pipes/` directory or matches
-the `pipes` declarations in `notionflow.config.ts`. Relative declarations
-resolve from the project root (directory containing `notionflow.config.ts`).
+**Pipe load error:** Check that the TypeScript file exports a valid pipe object
+and that the file lives under the default `pipes/` directory or matches the
+`pipes` declarations in `notionflow.config.ts`. Relative declarations resolve
+from the project root (directory containing `notionflow.config.ts`).
 
 **Notion page not updating:** Ensure the integration is connected to the
 database in Notion (Share → Connect to → NotionFlow).

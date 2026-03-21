@@ -1,16 +1,16 @@
 ---
 name: add-factory
 description:
-  Create a TypeScript state-machine pipe with inline agent functions. Use
-  when the user wants to create a pipe, build a multi-agent pipeline, or
-  chain states into a workflow.
+  Create a TypeScript state-machine pipe with inline agent functions. Use when
+  the user wants to create a pipe, build a multi-agent pipeline, or chain states
+  into a workflow.
 ---
 
 # Create a TypeScript Pipe
 
-A pipe is a TypeScript state machine. Each state has an inline `agent`
-function that runs your logic, and an `on` map that routes to the next state
-based on the result.
+A pipe is a TypeScript state machine. Each state has an inline `agent` function
+that runs your logic, and an `on` map that routes to the next state based on the
+result.
 
 **Principle:** One file, all logic inline. No separate executor scripts. No
 YAML. No global install step — factories are local files declared in
@@ -39,8 +39,8 @@ success/failure routes it needs.
 npx notionflow pipe create --id <pipe-id>
 ```
 
-This creates `./pipes/<pipe-id>.ts` relative to the project root (the
-directory containing `notionflow.config.ts`). Edit the file directly — it's just
+This creates `./pipes/<pipe-id>.ts` relative to the project root (the directory
+containing `notionflow.config.ts`). Edit the file directly — it's just
 TypeScript.
 
 ## Phase 3 — Write the Pipe
@@ -292,10 +292,7 @@ automatically in the default project layout. You only need `pipes` in
 import {defineConfig} from 'notionflow'
 
 export default defineConfig({
-  pipes: [
-    './pipes',
-    './manual/<pipe-id>.ts',
-  ],
+  pipes: ['./pipes', './manual/<pipe-id>.ts'],
 })
 ```
 
@@ -371,16 +368,16 @@ npx notionflow doctor
 
 ## Modifying Later
 
-- **Edit logic:** Open `./pipes/<pipe-id>.ts`, change the inline agent
-  function. No re-install needed — NotionFlow reads the file on each run via
+- **Edit logic:** Open `./pipes/<pipe-id>.ts`, change the inline agent function.
+  No re-install needed — NotionFlow reads the file on each run via
   `notionflow.config.ts`.
 - **Add a state:** Add the state to `states`, wire up `on` maps in affected
   states, save the file.
 - **Change routing:** Update `select` or `orchestrate.agent` return value,
   update `on` map, save the file.
-- **Add another pipe:** Run `npx notionflow pipe create --id <new-id>`,
-  write the pipe. No config edit is needed unless the new file lives outside
-  the default top-level `pipes/` directory.
+- **Add another pipe:** Run `npx notionflow pipe create --id <new-id>`, write
+  the pipe. No config edit is needed unless the new file lives outside the
+  default top-level `pipes/` directory.
 
 ## Common Gotchas
 
@@ -404,6 +401,6 @@ original comment — are detected.
 **`action` states require both `on.done` and `on.failed`** Both routes must be
 declared. The runtime rejects factories missing either route at load time.
 
-**Pipe not loading** Check that the path in `notionflow.config.ts` matches
-the actual file location. Paths are relative to the project root. Run
+**Pipe not loading** Check that the path in `notionflow.config.ts` matches the
+actual file location. Paths are relative to the project root. Run
 `npx notionflow doctor` to confirm the config is resolved correctly.

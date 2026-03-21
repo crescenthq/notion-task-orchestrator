@@ -1,30 +1,30 @@
 import {access} from 'node:fs/promises'
 import path from 'node:path'
 import {and, eq, isNull, lte, or} from 'drizzle-orm'
+import {createNotionTaskBoardAdapter} from '../adapters/notion'
 import {nowIso, openApp} from '../app/context'
 import {notionToken} from '../config/env'
-import {createNotionTaskBoardAdapter} from '../adapters/notion'
-import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
-import {boards, runTraces, runs, tasks} from '../db/schema'
+import {boards, runs, runTraces, tasks} from '../db/schema'
 import {
-  resolveProjectConfig,
+  type Checkpoint,
+  CheckpointMismatchError,
+  parseCheckpoint,
+} from '../pipe/checkpoint'
+import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
+import {
   type ResolvedProjectConfig,
+  resolveProjectConfig,
 } from '../project/discoverConfig'
 import {loadDeclaredPipes} from '../project/projectConfig'
-import {parseRunTrace, RunTraceReasonCode} from './runTraces'
+import {formatStatusLabel} from '../services/statusIcons'
+import {loadPipeFromPath, type PipeModuleDefinition} from './pipe'
+import {parseRunTrace, type RunTraceReasonCode} from './runTraces'
 import {
-  nullTaskBoardAdapter,
   type BoardTaskRef,
+  nullTaskBoardAdapter,
   type TaskBoardAdapter,
   type TaskBoardState,
 } from './taskBoardAdapter'
-import {formatStatusLabel} from '../services/statusIcons'
-import {
-  CheckpointMismatchError,
-  parseCheckpoint,
-  type Checkpoint,
-} from '../pipe/checkpoint'
-import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
 
 type JsonObject = Record<string, unknown>
 
@@ -262,7 +262,10 @@ export async function runPipeTaskByExternalId(
 ): Promise<void> {
   const runtimeOptions = normalizeRuntimeRunOptions(options)
   const startDir = options.startDir ?? process.cwd()
-  const {db, paths} = await openApp({startDir, configPath: options.configPath})
+  const {db, paths} = await openApp({
+    startDir,
+    configPath: options.configPath,
+  })
   const resolvedProjectConfig = await resolveProjectConfig({
     startDir,
     configPath: options.configPath,
@@ -360,15 +363,14 @@ export async function runPipeTaskByExternalId(
     .find(line => line.length > 0)
   const taskPrompt = promptLine ?? taskTitle
 
-  let defaultContext: JsonObject
-  let initialStateId: string
   if (!isRecord(pipeDefinition.initial)) {
     throw new Error(
       `Pipe \`${definition.id}\` must define an object context for runtime persistence`,
     )
   }
-  defaultContext = pipeDefinition.initial
-  initialStateId = PIPE_RUNNING_STATE_ID
+
+  const defaultContext: JsonObject = pipeDefinition.initial
+  const initialStateId: string = PIPE_RUNNING_STATE_ID
 
   let ctx: JsonObject = {
     ...defaultContext,
