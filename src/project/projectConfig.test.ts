@@ -1,4 +1,5 @@
-import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises'
+import {execFile} from 'node:child_process'
+import {mkdtemp, mkdir, realpath, rm, writeFile} from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import {afterEach, describe, expect, it} from 'vitest'
@@ -6,6 +7,7 @@ import {
   loadDeclaredPipes,
   loadProjectConfig,
   resolvePipePaths,
+  resolveWorkspaceConfig,
 } from './projectConfig'
 
 const fixtures: string[] = []
@@ -40,6 +42,12 @@ describe('projectConfig', () => {
     await expect(loadProjectConfig(configPath)).resolves.toEqual({
       name: 'Asmara',
       pipes: [],
+      workspace: {
+        source: 'project',
+        ref: 'HEAD',
+        cwd: '.',
+        cleanup: 'on-success',
+      },
     })
 
     const config = await loadProjectConfig(configPath)
@@ -49,6 +57,162 @@ describe('projectConfig', () => {
 
     const loaded = await loadDeclaredPipes({configPath, projectRoot})
     expect(loaded.map(entry => entry.definition.id)).toEqual(['named-factory'])
+  })
+
+  it('resolves omitted workspace to the git repo containing projectRoot', async () => {
+    const repoRoot = await createFixture(
+      'notionflow-project-config-workspace-default-',
+    )
+    await initGitRepo(repoRoot)
+    const canonicalRepoRoot = await realpath(repoRoot)
+
+    const projectRoot = path.join(repoRoot, 'packages', 'app')
+    await mkdir(projectRoot, {recursive: true})
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, `export default { name: "Asmara" };\n`, 'utf8')
+
+    const config = await loadProjectConfig(configPath)
+    await expect(
+      resolveWorkspaceConfig({config, projectRoot, configPath}),
+    ).resolves.toEqual({
+      source: 'project',
+      repo: canonicalRepoRoot,
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    })
+  })
+
+  it('parses string workspace shorthand for explicit local repo paths', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-workspace-local-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { workspace: "../service-repo" };\n`,
+      'utf8',
+    )
+
+    const config = await loadProjectConfig(configPath)
+    expect(config.workspace).toEqual({
+      source: 'repo',
+      repo: '../service-repo',
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    })
+
+    await expect(
+      resolveWorkspaceConfig({config, projectRoot, configPath}),
+    ).resolves.toEqual({
+      source: 'repo',
+      repo: path.resolve(projectRoot, '../service-repo'),
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    })
+  })
+
+  it('parses string workspace shorthand for remote repo URLs', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-workspace-remote-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      `export default { workspace: "git@github.com:acme/service.git" };\n`,
+      'utf8',
+    )
+
+    const config = await loadProjectConfig(configPath)
+    await expect(
+      resolveWorkspaceConfig({config, projectRoot, configPath}),
+    ).resolves.toEqual({
+      source: 'repo',
+      repo: 'git@github.com:acme/service.git',
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    })
+  })
+
+  it('parses workspace object form with repo, ref, cwd, and cleanup overrides', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-workspace-object-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      [
+        'export default {',
+        '  workspace: {',
+        '    repo: "https://github.com/acme/service.git",',
+        '    ref: "main",',
+        '    cwd: "packages/api",',
+        '    cleanup: "never",',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    await expect(loadProjectConfig(configPath)).resolves.toMatchObject({
+      workspace: {
+        source: 'repo',
+        repo: 'https://github.com/acme/service.git',
+        ref: 'main',
+        cwd: 'packages/api',
+        cleanup: 'never',
+      },
+    })
+  })
+
+  it('allows workspace object overrides without repo in project mode', async () => {
+    const repoRoot = await createFixture(
+      'notionflow-project-config-workspace-overrides-',
+    )
+    await initGitRepo(repoRoot)
+    const canonicalRepoRoot = await realpath(repoRoot)
+
+    const projectRoot = path.join(repoRoot, 'packages', 'web')
+    await mkdir(projectRoot, {recursive: true})
+
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      [
+        'export default {',
+        '  workspace: {',
+        '    ref: "feature/demo",',
+        '    cwd: "apps/frontend",',
+        '    cleanup: "never",',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const config = await loadProjectConfig(configPath)
+    expect(config.workspace).toEqual({
+      source: 'project',
+      ref: 'feature/demo',
+      cwd: 'apps/frontend',
+      cleanup: 'never',
+    })
+
+    await expect(
+      resolveWorkspaceConfig({config, projectRoot, configPath}),
+    ).resolves.toEqual({
+      source: 'project',
+      repo: canonicalRepoRoot,
+      ref: 'feature/demo',
+      cwd: 'apps/frontend',
+      cleanup: 'never',
+    })
   })
 
   it('treats explicit empty pipes as default top-level discovery', async () => {
@@ -150,6 +314,45 @@ describe('projectConfig', () => {
 
     await expect(loadProjectConfig(configPath)).rejects.toThrowError(
       /Unrecognized key: "factories"/,
+    )
+  })
+
+  it('rejects empty workspace shorthand with path-aware diagnostics', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-workspace-empty-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(configPath, `export default { workspace: "" };\n`, 'utf8')
+
+    await expect(loadProjectConfig(configPath)).rejects.toThrowError(
+      /workspace: Too small: expected string to have >=1 characters/,
+    )
+  })
+
+  it('rejects malformed workspace objects with offending keys in diagnostics', async () => {
+    const projectRoot = await createFixture(
+      'notionflow-project-config-workspace-invalid-',
+    )
+    const configPath = path.join(projectRoot, 'notionflow.config.ts')
+    await writeFile(
+      configPath,
+      [
+        'export default {',
+        '  workspace: {',
+        '    repo: "",',
+        '    extra: true,',
+        '  },',
+        '};',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    await expect(loadProjectConfig(configPath)).rejects.toThrowError(
+      /workspace\.repo: Too small: expected string to have >=1 characters/,
+    )
+    await expect(loadProjectConfig(configPath)).rejects.toThrowError(
+      /workspace: Unrecognized key: "extra"/,
     )
   })
 
@@ -259,6 +462,10 @@ async function createFixture(prefix: string): Promise<string> {
   return fixturePath
 }
 
+async function initGitRepo(repoRoot: string): Promise<void> {
+  await runGit(['init'], repoRoot)
+}
+
 async function writeMinimalFactory(
   targetPath: string,
   id: string,
@@ -278,4 +485,17 @@ async function writeMinimalFactory(
     ].join('\n'),
     'utf8',
   )
+}
+
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }

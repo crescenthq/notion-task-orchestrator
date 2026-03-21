@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process'
 import path from 'node:path'
 import {access, constants, readdir, stat} from 'node:fs/promises'
 import {pathToFileURL} from 'node:url'
@@ -6,17 +7,33 @@ import {loadPipeFromPath} from '../core/pipe'
 import type {LoadedPipeDefinition} from '../core/pipe'
 
 const pipeDeclarationSchema = z.string().trim().min(1)
+const workspaceCleanupPolicySchema = z.enum(['on-success', 'never'])
+const workspaceConfigObjectSchema = z
+  .object({
+    repo: z.string().trim().min(1).optional(),
+    ref: z.string().trim().min(1).optional(),
+    cwd: z.string().trim().min(1).optional(),
+    cleanup: workspaceCleanupPolicySchema.optional(),
+  })
+  .strict()
+const workspaceConfigInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .or(workspaceConfigObjectSchema)
 
 const projectConfigInputSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
     pipes: z.array(pipeDeclarationSchema).optional(),
+    workspace: workspaceConfigInputSchema.optional(),
   })
   .strict()
 
 const projectConfigSchema = projectConfigInputSchema.transform(config => ({
   name: config.name,
   pipes: config.pipes ?? [],
+  workspace: normalizeWorkspaceConfig(config.workspace),
 }))
 
 const DEFAULT_PIPE_DIRECTORY = './pipes'
@@ -24,8 +41,32 @@ const PIPE_MODULE_FILE_PATTERN =
   /^(?!.*\.d\.(?:cts|mts|ts)$).+\.(?:cts|mts|ts|cjs|mjs|js)$/
 
 export type PipeDeclaration = z.output<typeof pipeDeclarationSchema>
+export type WorkspaceCleanupPolicy = z.output<
+  typeof workspaceCleanupPolicySchema
+>
+export type WorkspaceConfigInput = z.input<typeof workspaceConfigInputSchema>
 export type ProjectConfigInput = z.input<typeof projectConfigInputSchema>
 export type ProjectConfig = z.output<typeof projectConfigSchema>
+export type ProjectWorkspaceConfig = {
+  source: 'project'
+  ref: string
+  cwd: string
+  cleanup: WorkspaceCleanupPolicy
+}
+export type ExplicitWorkspaceConfig = {
+  source: 'repo'
+  repo: string
+  ref: string
+  cwd: string
+  cleanup: WorkspaceCleanupPolicy
+}
+export type WorkspaceConfig = ProjectWorkspaceConfig | ExplicitWorkspaceConfig
+export type ResolvedProjectWorkspaceConfig = ProjectWorkspaceConfig & {
+  repo: string
+}
+export type ResolvedWorkspaceConfig =
+  | ResolvedProjectWorkspaceConfig
+  | ExplicitWorkspaceConfig
 
 export type LoadedDeclaredPipe = {
   declaredSource: string
@@ -80,21 +121,43 @@ export async function loadProjectConfig(
 
   const parsed = projectConfigSchema.safeParse(loaded)
   if (!parsed.success) {
-    const details = parsed.error.issues
-      .map(issue => {
-        const issuePath =
-          issue.path.length > 0 ? issue.path.join('.') : '<root>'
-        return `${issuePath}: ${issue.message}`
-      })
-      .join('\n')
-
     throw new ProjectConfigLoadError(
-      `Invalid project config: ${resolvedConfigPath}\n${details}`,
+      [
+        `Invalid project config: ${resolvedConfigPath}`,
+        formatProjectConfigIssues(parsed.error),
+      ].join('\n'),
       resolvedConfigPath,
     )
   }
 
   return parsed.data
+}
+
+export async function resolveWorkspaceConfig(options: {
+  config: ProjectConfig
+  projectRoot: string
+  configPath: string
+}): Promise<ResolvedWorkspaceConfig> {
+  const resolvedProjectRoot = path.resolve(options.projectRoot)
+  const resolvedConfigPath = path.resolve(options.configPath)
+
+  if (options.config.workspace.source === 'repo') {
+    return {
+      ...options.config.workspace,
+      repo: resolveWorkspaceRepoSpecifier(
+        options.config.workspace.repo,
+        resolvedProjectRoot,
+      ),
+    }
+  }
+
+  return {
+    ...options.config.workspace,
+    repo: await resolveProjectRepoRoot({
+      projectRoot: resolvedProjectRoot,
+      configPath: resolvedConfigPath,
+    }),
+  }
 }
 
 export async function resolvePipePaths(
@@ -330,4 +393,149 @@ function dedupeResolvedPipePaths(
 
 function toPortableRelativePath(from: string, to: string): string {
   return path.relative(from, to).split(path.sep).join('/')
+}
+
+function normalizeWorkspaceConfig(
+  workspace: WorkspaceConfigInput | undefined,
+): WorkspaceConfig {
+  if (typeof workspace === 'string') {
+    return {
+      source: 'repo',
+      repo: workspace,
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    }
+  }
+
+  if (!workspace) {
+    return {
+      source: 'project',
+      ref: 'HEAD',
+      cwd: '.',
+      cleanup: 'on-success',
+    }
+  }
+
+  const ref = workspace.ref ?? 'HEAD'
+  const cwd = workspace.cwd ?? '.'
+  const cleanup = workspace.cleanup ?? 'on-success'
+
+  if (workspace.repo) {
+    return {
+      source: 'repo',
+      repo: workspace.repo,
+      ref,
+      cwd,
+      cleanup,
+    }
+  }
+
+  return {
+    source: 'project',
+    ref,
+    cwd,
+    cleanup,
+  }
+}
+
+function formatProjectConfigIssues(error: z.ZodError): string {
+  const issues = flattenProjectConfigIssues(error.issues)
+  const seenIssues = new Set<string>()
+  const lines: string[] = []
+
+  for (const issue of issues) {
+    const issuePath =
+      issue.path.length > 0 ? issue.path.map(String).join('.') : '<root>'
+    const line = `${issuePath}: ${issue.message}`
+    if (seenIssues.has(line)) {
+      continue
+    }
+
+    seenIssues.add(line)
+    lines.push(line)
+  }
+
+  return lines.join('\n')
+}
+
+function flattenProjectConfigIssues(
+  issues: z.ZodIssue[],
+  parentPath: PropertyKey[] = [],
+): Array<{path: PropertyKey[]; message: string}> {
+  const flattened: Array<{path: PropertyKey[]; message: string}> = []
+
+  for (const issue of issues) {
+    const issuePath = [...parentPath, ...issue.path]
+    if (issue.code === 'invalid_union') {
+      flattened.push(
+        ...issue.errors.flatMap(branch =>
+          flattenProjectConfigIssues(branch, issuePath),
+        ),
+      )
+      continue
+    }
+
+    flattened.push({path: issuePath, message: issue.message})
+  }
+
+  return flattened
+}
+
+async function resolveProjectRepoRoot(options: {
+  projectRoot: string
+  configPath: string
+}): Promise<string> {
+  try {
+    const repoRoot = await runGitCommand(
+      ['-C', options.projectRoot, 'rev-parse', '--show-toplevel'],
+      options.projectRoot,
+    )
+    if (repoRoot.length === 0) {
+      throw new Error('git did not report a repository root.')
+    }
+
+    return path.resolve(repoRoot)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new ProjectConfigLoadError(
+      [
+        `Invalid project config: ${options.configPath}`,
+        'workspace: default workspace mode requires the project root to be inside a git repo',
+        `projectRoot: ${options.projectRoot}`,
+        `git: ${reason}`,
+      ].join('\n'),
+      options.configPath,
+    )
+  }
+}
+
+function resolveWorkspaceRepoSpecifier(
+  repo: string,
+  projectRoot: string,
+): string {
+  if (looksLikeRemoteRepoSpecifier(repo)) {
+    return repo
+  }
+
+  return path.resolve(projectRoot, repo)
+}
+
+function looksLikeRemoteRepoSpecifier(repo: string): boolean {
+  return (
+    /^[a-z][a-z\d+.-]*:\/\//i.test(repo) || /^[^@/\s]+@[^:/\s]+:.+$/.test(repo)
+  )
+}
+
+function runGitCommand(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || error.message))
+        return
+      }
+
+      resolve(stdout.trim())
+    })
+  })
 }

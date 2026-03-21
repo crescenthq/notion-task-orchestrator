@@ -1,0 +1,12 @@
+Workspace-Backed Pipe Execution Progress:
+- Branch: ralph/workspace-backed-execution
+- Source PRD: tasks/prd-workspace-execution.md
+- Status: in progress
+- Completed:
+  - US-001: Added workspace config parsing in `src/project/projectConfig.ts` for omitted workspace, string shorthand, and object overrides. Normalized workspace config now defaults to project-repo mode, supports explicit repo/ref/cwd/cleanup overrides, and exposes `resolveWorkspaceConfig` to resolve the containing git repo for project mode and absolute local repo paths for explicit mode.
+  - US-001: Added config diagnostics for invalid workspace values and path-aware union error flattening so malformed workspace keys surface actionable `ProjectConfigLoadError` messages.
+  - US-001: Added unit coverage in `src/project/projectConfig.test.ts` for default project-repo resolution, local and remote shorthand repos, object overrides, and invalid workspace diagnostics.
+- Notes:
+  - Verification:
+    - `npm run check`
+    - `npx vitest run src/project/projectConfig.test.ts`
