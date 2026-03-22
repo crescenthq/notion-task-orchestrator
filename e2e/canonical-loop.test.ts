@@ -6,6 +6,7 @@ import {
   step,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {createMockTaskHandle} from './helpers/mockTaskHandle'
 import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type LoopE2ECtx = {
@@ -23,10 +24,10 @@ function createInput(
     workspace: mockPipeWorkspace,
     runId: 'run-loop-e2e-1',
     tickId,
-    task: {
+    task: createMockTaskHandle({
       id: 'task-loop-e2e-1',
       title: 'Canonical loop e2e',
-    },
+    }),
   }
 }
 

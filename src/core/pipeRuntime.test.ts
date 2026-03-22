@@ -134,8 +134,8 @@ describe('pipeRuntime (definePipe only)', () => {
       `export default {\n` +
         `  id: "${factoryId}",\n` +
         `  initial: { visits: 0 },\n` +
-        `  run: async ({ ctx, writePage }) => {\n` +
-        `    await writePage({ markdown: "# Pipe Output" });\n` +
+        `  run: async ({ ctx, task }) => {\n` +
+        `    await task.writeArtifact("# Pipe Output");\n` +
         `    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1, finishedBy: "pipe" };\n` +
         `  },\n` +
         `};\n`,
@@ -193,9 +193,25 @@ describe('pipeRuntime (definePipe only)', () => {
       `export default {
   id: "${factoryId}",
   initial: { visits: 0 },
-  run: async ({ ctx, writePage }) => {
-    await writePage({ markdown: "# Adapter Output" });
-    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1 };
+  run: async ({ ctx, task }) => {
+    const initialArtifact = await task.readArtifact();
+    await task.updateStatus({
+      lifecycle: "in_progress",
+      currentAction: "Reviewing artifact",
+      progress: { label: "Halfway", percent: 50 },
+      links: [{ kind: "pr", url: "https://example.com/pr/1" }],
+    });
+    await task.comment("Adapter note");
+    await task.writeArtifact("# Adapter Output");
+    const updatedArtifact = await task.readArtifact();
+    return {
+      ...ctx,
+      visits: Number(ctx.visits ?? 0) + 1,
+      taskId: task.id,
+      taskTitle: task.title,
+      initialArtifact,
+      updatedArtifact,
+    };
   },
 };
 `,
@@ -209,11 +225,11 @@ describe('pipeRuntime (definePipe only)', () => {
       getTask: vi.fn(async (ref: {externalTaskId: string}) => ({
         id: ref.externalTaskId,
         title: 'Injected task title',
-        bodyText: 'Injected task body',
+        artifact: 'Injected task body',
+        comments: [],
       })),
-      updateState: vi.fn(async () => undefined),
-      appendLog: vi.fn(async () => undefined),
-      appendPageContent: vi.fn(async () => undefined),
+      updateTask: vi.fn(async () => undefined),
+      writeArtifact: vi.fn(async () => undefined),
       postComment: vi.fn(async () => undefined),
     }
 
@@ -221,23 +237,112 @@ describe('pipeRuntime (definePipe only)', () => {
       taskBoardAdapter: adapter,
     })
 
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    const persistedCtx = JSON.parse(
+      updatedTask?.stepVarsJson ?? '{}',
+    ) as Record<string, unknown>
+
     expect(adapter.getTask).toHaveBeenCalledWith({
       boardId: factoryId,
       externalTaskId,
     })
-    expect(adapter.updateState).toHaveBeenCalledWith(
+    expect(persistedCtx.initialArtifact).toBe('Injected task body')
+    expect(persistedCtx.updatedArtifact).toBe('# Adapter Output')
+    expect(persistedCtx.taskId).toBe(externalTaskId)
+    expect(persistedCtx.taskTitle).toBe('Injected task title')
+    expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
-      expect.objectContaining({state: 'running'}),
+      expect.objectContaining({lifecycle: 'in_progress'}),
     )
-    expect(adapter.updateState).toHaveBeenCalledWith(
+    expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
-      expect.objectContaining({state: 'done'}),
+      expect.objectContaining({lifecycle: 'done'}),
     )
-    expect(adapter.appendPageContent).toHaveBeenCalledWith(
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({
+        lifecycle: 'in_progress',
+        currentAction: 'Reviewing artifact',
+        progress: {label: 'Halfway', percent: 50},
+        links: [{kind: 'pr', url: 'https://example.com/pr/1'}],
+      }),
+    )
+    expect(adapter.writeArtifact).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
       '# Adapter Output',
     )
-    expect(adapter.appendLog).toHaveBeenCalled()
+    expect(adapter.postComment).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      'Adapter note',
+    )
+  })
+
+  it('posts board comments only for explicit feedback prompts', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-board-feedback-comment'
+    const externalTaskId = 'task-board-feedback-comment-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: { attempts: 0 },\n` +
+        `  run: async ({ ctx }) => {\n` +
+        `    const controlBrand = Symbol.for("pipes.control");\n` +
+        `    return {\n` +
+        `      [controlBrand]: true,\n` +
+        `      type: "await_feedback",\n` +
+        `      prompt: "Need approval",\n` +
+        `      ctx: { ...ctx, attempts: Number(ctx.attempts ?? 0) + 1 },\n` +
+        `    };\n` +
+        `  },\n` +
+        `};\n`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+
+    const adapter = {
+      kind: 'mock',
+      getTask: vi.fn(async (ref: {externalTaskId: string}) => ({
+        id: ref.externalTaskId,
+        title: 'Injected task title',
+        artifact: 'Current artifact',
+        comments: [],
+      })),
+      updateTask: vi.fn(async () => undefined),
+      writeArtifact: vi.fn(async () => undefined),
+      postComment: vi.fn(async () => undefined),
+    }
+
+    await runtime.runPipeTaskByExternalId(externalTaskId, {
+      taskBoardAdapter: adapter,
+    })
+
+    const [pausedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    expect(pausedTask?.state).toBe('needs_input')
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({lifecycle: 'in_progress'}),
+    )
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({lifecycle: 'needs_input'}),
+    )
+    expect(adapter.postComment).toHaveBeenCalledTimes(1)
+    expect(adapter.postComment).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      'Need approval',
+    )
+    expect(adapter.writeArtifact).not.toHaveBeenCalled()
   })
 
   it('provisions a workspace before direct pipe execution, keys it by run id, and cleans it up on success by default', async () => {
@@ -388,7 +493,7 @@ export default {
         externalTaskId: 'task-workspace-retained-feedback-1',
         factoryId: 'runtime-workspace-retained-feedback',
         shouldThrow: false,
-        state: 'feedback',
+        state: 'needs_input',
         source:
           `export default {\n` +
           `  id: "runtime-workspace-retained-feedback",\n` +
@@ -404,7 +509,7 @@ export default {
         externalTaskId: 'task-workspace-retained-blocked-1',
         factoryId: 'runtime-workspace-retained-blocked',
         shouldThrow: false,
-        state: 'blocked',
+        state: 'needs_input',
         source:
           `export default {\n` +
           `  id: "runtime-workspace-retained-blocked",\n` +
@@ -516,7 +621,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
     expect(paused?.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -637,7 +742,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const pausedCtx = JSON.parse(pausedTask?.stepVarsJson ?? '{}') as Record<
       string,
@@ -648,7 +753,7 @@ export default {
       .from(schema.runs)
       .where(eq(schema.runs.taskId, pausedTask!.id))
 
-    expect(feedbackRun?.status).toBe('feedback')
+    expect(feedbackRun?.status).toBe('needs_input')
     expect(pausedCtx.firstRunId).toBe(feedbackRun?.id)
     expect(pausedCtx.firstWorkspaceRoot).toBe(
       path.join(paths.workspacesDir, feedbackRun!.id),
@@ -761,7 +866,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const [feedbackRun] = await db
       .select()
@@ -868,7 +973,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const [feedbackRun] = await db
       .select()
@@ -1016,7 +1121,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
     expect(paused?.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1090,7 +1195,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(firstPause?.state).toBe('feedback')
+    expect(firstPause?.state).toBe('needs_input')
 
     const firstCtx = JSON.parse(firstPause?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1118,7 +1223,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(secondPause?.state).toBe('feedback')
+    expect(secondPause?.state).toBe('needs_input')
 
     const secondCtx = JSON.parse(secondPause?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1197,7 +1302,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
 
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1241,6 +1346,8 @@ export default definePipe({
     const terminalStates = ['done', 'blocked', 'failed'] as const
 
     for (const terminalState of terminalStates) {
+      const expectedLifecycle =
+        terminalState === 'blocked' ? 'needs_input' : terminalState
       const factoryId = `runtime-terminal-${terminalState}`
       const externalTaskId = `task-terminal-${terminalState}`
       const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
@@ -1272,13 +1379,13 @@ export default definePipe({
         .from(schema.tasks)
         .where(eq(schema.tasks.externalTaskId, externalTaskId))
       expect(updatedTask).toBeTruthy()
-      expect(updatedTask?.state).toBe(terminalState)
+      expect(updatedTask?.state).toBe(expectedLifecycle)
 
       const [run] = await db
         .select()
         .from(schema.runs)
         .where(eq(schema.runs.taskId, updatedTask!.id))
-      expect(run?.status).toBe(terminalState)
+      expect(run?.status).toBe(expectedLifecycle)
       expect(run?.currentStateId).toBeNull()
       expect(run?.endedAt).toBeTruthy()
     }
@@ -1432,7 +1539,7 @@ export default definePipe({
     await db
       .update(schema.tasks)
       .set({
-        state: 'blocked',
+        state: 'needs_input',
         lastError: 'pipe_mismatch: local=alpha remote=beta task=page-1',
         updatedAt: new Date().toISOString(),
       })

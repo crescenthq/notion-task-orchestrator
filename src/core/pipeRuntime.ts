@@ -11,7 +11,7 @@ import {
   parseCheckpoint,
 } from '../pipe/checkpoint'
 import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
-import type {PipeWorkspace} from '../pipe/canonical'
+import type {PipeWorkspace, TaskHandle} from '../pipe/canonical'
 import {
   type ResolvedProjectConfig,
   resolveProjectConfig,
@@ -32,7 +32,8 @@ import {
   type BoardTaskRef,
   nullTaskBoardAdapter,
   type TaskBoardAdapter,
-  type TaskBoardState,
+  type TaskBoardPatch,
+  type TaskLifecycle,
 } from './taskBoardAdapter'
 import {
   cleanupRunWorkspace,
@@ -43,8 +44,6 @@ import {
 } from './workspaceRuntime'
 
 type JsonObject = Record<string, unknown>
-
-type PageContent = {markdown: string; body?: string} | string
 
 type LeaseMode = 'strict' | 'best-effort'
 
@@ -76,6 +75,12 @@ const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
 const OWNERSHIP_QUARANTINE_PREFIXES = ['pipe_mismatch:', 'pipe_invalid:']
+
+function taskLifecycleFromPipeEndStatus(
+  status: 'done' | 'blocked' | 'failed',
+): 'needs_input' | 'done' | 'failed' {
+  return status === 'blocked' ? 'needs_input' : status
+}
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -447,29 +452,19 @@ export async function runPipeTaskByExternalId(
       : nullTaskBoardAdapter)
 
   const syncBoardState = async (
-    state: TaskBoardState,
-    stateLabel?: string,
+    lifecycle: TaskLifecycle,
+    currentAction?: string,
   ): Promise<void> => {
     try {
-      await boardAdapter.updateState(taskRef, {state, label: stateLabel})
+      const patch: TaskBoardPatch = {lifecycle}
+      if (currentAction !== undefined) {
+        patch.currentAction = currentAction
+      }
+      await boardAdapter.updateTask(taskRef, patch)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.log(
         `[warn] failed to sync board task state (${boardAdapter.kind}): ${message}`,
-      )
-    }
-  }
-
-  const syncBoardLog = async (
-    title: string,
-    detail?: string,
-  ): Promise<void> => {
-    try {
-      await boardAdapter.appendLog(taskRef, title, detail)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(
-        `[warn] failed to append board task log (${boardAdapter.kind}): ${message}`,
       )
     }
   }
@@ -482,14 +477,18 @@ export async function runPipeTaskByExternalId(
   const {definition} = await loadPipeFromPath(pipePath)
   const pipeDefinition: PipeModuleDefinition = definition
 
+  let taskHandleId = task.externalTaskId
   let taskTitle = task.externalTaskId
-  let taskContext = ''
+  let taskArtifact = ''
   try {
     const snapshot = await boardAdapter.getTask(taskRef)
+    if (snapshot.id.trim().length > 0) {
+      taskHandleId = snapshot.id
+    }
     if (snapshot.title.trim().length > 0) {
       taskTitle = snapshot.title
     }
-    taskContext = snapshot.bodyText
+    taskArtifact = snapshot.artifact
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(
@@ -497,7 +496,7 @@ export async function runPipeTaskByExternalId(
     )
   }
 
-  const promptLine = taskContext
+  const promptLine = taskArtifact
     .split('\n')
     .map(line => line.trim())
     .find(line => line.length > 0)
@@ -517,7 +516,7 @@ export async function runPipeTaskByExternalId(
     task_id: task.externalTaskId,
     task_title: taskTitle,
     task_prompt: taskPrompt,
-    task_context: taskContext,
+    task_context: taskArtifact,
   }
 
   if (task.stepVarsJson) {
@@ -561,7 +560,7 @@ export async function runPipeTaskByExternalId(
     await db.insert(runs).values({
       id: runId,
       taskId: task.id,
-      status: 'running',
+      status: 'in_progress',
       currentStateId,
       contextJson: JSON.stringify(ctx),
       leaseOwner: null,
@@ -576,7 +575,7 @@ export async function runPipeTaskByExternalId(
     await db
       .update(runs)
       .set({
-        status: 'running',
+        status: 'in_progress',
         currentStateId,
         contextJson: JSON.stringify(ctx),
         updatedAt: now,
@@ -716,7 +715,7 @@ export async function runPipeTaskByExternalId(
     if (!stepLabel || stepLabel === activeStepLabel) return
 
     activeStepLabel = stepLabel
-    await syncBoardState('running', stepLabel)
+    await syncBoardState('in_progress', stepLabel)
   }
 
   const finalizeRun = async (
@@ -724,10 +723,11 @@ export async function runPipeTaskByExternalId(
   ): Promise<void> => {
     const timestamp = nowIso()
     const isDone = status === 'done'
+    const lifecycle = taskLifecycleFromPipeEndStatus(status)
     await db
       .update(tasks)
       .set({
-        state: status,
+        state: lifecycle,
         currentStepId: null,
         stepVarsJson: JSON.stringify(ctx),
         waitingSince: null,
@@ -740,7 +740,7 @@ export async function runPipeTaskByExternalId(
     await db
       .update(runs)
       .set({
-        status,
+        status: lifecycle,
         currentStateId: null,
         contextJson: JSON.stringify(ctx),
         leaseOwner: null,
@@ -753,19 +753,13 @@ export async function runPipeTaskByExternalId(
     await persistRunTrace({
       type: 'completed',
       stateId: currentStateId,
-      status,
+      status: lifecycle,
       message:
         status === 'done'
           ? 'Pipe reached terminal done state.'
           : String(ctx.last_error ?? 'no detail'),
     })
-    await syncBoardState(status)
-    await syncBoardLog(
-      status === 'done' ? 'Task complete' : `Task ${status}`,
-      status === 'done'
-        ? 'Pipe reached terminal done state.'
-        : String(ctx.last_error ?? 'no detail'),
-    )
+    await syncBoardState(lifecycle)
   }
 
   const cleanupSuccessfulRunWorkspace = async (): Promise<void> => {
@@ -826,7 +820,6 @@ export async function runPipeTaskByExternalId(
       message,
     })
     await syncBoardState('failed')
-    await syncBoardLog('Task failed', message)
     throw new Error(message)
   }
 
@@ -847,7 +840,7 @@ export async function runPipeTaskByExternalId(
     reason?: RunTraceReasonCode | null
     attempt?: number
     loopIteration?: number
-    status?: 'running' | 'feedback' | 'done' | 'blocked' | 'failed' | null
+    status?: 'in_progress' | 'needs_input' | 'done' | 'failed' | null
     message?: string | null
     payload?: unknown
   }): Promise<void> => {
@@ -896,7 +889,7 @@ export async function runPipeTaskByExternalId(
   await db
     .update(tasks)
     .set({
-      state: 'running',
+      state: 'in_progress',
       currentStepId: currentStateId,
       stepVarsJson: JSON.stringify(ctx),
       updatedAt: nowIso(),
@@ -907,21 +900,17 @@ export async function runPipeTaskByExternalId(
   await db
     .update(runs)
     .set({
-      status: 'running',
+      status: 'in_progress',
       currentStateId,
       contextJson: JSON.stringify(ctx),
       updatedAt: nowIso(),
     })
     .where(eq(runs.id, runId))
-  await syncBoardState('running')
-  await syncBoardLog(
-    resumed ? `Resuming from state ${currentStateId}` : 'Run started',
-    `Pipe: ${definition.id}`,
-  )
+  await syncBoardState('in_progress')
   await persistRunTrace({
     type: 'started',
     stateId: currentStateId,
-    status: 'running',
+    status: 'in_progress',
     message: `Pipe: ${definition.id}`,
   })
   if (resumed) {
@@ -932,26 +921,50 @@ export async function runPipeTaskByExternalId(
     })
   }
 
-  const writePage = async (output: PageContent): Promise<void> => {
-    const markdown = typeof output === 'string' ? output : output.markdown
-    if (!markdown || markdown.trim().length === 0) return
-    await persistRunTrace({
-      type: 'write',
-      stateId: currentStateId,
-      message: 'Pipe emitted page output',
-      payload: {
-        markdownLength: markdown.length,
-        format: typeof output === 'string' ? 'string' : 'markdown',
-      },
-    })
-    try {
-      await boardAdapter.appendPageContent(taskRef, markdown)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(
-        `[warn] failed to append board page content (${boardAdapter.kind}): ${message}`,
-      )
-    }
+  const taskHandle: TaskHandle = {
+    id: taskHandleId,
+    title: taskTitle,
+    readArtifact: async () => taskArtifact,
+    writeArtifact: async (markdown: string): Promise<void> => {
+      await persistRunTrace({
+        type: 'write',
+        stateId: currentStateId,
+        message: 'Pipe emitted page output',
+        payload: {
+          markdownLength: markdown.length,
+          format: 'markdown',
+        },
+      })
+      try {
+        await boardAdapter.writeArtifact(taskRef, markdown)
+        taskArtifact = markdown
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to write board artifact (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
+    updateStatus: async (patch: TaskBoardPatch): Promise<void> => {
+      try {
+        await boardAdapter.updateTask(taskRef, patch)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to update board task (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
+    comment: async (body: string): Promise<void> => {
+      try {
+        await boardAdapter.postComment(taskRef, body)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to post board comment (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
   }
 
   const parsePipeContext = (value: unknown, label: string): JsonObject => {
@@ -989,14 +1002,8 @@ export async function runPipeTaskByExternalId(
           ctx,
           feedback,
           checkpoint,
-          task: {
-            id: task.externalTaskId,
-            title: taskTitle,
-            prompt: taskPrompt,
-            context: taskContext,
-          },
+          task: taskHandle,
           workspace: provisionedWorkspace.workspace,
-          writePage,
           onStepStart: onPipeStepStart,
           runId,
           tickId,
@@ -1063,7 +1070,7 @@ export async function runPipeTaskByExternalId(
       await db
         .update(tasks)
         .set({
-          state: 'feedback',
+          state: 'needs_input',
           currentStepId: currentStateId,
           stepVarsJson: JSON.stringify(ctx),
           waitingSince: nowIso(),
@@ -1074,7 +1081,7 @@ export async function runPipeTaskByExternalId(
       await db
         .update(runs)
         .set({
-          status: 'feedback',
+          status: 'needs_input',
           currentStateId,
           contextJson: JSON.stringify(ctx),
           leaseOwner: null,
@@ -1083,8 +1090,7 @@ export async function runPipeTaskByExternalId(
           updatedAt: nowIso(),
         })
         .where(eq(runs.id, runId))
-      await syncBoardState('feedback')
-      await syncBoardLog(`Feedback needed: ${currentStateId}`, result.prompt)
+      await syncBoardState('needs_input')
       return
     }
 

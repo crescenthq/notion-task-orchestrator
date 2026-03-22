@@ -19,20 +19,43 @@ describe('createNotionTaskBoardAdapter', () => {
     const getPageSpy = vi
       .spyOn(notionService, 'notionGetPage')
       .mockResolvedValue(page)
-    const getPageBodySpy = vi
-      .spyOn(notionService, 'notionGetPageBodyText')
-      .mockResolvedValue('Body text')
+    const getPageMarkdownSpy = vi
+      .spyOn(notionService, 'notionGetPageMarkdown')
+      .mockResolvedValue('# Body text')
+    const listCommentsSpy = vi
+      .spyOn(notionService, 'notionListComments')
+      .mockResolvedValue([
+        {
+          id: 'comment-1',
+          created_time: '2026-03-22T10:00:00.000Z',
+          created_by: {id: 'user-1'},
+          display_name: {type: 'user', resolved_name: 'Reviewer'},
+          rich_text: [{plain_text: 'Need approval'}],
+        },
+        {
+          id: 'comment-2',
+          created_time: '2026-03-22T10:05:00.000Z',
+          created_by: {id: 'bot-1', type: 'bot'},
+          display_name: {type: 'integration', resolved_name: 'Notionflow'},
+          rich_text: [{plain_text: 'Working on it'}],
+        },
+      ])
+    const whoAmISpy = vi
+      .spyOn(notionService, 'notionWhoAmI')
+      .mockResolvedValue({
+        id: 'bot-1',
+        object: 'user',
+        name: 'Notionflow',
+        type: 'bot',
+      })
     const pageTitleSpy = vi
       .spyOn(notionService, 'pageTitle')
       .mockReturnValue('Task title')
-    const updateStateSpy = vi
-      .spyOn(notionService, 'notionUpdateTaskPageState')
+    const updateTaskSpy = vi
+      .spyOn(notionService, 'notionUpdateTaskPage')
       .mockResolvedValue(undefined)
-    const appendLogSpy = vi
-      .spyOn(notionService, 'notionAppendTaskPageLog')
-      .mockResolvedValue(undefined)
-    const appendMarkdownSpy = vi
-      .spyOn(notionService, 'notionAppendMarkdownToPage')
+    const replaceMarkdownSpy = vi
+      .spyOn(notionService, 'notionReplacePageMarkdown')
       .mockResolvedValue(undefined)
     const postCommentSpy = vi
       .spyOn(notionService, 'notionPostComment')
@@ -44,30 +67,54 @@ describe('createNotionTaskBoardAdapter', () => {
     expect(snapshot).toEqual({
       id: 'task-1',
       title: 'Task title',
-      bodyText: 'Body text',
+      artifact: '# Body text',
+      comments: [
+        {
+          id: 'comment-1',
+          body: 'Need approval',
+          createdAt: '2026-03-22T10:00:00.000Z',
+          authorId: 'user-1',
+          authorName: 'Reviewer',
+          role: 'human',
+        },
+        {
+          id: 'comment-2',
+          body: 'Working on it',
+          createdAt: '2026-03-22T10:05:00.000Z',
+          authorId: 'bot-1',
+          authorName: 'Notionflow',
+          role: 'agent',
+        },
+      ],
     })
     expect(getPageSpy).toHaveBeenCalledWith(token, 'task-1')
-    expect(getPageBodySpy).toHaveBeenCalledWith(token, 'task-1')
+    expect(getPageMarkdownSpy).toHaveBeenCalledWith(token, 'task-1')
+    expect(listCommentsSpy).toHaveBeenCalledWith(token, 'task-1')
+    expect(whoAmISpy).toHaveBeenCalledWith(token)
     expect(pageTitleSpy).toHaveBeenCalledWith(page)
 
-    await adapter.updateState(ref, {state: 'running', label: 'Step A'})
-    expect(updateStateSpy).toHaveBeenCalledWith(
+    await adapter.updateTask(ref, {
+      lifecycle: 'in_progress',
+      currentAction: 'Step A',
+      progress: {label: 'Implementing', percent: 50},
+      links: [
+        {kind: 'branch', url: 'https://github.com/example/repo/tree/feature'},
+        {kind: 'pr', url: 'https://github.com/example/repo/pull/123'},
+      ],
+    })
+    expect(updateTaskSpy).toHaveBeenCalledWith(
       token,
       'task-1',
-      'running',
-      'Step A',
+      {
+        state: 'in_progress',
+        currentAction: 'Step A',
+        progress: '50% Implementing',
+        prUrl: 'https://github.com/example/repo/pull/123',
+      },
     )
 
-    await adapter.appendLog(ref, 'Run started', 'Pipe: demo')
-    expect(appendLogSpy).toHaveBeenCalledWith(
-      token,
-      'task-1',
-      'Run started',
-      'Pipe: demo',
-    )
-
-    await adapter.appendPageContent(ref, '# Demo output')
-    expect(appendMarkdownSpy).toHaveBeenCalledWith(
+    await adapter.writeArtifact(ref, '# Demo output')
+    expect(replaceMarkdownSpy).toHaveBeenCalledWith(
       token,
       'task-1',
       '# Demo output',

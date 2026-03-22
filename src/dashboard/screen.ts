@@ -473,16 +473,16 @@ function colorForLedgerSection(label: string): Rgb {
 
 function colorForStateLabel(label: string): Rgb {
   switch (label.trim().toLowerCase()) {
-    case 'running':
+    case 'in progress':
+    case 'in_progress':
       return LEDGER_THEME.green
-    case 'feedback':
-      return LEDGER_THEME.yellow
+    case 'needs input':
+    case 'needs_input':
+      return LEDGER_THEME.peach
     case 'queued':
       return LEDGER_THEME.blue
     case 'failed':
       return LEDGER_THEME.red
-    case 'blocked':
-      return LEDGER_THEME.peach
     case 'done':
       return LEDGER_THEME.teal
     default:

@@ -25,6 +25,8 @@ type NotionSelectOption = {
 type NotionDataSourceProperty = {
   type: string
   select?: {options?: NotionSelectOption[]}
+  rich_text?: Record<string, never>
+  url?: Record<string, never>
 }
 
 export type NotionDatabaseConnection = {
@@ -54,6 +56,29 @@ type NotionCreatePageResult = {
 type NotionBlock = {
   type: string
   [key: string]: any
+}
+
+type NotionPageMarkdown = {
+  markdown?: string
+}
+
+type NotionCommentAuthor = {
+  id?: string
+  object?: string
+  type?: string
+}
+
+type NotionCommentDisplayName = {
+  type?: string
+  resolved_name?: string | null
+}
+
+type NotionComment = {
+  id: string
+  created_time: string
+  rich_text: Array<{plain_text?: string}>
+  created_by?: NotionCommentAuthor
+  display_name?: NotionCommentDisplayName
 }
 
 const NOTION_VERSION = '2025-09-03'
@@ -210,9 +235,8 @@ export async function notionArchiveDatabase(
 const STATE_OPTIONS = [
   {name: 'Queue', color: 'gray'},
   {name: 'In Progress', color: 'blue'},
-  {name: 'Feedback', color: 'purple'},
+  {name: 'Needs Input', color: 'orange'},
   {name: 'Done', color: 'green'},
-  {name: 'Blocked', color: 'orange'},
   {name: 'Failed', color: 'red'},
 ]
 
@@ -242,10 +266,47 @@ function mergeSelectOptions(
   return merged
 }
 
+function reconcileSelectOptions(
+  existing: NotionSelectOption[] | undefined,
+  desired: Array<{name: string; color: string}>,
+): NotionSelectOption[] {
+  const existingByName = new Map<string, NotionSelectOption>()
+
+  for (const option of existing ?? []) {
+    const name = option.name?.trim()
+    if (!name) continue
+    const normalized = name.toLowerCase()
+    if (existingByName.has(normalized)) continue
+    existingByName.set(normalized, option)
+  }
+
+  const reconciled: NotionSelectOption[] = []
+  const seen = new Set<string>()
+
+  for (const option of desired) {
+    const normalized = option.name.trim().toLowerCase()
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    const current = existingByName.get(normalized)
+    if (current) {
+      reconciled.push({
+        ...current,
+        name: option.name,
+        color: current.color ?? option.color,
+      })
+      continue
+    }
+
+    reconciled.push(option)
+  }
+
+  return reconciled
+}
+
 export async function notionEnsureBoardSchema(
   token: string,
   dataSourceId: string,
-  stepOptions: Array<{name: string; color: string}> = [],
+  _legacyStepOptions: Array<{name: string; color: string}> = [],
   pipeOptions: Array<{name: string; color: string}> = [],
 ): Promise<void> {
   const currentDataSource = await notionGetDataSource(token, dataSourceId)
@@ -256,19 +317,11 @@ export async function notionEnsureBoardSchema(
       headers: notionHeaders(token),
       body: JSON.stringify({
         properties: {
-          State: {
-            select: {
-              options: mergeSelectOptions(
-                currentDataSource.properties.State?.select?.options,
-                STATE_OPTIONS,
-              ),
-            },
-          },
           Status: {
             select: {
-              options: mergeSelectOptions(
+              options: reconcileSelectOptions(
                 currentDataSource.properties.Status?.select?.options,
-                stepOptions,
+                STATE_OPTIONS,
               ),
             },
           },
@@ -280,6 +333,9 @@ export async function notionEnsureBoardSchema(
               ),
             },
           },
+          'Current Action': {rich_text: {}},
+          Progress: {rich_text: {}},
+          PR: {url: {}},
         },
       }),
     },
@@ -316,9 +372,11 @@ export function notionAssertSharedBoardSchema(
   dataSource: NotionDataSource,
 ): void {
   const expectedTypes: Array<[property: string, type: string]> = [
-    ['State', 'select'],
     ['Status', 'select'],
     ['Pipe', 'select'],
+    ['Current Action', 'rich_text'],
+    ['Progress', 'rich_text'],
+    ['PR', 'url'],
   ]
 
   const issues = expectedTypes.flatMap(([propertyName, expectedType]) => {
@@ -414,7 +472,7 @@ export async function notionCreateTaskPage(
 ): Promise<NotionCreatePageResult> {
   const properties: Record<string, unknown> = {
     Name: {title: [{text: {content: input.title}}]},
-    State: {select: {name: input.state}},
+    Status: {select: {name: input.state}},
   }
   if (input.pipeId !== undefined) {
     properties.Pipe = {select: {name: input.pipeId}}
@@ -482,17 +540,18 @@ export async function notionGetPage(
 }
 
 export function mapTaskStateToNotionStatus(state: string): string {
-  switch (state) {
+  const normalized = state.trim().toLowerCase().replace(/[\s-]+/g, '_')
+
+  switch (normalized) {
+    case 'queue':
     case 'queued':
       return 'Queue'
-    case 'running':
+    case 'in_progress':
       return 'In Progress'
-    case 'feedback':
-      return 'Feedback'
+    case 'needs_input':
+      return 'Needs Input'
     case 'done':
       return 'Done'
-    case 'blocked':
-      return 'Blocked'
     case 'failed':
       return 'Failed'
     default:
@@ -500,29 +559,45 @@ export function mapTaskStateToNotionStatus(state: string): string {
   }
 }
 
-function inferCalloutEmoji(title: string): string {
-  const t = title.toLowerCase()
-  if (t.startsWith('task complete') || t.startsWith('done')) return '✅'
-  if (t.includes('failed') || t.includes('fail')) return '❌'
-  if (t.includes('blocked')) return '🛑'
-  if (t.includes('feedback needed') || t.includes('waiting for')) return '💬'
-  if (t.includes('started') || t.includes('start')) return '🚀'
-  return 'ℹ️'
+function notionRichTextValue(
+  text: string | null,
+): Array<{type: 'text'; text: {content: string}}> {
+  if (!text || text.trim().length === 0) return []
+  return [{type: 'text', text: {content: clipNotionText(text)}}]
 }
 
-export async function notionUpdateTaskPageState(
+export async function notionUpdateTaskPage(
   token: string,
   pageId: string,
-  state: string,
-  stepLabel?: string,
+  patch: {
+    state?: string
+    currentAction?: string | null
+    progress?: string | null
+    prUrl?: string | null
+  },
 ): Promise<void> {
-  const notionState = mapTaskStateToNotionStatus(state)
-  const properties: Record<string, unknown> = {
-    State: {select: {name: notionState}},
+  const properties: Record<string, unknown> = {}
+
+  if (patch.state !== undefined) {
+    properties.Status = {
+      select: {name: mapTaskStateToNotionStatus(patch.state)},
+    }
   }
-  if (stepLabel !== undefined) {
-    properties.Status = {select: {name: stepLabel}}
+  if (patch.currentAction !== undefined) {
+    properties['Current Action'] = {
+      rich_text: notionRichTextValue(patch.currentAction),
+    }
   }
+  if (patch.progress !== undefined) {
+    properties.Progress = {
+      rich_text: notionRichTextValue(patch.progress),
+    }
+  }
+  if (patch.prUrl !== undefined) {
+    properties.PR = {url: patch.prUrl}
+  }
+
+  if (Object.keys(properties).length === 0) return
 
   const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
     method: 'PATCH',
@@ -536,98 +611,21 @@ export async function notionUpdateTaskPageState(
   }
 }
 
+export async function notionUpdateTaskPageState(
+  token: string,
+  pageId: string,
+  state: string,
+  stepLabel?: string,
+): Promise<void> {
+  await notionUpdateTaskPage(token, pageId, {
+    state,
+    currentAction: stepLabel,
+  })
+}
+
 function clipNotionText(text: string, max = 1800): string {
   if (text.length <= max) return text
   return `${text.slice(0, max - 3)}...`
-}
-
-export async function notionAppendTaskPageLog(
-  token: string,
-  pageId: string,
-  title: string,
-  detail?: string,
-): Promise<void> {
-  const emoji = inferCalloutEmoji(title)
-  const calloutText =
-    detail && detail.trim().length > 0
-      ? clipNotionText(`${title} — ${detail.trim()}`, 2000)
-      : clipNotionText(title, 2000)
-
-  const res = await fetch(
-    `https://api.notion.com/v1/blocks/${pageId}/children`,
-    {
-      method: 'PATCH',
-      headers: notionHeaders(token),
-      body: JSON.stringify({
-        children: [
-          {
-            object: 'block',
-            type: 'callout',
-            callout: {
-              rich_text: [{type: 'text', text: {content: calloutText}}],
-              icon: {emoji},
-            },
-          },
-        ],
-      }),
-    },
-  )
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Notion task log append failed (${res.status}): ${text}`)
-  }
-}
-
-export async function notionAppendStepToggle(
-  token: string,
-  pageId: string,
-  stepLabel: string,
-  executorId: string,
-  status: string,
-  output: string,
-): Promise<void> {
-  const statusEmoji =
-    status === 'done' ? '✅' : status === 'failed' ? '❌' : '🛑'
-  const toggleTitle = clipNotionText(
-    `${statusEmoji} ${stepLabel} via ${executorId}`,
-    200,
-  )
-  const clippedOutput = clipNotionText(output.trim() || '(no output)')
-
-  const res = await fetch(
-    `https://api.notion.com/v1/blocks/${pageId}/children`,
-    {
-      method: 'PATCH',
-      headers: notionHeaders(token),
-      body: JSON.stringify({
-        children: [
-          {
-            object: 'block',
-            type: 'toggle',
-            toggle: {
-              rich_text: [{type: 'text', text: {content: toggleTitle}}],
-              children: [
-                {
-                  object: 'block',
-                  type: 'code',
-                  code: {
-                    language: 'plain text',
-                    rich_text: [{type: 'text', text: {content: clippedOutput}}],
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    },
-  )
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Notion step toggle append failed (${res.status}): ${text}`)
-  }
 }
 
 export function richTextToPlainText(
@@ -648,28 +646,21 @@ function blockPlainText(block: NotionBlock): string {
   return richTextToPlainText(payload.rich_text)
 }
 
-export async function notionGetPageBodyText(
+export async function notionGetPageMarkdown(
   token: string,
   pageId: string,
-  pageSize = 50,
 ): Promise<string> {
-  const res = await fetch(
-    `https://api.notion.com/v1/blocks/${pageId}/children?page_size=${pageSize}`,
-    {
-      headers: notionHeaders(token),
-    },
-  )
+  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}/markdown`, {
+    headers: notionHeaders(token),
+  })
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Notion page blocks read failed (${res.status}): ${text}`)
+    throw new Error(`Notion page markdown read failed (${res.status}): ${text}`)
   }
 
-  const body = (await res.json()) as {results?: NotionBlock[]}
-  const lines = (body.results ?? [])
-    .map(block => blockPlainText(block))
-    .filter(line => line.length > 0)
-  return lines.join('\n').trim()
+  const body = (await res.json()) as NotionPageMarkdown
+  return body.markdown ?? ''
 }
 
 // Block types a human would add as feedback (excludes our callout/toggle/code log blocks)
@@ -759,8 +750,16 @@ export function pageTitle(page: NotionPage): string {
 }
 
 export function pageState(page: NotionPage): string | null {
-  const prop = page.properties.State
-  if (prop?.type === 'select') return prop.select?.name?.toLowerCase() ?? null
+  const statusProp = page.properties.Status
+  if (statusProp?.type === 'select') {
+    return statusProp.select?.name?.toLowerCase() ?? null
+  }
+
+  const legacyProp = page.properties.State
+  if (legacyProp?.type === 'select') {
+    return legacyProp.select?.name?.toLowerCase() ?? null
+  }
+
   return null
 }
 
@@ -770,33 +769,45 @@ export function pagePipeId(page: NotionPage): string | null {
   return null
 }
 
-type NotionComment = {
-  id: string
-  created_time: string
-  rich_text: Array<{plain_text?: string}>
-}
-
 export async function notionListComments(
   token: string,
   pageId: string,
 ): Promise<NotionComment[]> {
-  const res = await fetch(
-    `https://api.notion.com/v1/comments?block_id=${pageId}`,
-    {
+  const comments: NotionComment[] = []
+  let startCursor: string | null = null
+
+  while (true) {
+    const params = new URLSearchParams({
+      block_id: pageId,
+      page_size: '100',
+    })
+    if (startCursor) {
+      params.set('start_cursor', startCursor)
+    }
+
+    const res = await fetch(`https://api.notion.com/v1/comments?${params}`, {
       headers: notionHeaders(token),
-    },
-  )
+    })
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Notion list comments failed (${res.status}): ${text}`)
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Notion list comments failed (${res.status}): ${text}`)
+    }
+
+    const body = (await res.json()) as {
+      results?: NotionComment[]
+      has_more?: boolean
+      next_cursor?: string | null
+    }
+
+    comments.push(...(body.results ?? []))
+    if (!body.has_more) return comments
+    startCursor = body.next_cursor ?? null
+    if (!startCursor) return comments
   }
-
-  const body = (await res.json()) as {results?: NotionComment[]}
-  return body.results ?? []
 }
 
-export async function notionAppendMarkdownToPage(
+export async function notionReplacePageMarkdown(
   token: string,
   pageId: string,
   markdown: string,
@@ -807,15 +818,15 @@ export async function notionAppendMarkdownToPage(
       method: 'PATCH',
       headers: notionHeaders(token),
       body: JSON.stringify({
-        type: 'insert_content',
-        insert_content: {content: markdown},
+        type: 'replace_content',
+        replace_content: {new_str: markdown},
       }),
     },
   )
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Notion markdown append failed (${res.status}): ${text}`)
+    throw new Error(`Notion markdown replace failed (${res.status}): ${text}`)
   }
 }
 

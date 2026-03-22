@@ -30,10 +30,9 @@ export const runTraceTypeSchema = z.enum(runTraceTypes)
 export type RunTraceType = z.infer<typeof runTraceTypeSchema>
 
 export const runTraceStatuses = [
-  'running',
-  'feedback',
+  'in_progress',
+  'needs_input',
   'done',
-  'blocked',
   'failed',
 ] as const
 export const runTraceStatusSchema = z.enum(runTraceStatuses)
@@ -128,15 +127,12 @@ export const runTraceSchema = z
         break
       case 'completed':
         requireStringField('status', 'completed traces require terminal status')
-        if (
-          value.status === 'running' ||
-          value.status === 'feedback' ||
-          value.status === null
-        ) {
+        if (value.status === 'in_progress' || value.status === null) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['status'],
-            message: 'completed traces require done, blocked, or failed status',
+            message:
+              'completed traces require done, needs_input, or failed status',
           })
         }
         break
@@ -214,6 +210,6 @@ export function replayRunTraces(traces: ReadonlyArray<unknown>): string | null {
     waitingForFeedback = trace.reason === 'action.feedback'
   }
 
-  if (waitingForFeedback) return 'feedback'
+  if (waitingForFeedback) return 'needs_input'
   return currentStateId
 }

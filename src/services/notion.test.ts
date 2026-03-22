@@ -7,9 +7,13 @@ import {
   notionResolveDatabaseConnection,
   notionEnsureBoardSchema,
   notionExtractDatabaseIdFromUrl,
+  notionGetPageMarkdown,
+  notionListComments,
   notionQueryAllDataSourcePages,
   notionQueryDataSource,
+  notionReplacePageMarkdown,
   notionResolveDatabaseConnectionFromUrl,
+  notionUpdateTaskPage,
   notionWaitForTaskPipe,
   pagePipeId,
 } from './notion'
@@ -25,19 +29,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function buildSharedBoardDataSource(
   overrides: Partial<{
-    stateOptions: Array<{name: string; color?: string; id?: string}>
     statusOptions: Array<{name: string; color?: string; id?: string}>
     pipeOptions: Array<{name: string; color?: string; id?: string}>
+    currentActionType: string
+    progressType: string
+    prType: string
   }> = {},
 ) {
   return {
     id: 'ds-1',
     properties: {
       Name: {type: 'title'},
-      State: {
-        type: 'select',
-        select: {options: overrides.stateOptions ?? []},
-      },
       Status: {
         type: 'select',
         select: {options: overrides.statusOptions ?? []},
@@ -46,6 +48,15 @@ function buildSharedBoardDataSource(
         type: 'select',
         select: {options: overrides.pipeOptions ?? []},
       },
+      'Current Action': {
+        type: overrides.currentActionType ?? 'rich_text',
+      },
+      Progress: {
+        type: overrides.progressType ?? 'rich_text',
+      },
+      PR: {
+        type: overrides.prType ?? 'url',
+      },
     },
   }
 }
@@ -53,18 +64,150 @@ function buildSharedBoardDataSource(
 const STATE_OPTIONS = [
   {name: 'Queue', color: 'gray'},
   {name: 'In Progress', color: 'blue'},
-  {name: 'Feedback', color: 'purple'},
+  {name: 'Needs Input', color: 'orange'},
   {name: 'Done', color: 'green'},
-  {name: 'Blocked', color: 'orange'},
   {name: 'Failed', color: 'red'},
 ]
+
+describe('notion task page helpers', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('updates task properties for the task board adapter contract', async () => {
+    const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      calls.push({input, init})
+      return jsonResponse({})
+    }) as typeof fetch
+
+    await notionUpdateTaskPage('token-1', 'page-1', {
+      state: 'in_progress',
+      currentAction: 'Implement adapter',
+      progress: '50% Implementing',
+      prUrl: 'https://github.com/example/repo/pull/123',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(String(calls[0]?.input)).toContain('/v1/pages/page-1')
+    expect(calls[0]?.init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      properties: {
+        Status: {select: {name: 'In Progress'}},
+        'Current Action': {
+          rich_text: [{type: 'text', text: {content: 'Implement adapter'}}],
+        },
+        Progress: {
+          rich_text: [{type: 'text', text: {content: '50% Implementing'}}],
+        },
+        PR: {url: 'https://github.com/example/repo/pull/123'},
+      },
+    })
+  })
+
+  it('reads page markdown from the markdown api', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        object: 'page_markdown',
+        id: 'page-1',
+        markdown: '# Fresh Start\n\nThis is the artifact.',
+      })) as typeof fetch
+
+    await expect(notionGetPageMarkdown('token-1', 'page-1')).resolves.toBe(
+      '# Fresh Start\n\nThis is the artifact.',
+    )
+  })
+
+  it('replaces page markdown using replace_content', async () => {
+    const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      calls.push({input, init})
+      return jsonResponse({})
+    }) as typeof fetch
+
+    await notionReplacePageMarkdown(
+      'token-1',
+      'page-1',
+      '# Fresh Start\n\nThis replaces all previous content.',
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(String(calls[0]?.input)).toContain('/v1/pages/page-1/markdown')
+    expect(calls[0]?.init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      type: 'replace_content',
+      replace_content: {
+        new_str: '# Fresh Start\n\nThis replaces all previous content.',
+      },
+    })
+  })
+
+  it('lists comments across pagination and preserves author metadata', async () => {
+    let callCount = 0
+    globalThis.fetch = (async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return jsonResponse({
+          results: [
+            {
+              id: 'comment-1',
+              created_time: '2026-03-22T10:00:00.000Z',
+              created_by: {id: 'user-1'},
+              display_name: {type: 'user', resolved_name: 'Reviewer'},
+              rich_text: [{plain_text: 'Looks good'}],
+            },
+          ],
+          has_more: true,
+          next_cursor: 'cursor-2',
+        })
+      }
+
+      return jsonResponse({
+        results: [
+          {
+            id: 'comment-2',
+            created_time: '2026-03-22T10:05:00.000Z',
+            created_by: {id: 'bot-1', type: 'bot'},
+            display_name: {type: 'integration', resolved_name: 'Notionflow'},
+            rich_text: [{plain_text: 'Queued for work'}],
+          },
+        ],
+        has_more: false,
+        next_cursor: null,
+      })
+    }) as typeof fetch
+
+    await expect(notionListComments('token-1', 'page-1')).resolves.toEqual([
+      {
+        id: 'comment-1',
+        created_time: '2026-03-22T10:00:00.000Z',
+        created_by: {id: 'user-1'},
+        display_name: {type: 'user', resolved_name: 'Reviewer'},
+        rich_text: [{plain_text: 'Looks good'}],
+      },
+      {
+        id: 'comment-2',
+        created_time: '2026-03-22T10:05:00.000Z',
+        created_by: {id: 'bot-1', type: 'bot'},
+        display_name: {type: 'integration', resolved_name: 'Notionflow'},
+        rich_text: [{plain_text: 'Queued for work'}],
+      },
+    ])
+  })
+})
 
 describe('notion board schema provisioning', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
   })
 
-  it('updates board schema with State (operational) and Status (steps) properties', async () => {
+  it('updates board schema with lifecycle status and task metadata properties', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -83,15 +226,17 @@ describe('notion board schema provisioning', () => {
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload).toEqual({
       properties: {
+        'Current Action': {rich_text: {}},
         Pipe: {select: {options: []}},
-        State: {select: {options: STATE_OPTIONS}},
-        Status: {select: {options: []}},
+        PR: {url: {}},
+        Progress: {rich_text: {}},
+        Status: {select: {options: STATE_OPTIONS}},
       },
     })
     expect(payload.properties.Ready).toBeUndefined()
   })
 
-  it('includes step options in Status when provided', async () => {
+  it('keeps lifecycle Status options even when legacy step options are provided', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -119,8 +264,7 @@ describe('notion board schema provisioning', () => {
     await notionEnsureBoardSchema('token-1', 'ds-1', stepOptions, pipeOptions)
 
     const payload = JSON.parse(String(calls[1]?.init?.body))
-    expect(payload.properties.State.select.options).toEqual(STATE_OPTIONS)
-    expect(payload.properties.Status.select.options).toEqual(stepOptions)
+    expect(payload.properties.Status.select.options).toEqual(STATE_OPTIONS)
     expect(payload.properties.Pipe.select.options).toEqual([
       {name: 'demo', color: 'default', id: 'opt-demo'},
       {name: 'research', color: 'green'},
@@ -170,9 +314,11 @@ describe('notion board schema provisioning', () => {
     })
 
     const patchPayload = JSON.parse(String(calls[2]?.init?.body))
-    expect(patchPayload.properties.State.select.options).toEqual(STATE_OPTIONS)
-    expect(patchPayload.properties.Status.select.options).toEqual([])
+    expect(patchPayload.properties.Status.select.options).toEqual(STATE_OPTIONS)
     expect(patchPayload.properties.Pipe.select.options).toEqual([])
+    expect(patchPayload.properties['Current Action']).toEqual({rich_text: {}})
+    expect(patchPayload.properties.Progress).toEqual({rich_text: {}})
+    expect(patchPayload.properties.PR).toEqual({url: {}})
     expect(patchPayload.properties.Ready).toBeUndefined()
   })
 
@@ -275,7 +421,7 @@ describe('notion board schema provisioning', () => {
       return jsonResponse(
         buildSharedBoardDataSource({
           pipeOptions: [{name: 'verify-happy', color: 'pink', id: 'pipe-1'}],
-          statusOptions: [{name: 'complete', color: 'orange', id: 'status-1'}],
+          statusOptions: [{name: 'Done', color: 'orange', id: 'status-1'}],
         }),
       )
     }) as typeof fetch
@@ -292,7 +438,11 @@ describe('notion board schema provisioning', () => {
 
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload.properties.Status.select.options).toEqual([
-      {name: 'complete', color: 'orange', id: 'status-1'},
+      {name: 'Queue', color: 'gray'},
+      {name: 'In Progress', color: 'blue'},
+      {name: 'Needs Input', color: 'orange'},
+      {name: 'Done', color: 'orange', id: 'status-1'},
+      {name: 'Failed', color: 'red'},
     ])
     expect(payload.properties.Pipe.select.options).toEqual([
       {name: 'verify-happy', color: 'pink', id: 'pipe-1'},
@@ -300,7 +450,7 @@ describe('notion board schema provisioning', () => {
     ])
   })
 
-  it('writes Pipe when creating a task page', async () => {
+  it('writes Status and Pipe when creating a task page', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -317,7 +467,9 @@ describe('notion board schema provisioning', () => {
     })
 
     const payload = JSON.parse(String(calls[0]?.init?.body))
+    expect(payload.properties.Status).toEqual({select: {name: 'Queue'}})
     expect(payload.properties.Pipe).toEqual({select: {name: 'demo'}})
+    expect(payload.properties.State).toBeUndefined()
   })
 
   it('waits for a created task page to report the expected Pipe', async () => {
@@ -531,9 +683,11 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
           Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
+          PR: {type: 'url'},
         },
       }),
     ).not.toThrow()
@@ -544,12 +698,14 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: missing Pipe',
+      'Shared Notion board schema is invalid for data source ds-1: missing PR',
     )
   })
 
@@ -558,13 +714,15 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
-          Pipe: {type: 'rich_text'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'select'},
+          PR: {type: 'url'},
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: Pipe must be select (found rich_text)',
+      'Shared Notion board schema is invalid for data source ds-1: Progress must be rich_text (found select)',
     )
   })
 

@@ -6,8 +6,8 @@ import {afterAll, afterEach, describe, expect, it} from 'vitest'
 import {notionToken} from '../src/config/env'
 import {definePipe, write} from '../src/pipe/canonical'
 import {
-  notionAppendMarkdownToPage,
-  notionGetPageBodyText,
+  notionGetPageMarkdown,
+  notionReplacePageMarkdown,
 } from '../src/services/notion'
 import {
   createTempProjectFixture,
@@ -19,6 +19,7 @@ import {
   registerLiveBoardSuite,
   resolveSharedBoardConnection,
 } from './helpers/sharedNotionBoard'
+import {createMockTaskHandle} from './helpers/mockTaskHandle'
 import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 loadDotEnv()
@@ -42,7 +43,7 @@ if (liveSuiteEnabled) {
       await finishLiveBoardSuite()
     })
 
-    it('appends rendered write output to the Notion task page via writePage adapter', async () => {
+    it('replaces the Notion task page artifact via the markdown api', async () => {
       fixture = await createTempProjectFixture('pipes-write-live-')
       await execCli(['init'], fixture.projectDir)
       await writeFile(
@@ -96,14 +97,13 @@ if (liveSuiteEnabled) {
         workspace: mockPipeWorkspace,
         runId: `run-${Date.now()}`,
         tickId: `tick-${Date.now()}`,
-        task: {
+        task: createMockTaskHandle({
           id: taskExternalId,
           title: 'Canonical write live e2e task',
-        },
-        writePage: async output => {
-          const markdown = typeof output === 'string' ? output : output.markdown
-          await notionAppendMarkdownToPage(token, taskExternalId, markdown)
-        },
+          writeArtifact: async markdown => {
+            await notionReplacePageMarkdown(token, taskExternalId, markdown)
+          },
+        }),
       })
 
       expect(result).toEqual({score: 9})
@@ -122,7 +122,7 @@ async function waitForPageBodyContains(
   const delayMs = 1_000
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const body = await notionGetPageBodyText(token, pageId)
+    const body = await notionGetPageMarkdown(token, pageId)
     if (body.includes(marker)) {
       return body
     }

@@ -1,0 +1,52 @@
+# Task Model v2 — Progress
+
+## Current Status
+US-008 complete
+
+## Stories
+- [x] US-001: Define canonical task types and adapter interface
+- [x] US-002: Update local database schema for new lifecycle
+- [x] US-003: Markdown section helpers
+- [x] US-004: Update Notion board schema for new properties
+- [x] US-005: Update Notion adapter to new interface
+- [x] US-006: Update pipe runtime to use new adapter interface
+- [x] US-007: Expose TaskHandle to pipes
+- [x] US-008: Update sync loop for new lifecycle and comment-based feedback
+
+## Notes
+- 2026-03-22: Completed US-001 by replacing the task-board contract with `TaskLifecycle`, `TaskBoardPatch`, and `{id, title, artifact, comments}` snapshots; updated the null adapter, the Notion adapter, and the runtime call sites to use `updateTask` / `writeArtifact`.
+- 2026-03-22: Tracer-bullet scope only. The runtime now maps legacy internal board states (`running`, `feedback`, `blocked`) into canonical lifecycle patches so the new adapter contract is live without pulling the later lifecycle/schema stories fully forward.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/taskBoardAdapter.test.ts src/adapters/notion.test.ts src/core/pipeRuntime.test.ts` ✅
+- 2026-03-22: Completed US-002 by migrating local SQLite lifecycle storage from legacy `running` / `feedback` / `blocked` values to canonical `in_progress` / `needs_input`, adding bootstrap migration updates for existing `tasks`, `runs`, and `run_traces` rows, and updating the runtime, Notion sync loop, and dashboard queries to persist/query the canonical lifecycle values.
+- 2026-03-22: Kept the current Notion board schema as a compatibility layer for now. Local state is canonical, while shared-board writes still translate through the older board status labels until the later Notion schema stories land.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/app/context.test.ts src/commands/notion.test.ts src/core/pipeRuntime.test.ts src/core/runTraces.test.ts src/dashboard/snapshot.test.ts src/services/statusIcons.test.ts` ✅
+- Pre-release project — no migration or backward compatibility needed
+- US-002 moved before US-003 since DB schema is a dependency for runtime changes
+- US-003 (section helpers) has no dependencies and can land early as a pure utility
+- 2026-03-22: Completed US-003 by adding pure markdown `##` section helpers in `src/core/artifactSections.ts` for reading, replacing/appending, and removing artifact sections with canonical serialization.
+- 2026-03-22: Tracer-bullet scope only. This lands the helper API and test coverage without wiring section-level artifact editing into the runtime yet.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/artifactSections.test.ts` ✅
+- 2026-03-22: Completed US-004 by updating shared Notion board provisioning to the new property set: `Status`, `Pipe`, `Current Action`, `Progress`, and `PR`; lifecycle status options now use `Queue` / `In Progress` / `Needs Input` / `Done` / `Failed`, and task creation now writes `Status` instead of `State`.
+- 2026-03-22: Tracer-bullet scope only. Added compatibility shims so existing flows can still read legacy `State` values while new boards and updates move onto `Status` and `Current Action`.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/commands/notion.test.ts` ✅
+- 2026-03-22: Completed US-005 by finishing the Notion adapter around the canonical 4-method contract: `updateTask()` now maps lifecycle/current action/progress/PR properties, `writeArtifact()` does full-page markdown replace, `getTask()` reads markdown artifacts plus comment author metadata, and `postComment()` remains the board comment primitive.
+- 2026-03-22: Removed the old append-only Notion log helpers and moved the remaining board-note call sites onto rich-text comments. Updated live/e2e references to the new markdown helper names so the repo typechecks cleanly.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/adapters/notion.test.ts src/commands/notion.test.ts` ✅
+- 2026-03-22: Completed US-006 by finishing the pipe runtime migration onto the canonical task-board adapter primitives. `pipeRuntime.ts` now syncs board lifecycle with direct `TaskLifecycle` values, writes artifacts through `writeArtifact()`, reads task context from `snapshot.artifact`, and removes the leftover runtime board-log path.
+- 2026-03-22: Tracer-bullet scope only. Runtime board comments are now reserved for explicit feedback prompts, while execution logs stay local in `runTraces`; `blocked` and feedback outcomes both map to `needs_input` at the adapter boundary.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts` ✅
+- 2026-03-22: Completed US-007 by replacing the public pipe `run()` input shape with a `TaskHandle` that exposes `id`, `title`, `readArtifact()`, `writeArtifact()`, `updateStatus()`, and `comment()`. The canonical `write()` primitive now routes through `task.writeArtifact()`, the runtime constructs the handle around the task-board adapter with warning-only error handling, and the package barrel now exports `TaskHandle` for pipe authors.
+- 2026-03-22: Tracer-bullet scope only. This lands the end-to-end pipe/runtime contract and focused contract coverage without changing the later Notion sync-loop story or adding extra lifecycle semantics beyond the board patch passthrough.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` ✅
+- 2026-03-22 verification: `npx vitest run --config vitest.e2e.config.ts e2e/canonical-write.test.ts e2e/canonical-decide.test.ts e2e/canonical-loop.test.ts` ✅
+- 2026-03-22: Completed US-008 by tightening the shared-board sync loop to the new `Status` lifecycle labels (`Queue`, `In Progress`, `Needs Input`, `Done`, `Failed`), keeping comment polling as the feedback mechanism, and re-queuing `needs_input` tasks when new human comments arrive.
+- 2026-03-22: Tracer-bullet scope only. Quarantine reflection now writes canonical `needs_input` lifecycle updates back to Notion, and the focused sync tests cover both lifecycle imports and the comment-triggered resume path without broadening the adapter/service contract.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/commands/notion.test.ts` ✅

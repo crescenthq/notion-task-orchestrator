@@ -1,15 +1,15 @@
 import path from 'node:path'
 import type {Client, Row} from '@libsql/client'
 import {openApp, type OpenAppOptions} from '../app/context'
+import type {TaskLifecycle} from '../core/taskBoardAdapter'
 
 export const DASHBOARD_STATE_ORDER = [
-  'running',
-  'feedback',
+  'in_progress',
+  'needs_input',
   'queued',
   'failed',
-  'blocked',
   'done',
-] as const
+] as const satisfies readonly TaskLifecycle[]
 
 export type DashboardTaskState = (typeof DASHBOARD_STATE_ORDER)[number]
 
@@ -57,8 +57,8 @@ export type DashboardRecentEvent = {
 export type DashboardWorkflowSummary = {
   workflowId: string
   totalCount: number
-  runningCount: number
-  feedbackCount: number
+  inProgressCount: number
+  needsInputCount: number
   queuedCount: number
   activeCount: number
 }
@@ -131,13 +131,12 @@ LEFT JOIN run_traces tr
 const TASK_ORDER_BY = `
 ORDER BY
   CASE t.state
-    WHEN 'running' THEN 0
-    WHEN 'feedback' THEN 1
+    WHEN 'in_progress' THEN 0
+    WHEN 'needs_input' THEN 1
     WHEN 'queued' THEN 2
     WHEN 'failed' THEN 3
-    WHEN 'blocked' THEN 4
-    WHEN 'done' THEN 5
-    ELSE 6
+    WHEN 'done' THEN 4
+    ELSE 5
   END ASC,
   t.updated_at DESC,
   t.external_task_id ASC
@@ -180,7 +179,7 @@ export async function loadDashboardSnapshot(
         limit: taskLimit,
       }),
       loadTaskRows(source.client, {
-        whereSql: `WHERE t.state IN ('running', 'feedback')`,
+        whereSql: `WHERE t.state IN ('in_progress', 'needs_input')`,
         limit: activeTaskLimit,
       }),
       loadRecentEvents(source.client, recentEventLimit),
@@ -195,7 +194,7 @@ export async function loadDashboardSnapshot(
       (sum, count) => sum + count,
       0,
     ),
-    activeTasks: taskCounts.running + taskCounts.feedback,
+    activeTasks: taskCounts.in_progress + taskCounts.needs_input,
     taskCounts,
     tasks,
     inProgressTasks,
@@ -291,14 +290,14 @@ async function loadWorkflowSummaries(
       SELECT
         t.workflow_id AS workflowId,
         COUNT(*) AS totalCount,
-        SUM(CASE WHEN t.state = 'running' THEN 1 ELSE 0 END) AS runningCount,
-        SUM(CASE WHEN t.state = 'feedback' THEN 1 ELSE 0 END) AS feedbackCount,
+        SUM(CASE WHEN t.state = 'in_progress' THEN 1 ELSE 0 END) AS inProgressCount,
+        SUM(CASE WHEN t.state = 'needs_input' THEN 1 ELSE 0 END) AS needsInputCount,
         SUM(CASE WHEN t.state = 'queued' THEN 1 ELSE 0 END) AS queuedCount
       FROM tasks t
       GROUP BY t.workflow_id
       ORDER BY
-        runningCount DESC,
-        feedbackCount DESC,
+        inProgressCount DESC,
+        needsInputCount DESC,
         queuedCount DESC,
         totalCount DESC,
         t.workflow_id ASC
@@ -308,16 +307,16 @@ async function loadWorkflowSummaries(
   })
 
   return result.rows.map(row => {
-    const runningCount = toNumber(row.runningCount)
-    const feedbackCount = toNumber(row.feedbackCount)
+    const inProgressCount = toNumber(row.inProgressCount)
+    const needsInputCount = toNumber(row.needsInputCount)
     const queuedCount = toNumber(row.queuedCount)
     return {
       workflowId: toRequiredString(row.workflowId),
       totalCount: toNumber(row.totalCount),
-      runningCount,
-      feedbackCount,
+      inProgressCount,
+      needsInputCount,
       queuedCount,
-      activeCount: runningCount + feedbackCount,
+      activeCount: inProgressCount + needsInputCount,
     }
   })
 }
@@ -348,11 +347,10 @@ function mapTaskRow(row: Row): DashboardTaskRow {
 
 function makeEmptyTaskCounts(): Record<DashboardTaskState, number> {
   return {
-    running: 0,
-    feedback: 0,
+    in_progress: 0,
+    needs_input: 0,
     queued: 0,
     failed: 0,
-    blocked: 0,
     done: 0,
   }
 }

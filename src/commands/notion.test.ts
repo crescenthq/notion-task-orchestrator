@@ -202,9 +202,11 @@ describe('notion command shared board registration', () => {
       notionGetDataSource: vi.fn(async () => ({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
-          Pipe: {type: 'rich_text'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
+          PR: {type: 'rich_text'},
         },
       })),
     }))
@@ -289,8 +291,10 @@ describe('notion command shared board registration', () => {
       notionGetDataSource: vi.fn(async () => ({
         id: 'ds-shared',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
         },
       })),
     }))
@@ -317,7 +321,7 @@ describe('notion command shared board registration', () => {
       notionQueryAllDataSourcePages: queryAllPages,
       notionGetNewComments: vi.fn(async () => ''),
       notionEnsureBoardSchema: vi.fn(async () => undefined),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -360,9 +364,11 @@ describe('notion command shared board registration', () => {
         notionGetDataSource: vi.fn(async () => ({
           id: 'ds-shared',
           properties: {
-            State: {type: 'select'},
             Status: {type: 'rich_text'},
             Pipe: {type: 'select'},
+            'Current Action': {type: 'rich_text'},
+            Progress: {type: 'rich_text'},
+            PR: {type: 'url'},
           },
         })),
         notionQueryAllDataSourcePages: vi.fn(async () => []),
@@ -393,7 +399,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-alpha-drifted',
       workflowId: 'alpha',
-      state: 'feedback',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: now,
@@ -413,7 +419,7 @@ describe('notion command shared board registration', () => {
       notionQueryAllDataSourcePages: queryAllPages,
       notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
       notionEnsureBoardSchema: vi.fn(async () => undefined),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -440,7 +446,7 @@ describe('notion command shared board registration', () => {
     const queued = rows.find(row => row.externalTaskId === 'page-alpha-queued')
 
     expect(drifted?.workflowId).toBe('alpha')
-    expect(drifted?.state).toBe('blocked')
+    expect(drifted?.state).toBe('needs_input')
     expect(drifted?.lastError).toContain('pipe_mismatch:')
     expect(drifted?.lastError).toContain(
       'You may have changed the Pipe property by mistake.',
@@ -451,13 +457,16 @@ describe('notion command shared board registration', () => {
 
     expect(vi.mocked(notionService.notionGetNewComments)).not.toHaveBeenCalled()
     expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).toHaveBeenCalledWith(
+      vi.mocked(notionService.notionUpdateTaskPageState),
+    ).toHaveBeenCalledWith('test-token', 'page-alpha-drifted', 'needs_input')
+    expect(vi.mocked(notionService.notionPostComment)).toHaveBeenCalledWith(
       'test-token',
       'page-alpha-drifted',
-      'Pipe property changed',
-      expect.stringContaining('Restore Pipe to `alpha`'),
+      expect.stringContaining('Pipe property changed\n\n'),
     )
+    expect(
+      vi.mocked(notionService.notionPostComment).mock.calls[0]?.[2],
+    ).toContain('Restore Pipe to `alpha`')
   })
 
   it('setup --url allows same-board reuse and blocks switching boards when local tasks exist', async () => {
@@ -640,6 +649,119 @@ describe('notion command shared board registration', () => {
     expect(rows[0]?.externalTaskId).toBe('page-alpha-51')
   })
 
+  it('sync maps shared-board Status values to canonical local lifecycles', async () => {
+    const {projectRoot, db} = await setupSharedBoardProject()
+
+    mockNotionService(() => ({
+      notionQueryAllDataSourcePages: vi.fn(async () => [
+        buildNotionPage('page-queue', 'Queued', 'Queue', 'alpha'),
+        buildNotionPage(
+          'page-in-progress',
+          'In progress',
+          'In Progress',
+          'alpha',
+        ),
+        buildNotionPage('page-needs-input', 'Needs input', 'Needs Input', 'alpha'),
+        buildNotionPage('page-done', 'Done', 'Done', 'alpha'),
+        buildNotionPage('page-failed', 'Failed', 'Failed', 'alpha'),
+      ]),
+      notionGetNewComments: vi.fn(async () => ''),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
+      notionUpdateTaskPageState: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
+
+    const {syncNotionBoards} = await import('./notion')
+    await syncNotionBoards({
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
+      startDir: projectRoot,
+      runQueued: false,
+    })
+
+    const rows = await db.select().from(tasks)
+    const byExternalTaskId = new Map(
+      rows.map(row => [row.externalTaskId, row.state] as const),
+    )
+
+    expect(byExternalTaskId.get('page-queue')).toBe('queued')
+    expect(byExternalTaskId.get('page-in-progress')).toBe('in_progress')
+    expect(byExternalTaskId.get('page-needs-input')).toBe('needs_input')
+    expect(byExternalTaskId.get('page-done')).toBe('done')
+    expect(byExternalTaskId.get('page-failed')).toBe('failed')
+  })
+
+  it('re-queues needs-input tasks when new shared-board comments arrive', async () => {
+    const {projectRoot, db} = await setupSharedBoardProject()
+    const waitingSince = new Date().toISOString()
+    await registerWorkflow(db, 'alpha')
+    await db.insert(tasks).values({
+      id: crypto.randomUUID(),
+      boardId: 'notion-shared',
+      externalTaskId: 'page-feedback',
+      workflowId: 'alpha',
+      state: 'needs_input',
+      currentStepId: '__pipe_feedback__',
+      stepVarsJson: JSON.stringify({attempts: 1}),
+      waitingSince,
+      lockToken: null,
+      lockExpiresAt: null,
+      lastError: null,
+      createdAt: waitingSince,
+      updatedAt: waitingSince,
+    })
+
+    mockNotionService(() => ({
+      notionQueryAllDataSourcePages: vi.fn(async () => [
+        buildNotionPage('page-feedback', 'Feedback', 'Needs Input', 'alpha'),
+      ]),
+      notionGetNewComments: vi.fn(async () => 'Please include one more detail.'),
+      notionEnsureBoardSchema: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
+      notionUpdateTaskPageState: vi.fn(async () => undefined),
+      notionGetDataSource: vi.fn(async () =>
+        buildSharedBoardDataSource('ds-shared'),
+      ),
+    }))
+
+    const notionService = await import('../services/notion')
+    const {syncNotionBoards} = await import('./notion')
+    await syncNotionBoards({
+      configPath: path.join(projectRoot, 'pipes.config.ts'),
+      startDir: projectRoot,
+      runQueued: false,
+    })
+
+    const [taskRow] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.externalTaskId, 'page-feedback'))
+
+    expect(taskRow?.state).toBe('queued')
+    expect(taskRow?.waitingSince).toBeNull()
+    expect(taskRow?.currentStepId).toBe('__pipe_feedback__')
+    expect(JSON.parse(taskRow?.stepVarsJson ?? '{}')).toMatchObject({
+      attempts: 1,
+      human_feedback: 'Please include one more detail.',
+    })
+
+    expect(vi.mocked(notionService.notionGetNewComments)).toHaveBeenCalledWith(
+      'test-token',
+      'page-feedback',
+      waitingSince,
+    )
+    expect(
+      vi.mocked(notionService.notionUpdateTaskPageState),
+    ).toHaveBeenCalledWith('test-token', 'page-feedback', 'queued')
+    expect(vi.mocked(notionService.notionPostComment)).toHaveBeenCalledWith(
+      'test-token',
+      'page-feedback',
+      'Feedback received\n\nHuman reply detected. Task re-queued for resume.',
+    )
+  })
+
   it('quarantines ownership mismatches and invalid pipes during sync', async () => {
     const projectRoot = await createProjectFixture()
     process.chdir(projectRoot)
@@ -685,7 +807,7 @@ describe('notion command shared board registration', () => {
         boardId: 'notion-shared',
         externalTaskId: 'page-undeclared',
         workflowId: 'alpha',
-        state: 'feedback',
+        state: 'needs_input',
         currentStepId: null,
         stepVarsJson: null,
         waitingSince: now,
@@ -712,7 +834,7 @@ describe('notion command shared board registration', () => {
         ]),
         notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
+        notionPostComment: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
         notionGetDataSource: vi.fn(async () =>
           buildSharedBoardDataSource('ds-shared'),
@@ -735,22 +857,22 @@ describe('notion command shared board registration', () => {
     )
 
     expect(mismatch?.workflowId).toBe('alpha')
-    expect(mismatch?.state).toBe('blocked')
+    expect(mismatch?.state).toBe('needs_input')
     expect(mismatch?.lastError).toContain('pipe_mismatch:')
 
     expect(missing?.workflowId).toBe('alpha')
-    expect(missing?.state).toBe('blocked')
+    expect(missing?.state).toBe('needs_input')
     expect(missing?.lastError).toContain('pipe_invalid: missing Pipe')
 
     expect(undeclared?.workflowId).toBe('alpha')
-    expect(undeclared?.state).toBe('blocked')
+    expect(undeclared?.state).toBe('needs_input')
     expect(undeclared?.lastError).toContain(
       'pipe_invalid: undeclared Pipe gamma',
     )
     expect(mismatch?.lastError).toContain('Restore Pipe to `alpha`')
   })
 
-  it('keeps ownership-quarantined tasks blocked until explicitly repaired', async () => {
+  it('keeps ownership-quarantined tasks in needs input until explicitly repaired', async () => {
     const projectRoot = await createProjectFixture()
     process.chdir(projectRoot)
     process.env.NOTION_API_TOKEN = 'test-token'
@@ -764,7 +886,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-quarantined',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -789,7 +911,7 @@ describe('notion command shared board registration', () => {
         ]),
         notionGetNewComments: vi.fn(async () => ''),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
+        notionPostComment: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
         notionGetDataSource: vi.fn(async () =>
           buildSharedBoardDataSource('ds-shared'),
@@ -808,7 +930,7 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-quarantined'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('repair-task --task page-quarantined')
   })
 
@@ -821,7 +943,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: '__pipe_feedback__',
       stepVarsJson: JSON.stringify({attempts: 1}),
       waitingSince: now,
@@ -835,9 +957,9 @@ describe('notion command shared board registration', () => {
 
     mockNotionService(() => ({
       notionGetPage: vi.fn(async () =>
-        buildNotionPage('page-repair', 'Repair me', 'Blocked', 'alpha'),
+        buildNotionPage('page-repair', 'Repair me', 'Needs Input', 'alpha'),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -865,17 +987,14 @@ describe('notion command shared board registration', () => {
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).toHaveBeenCalledWith('test-token', 'page-repair', 'queued')
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).toHaveBeenCalledWith(
+    expect(vi.mocked(notionService.notionPostComment)).toHaveBeenCalledWith(
       'test-token',
       'page-repair',
-      'Pipe quarantine cleared',
-      'Pipe restored to alpha. Task re-queued after explicit repair.',
+      'Pipe quarantine cleared\n\nPipe restored to alpha. Task re-queued after explicit repair.',
     )
   })
 
-  it('repair-task fails when Pipe is still wrong and leaves task blocked', async () => {
+  it('repair-task fails when Pipe is still wrong and leaves task in needs input', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -884,7 +1003,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair-wrong',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -898,9 +1017,14 @@ describe('notion command shared board registration', () => {
 
     mockNotionService(() => ({
       notionGetPage: vi.fn(async () =>
-        buildNotionPage('page-repair-wrong', 'Repair wrong', 'Blocked', 'beta'),
+        buildNotionPage(
+          'page-repair-wrong',
+          'Repair wrong',
+          'Needs Input',
+          'beta',
+        ),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -922,17 +1046,15 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-wrong'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('pipe_mismatch:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).not.toHaveBeenCalled()
+    expect(vi.mocked(notionService.notionPostComment)).not.toHaveBeenCalled()
   })
 
-  it('repair-task fails when Pipe is missing and leaves task blocked', async () => {
+  it('repair-task fails when Pipe is missing and leaves task in needs input', async () => {
     const {projectRoot, db} = await setupSharedBoardProject()
     const now = new Date().toISOString()
     await registerWorkflow(db, 'alpha')
@@ -941,7 +1063,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair-missing',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -955,9 +1077,9 @@ describe('notion command shared board registration', () => {
 
     mockNotionService(() => ({
       notionGetPage: vi.fn(async () =>
-        buildNotionPage('page-repair-missing', 'Repair missing', 'Blocked'),
+        buildNotionPage('page-repair-missing', 'Repair missing', 'Needs Input'),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -976,13 +1098,11 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-missing'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('pipe_invalid:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).not.toHaveBeenCalled()
+    expect(vi.mocked(notionService.notionPostComment)).not.toHaveBeenCalled()
   })
 })

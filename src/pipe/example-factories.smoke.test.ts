@@ -4,7 +4,7 @@ import intentFactory from '../../example-factories/pipes/intent'
 import magic8Factory from '../../example-factories/pipes/magic-8'
 import sharedHelperDemo from '../../example-factories/pipes/shared-helper-demo'
 import wouldYouRatherFactory from '../../example-factories/pipes/would-you-rather'
-import type {PipeWorkspace} from './canonical'
+import type {PipeWorkspace, TaskHandle} from './canonical'
 
 type AwaitFeedbackSignal = {
   type: 'await_feedback'
@@ -19,8 +19,6 @@ type EndSignal = {
   message?: string
 }
 
-type PageOutput = string | {markdown: string; body?: string}
-
 const mockWorkspace: PipeWorkspace = {
   root: '/tmp/pipes-workspace',
   cwd: '/tmp/pipes-workspace/app',
@@ -30,6 +28,19 @@ const mockWorkspace: PipeWorkspace = {
     repo: '/tmp/pipes-source',
     requestedRef: 'HEAD',
   },
+}
+
+function createTaskHandle(
+  overrides: Partial<TaskHandle> & Pick<TaskHandle, 'id' | 'title'>,
+): TaskHandle {
+  return {
+    id: overrides.id,
+    title: overrides.title,
+    readArtifact: overrides.readArtifact ?? (async () => ''),
+    writeArtifact: overrides.writeArtifact ?? (async () => undefined),
+    updateStatus: overrides.updateStatus ?? (async () => undefined),
+    comment: overrides.comment ?? (async () => undefined),
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,7 +79,7 @@ function expectEnd(value: unknown): EndSignal {
 
 describe('example pipes smoke', () => {
   it('runs expressive-primitives through the approve path', async () => {
-    const writes: PageOutput[] = []
+    const writes: string[] = []
 
     const result = await expressivePrimitives.run({
       ctx: expressivePrimitives.initial,
@@ -76,31 +87,37 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-expressive',
       tickId: 'tick-expressive',
-      writePage: async output => {
-        writes.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-expressive',
+        title: 'Expressive primitives task',
+        writeArtifact: async markdown => {
+          writes.push(markdown)
+        },
+      }),
     })
 
     const end = expectEnd(result)
     expect(end.status).toBe('done')
     expect(end.ctx.decision).toBe('approve')
     expect(writes).toHaveLength(1)
-    expect(
-      typeof writes[0] === 'string' ? writes[0] : writes[0]?.markdown,
-    ).toContain('Expressive Primitive Demo')
+    expect(writes[0]).toContain('Expressive Primitive Demo')
   })
 
   it('runs shared-helper-demo to completion', async () => {
-    const writes: PageOutput[] = []
+    const writes: string[] = []
 
     const result = await sharedHelperDemo.run({
       ctx: sharedHelperDemo.initial,
       workspace: mockWorkspace,
       runId: 'run-shared',
       tickId: 'tick-shared',
-      writePage: async output => {
-        writes.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-shared',
+        title: 'Shared helper task',
+        writeArtifact: async markdown => {
+          writes.push(markdown)
+        },
+      }),
     })
 
     const end = expectEnd(result)
@@ -116,6 +133,10 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-magic-1',
       tickId: 'tick-magic-1',
+      task: createTaskHandle({
+        id: 'task-magic',
+        title: 'Magic 8 task',
+      }),
     })
     const firstAwait = expectAwaitFeedback(first)
     expect(firstAwait.prompt).toContain('Ask a yes/no question')
@@ -126,20 +147,28 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-magic-2',
       tickId: 'tick-magic-2',
+      task: createTaskHandle({
+        id: 'task-magic',
+        title: 'Magic 8 task',
+      }),
     })
     const secondAwait = expectAwaitFeedback(second)
     expect(secondAwait.prompt).toContain('Ask another? (yes/no)')
 
-    const writes: PageOutput[] = []
+    const writes: string[] = []
     const third = await magic8Factory.run({
       ctx: secondAwait.ctx as typeof magic8Factory.initial,
       feedback: 'no',
       workspace: mockWorkspace,
       runId: 'run-magic-3',
       tickId: 'tick-magic-3',
-      writePage: async output => {
-        writes.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-magic',
+        title: 'Magic 8 task',
+        writeArtifact: async markdown => {
+          writes.push(markdown)
+        },
+      }),
     })
     const finalEnd = expectEnd(third)
     expect(finalEnd.status).toBe('done')
@@ -154,6 +183,10 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-rather-1',
       tickId: 'tick-rather-1',
+      task: createTaskHandle({
+        id: 'task-rather',
+        title: 'Would you rather task',
+      }),
     })
     const firstAwait = expectAwaitFeedback(first)
     expect(firstAwait.prompt).toContain('Reply with A or B')
@@ -164,20 +197,28 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-rather-2',
       tickId: 'tick-rather-2',
+      task: createTaskHandle({
+        id: 'task-rather',
+        title: 'Would you rather task',
+      }),
     })
     const secondAwait = expectAwaitFeedback(second)
     expect(secondAwait.prompt).toContain('Please reply with only A or B')
 
-    const writes: PageOutput[] = []
+    const writes: string[] = []
     const third = await wouldYouRatherFactory.run({
       ctx: secondAwait.ctx as typeof wouldYouRatherFactory.initial,
       feedback: 'A',
       workspace: mockWorkspace,
       runId: 'run-rather-3',
       tickId: 'tick-rather-3',
-      writePage: async output => {
-        writes.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-rather',
+        title: 'Would you rather task',
+        writeArtifact: async markdown => {
+          writes.push(markdown)
+        },
+      }),
     })
     const end = expectEnd(third)
     expect(end.status).toBe('done')
@@ -192,11 +233,15 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-intent-1',
       tickId: 'tick-intent-1',
+      task: createTaskHandle({
+        id: 'task-intent',
+        title: 'Intent task',
+      }),
     })
     const awaitIntent = expectAwaitFeedback(first)
     expect(awaitIntent.prompt).toContain('Describe the request in one message')
 
-    const writes: PageOutput[] = []
+    const writes: string[] = []
     const second = await intentFactory.run({
       ctx: awaitIntent.ctx as typeof intentFactory.initial,
       feedback:
@@ -204,9 +249,13 @@ describe('example pipes smoke', () => {
       workspace: mockWorkspace,
       runId: 'run-intent-2',
       tickId: 'tick-intent-2',
-      writePage: async output => {
-        writes.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-intent',
+        title: 'Intent task',
+        writeArtifact: async markdown => {
+          writes.push(markdown)
+        },
+      }),
     })
 
     const end = expectEnd(second)

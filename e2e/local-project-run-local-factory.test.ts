@@ -104,7 +104,7 @@ describe('local project run command', () => {
     await execCli(['run', '--task', externalTaskId], fixture.projectDir)
 
     const paused = await readTask(fixture.projectDir, externalTaskId)
-    expect(paused.state).toBe('feedback')
+    expect(paused.state).toBe('needs_input')
     expect(paused.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused.stepVarsJson ?? '{}') as Record<
       string,
@@ -168,7 +168,7 @@ describe('local project run command', () => {
     await execCli(['run', '--task', externalTaskId], fixture.projectDir)
 
     const paused = await readTask(fixture.projectDir, externalTaskId)
-    expect(paused.state).toBe('feedback')
+    expect(paused.state).toBe('needs_input')
     expect(paused.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused.stepVarsJson ?? '{}') as Record<
       string,

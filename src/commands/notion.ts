@@ -9,7 +9,6 @@ import {boards, tasks, workflows} from '../db/schema'
 import {loadDeclaredPipes, loadProjectConfig} from '../project/projectConfig'
 import {
   mapTaskStateToNotionStatus,
-  notionAppendTaskPageLog,
   notionCreateTaskPage,
   notionAssertSharedBoardSchema,
   notionCreateBoardDataSource,
@@ -20,29 +19,28 @@ import {
   notionResolveDatabaseConnectionFromUrl,
   notionGetDataSource,
   notionGetNewComments,
+  notionPostComment,
   notionQueryAllDataSourcePages,
   notionUpdateTaskPageState,
   pagePipeId,
   pageState,
   pageTitle,
 } from '../services/notion'
+import type {TaskLifecycle} from '../core/taskBoardAdapter'
 import {runTaskByExternalId} from './run'
 
 function localStateToDisplayStatus(state: string): string {
-  return mapTaskStateToNotionStatus(localTaskStateFromNotion(state))
+  return mapTaskStateToNotionStatus(state)
 }
 
-function localTaskStateFromNotion(state: string): string {
-  const normalized = state.toLowerCase()
+function localTaskStateFromNotion(state: string): TaskLifecycle {
+  const normalized = state.trim().toLowerCase().replace(/\s+/g, ' ')
   if (normalized === 'done') return 'done'
   if (normalized === 'failed') return 'failed'
-  if (normalized === 'blocked') return 'blocked'
-  if (normalized === 'in progress' || normalized === 'in_progress')
-    return 'running'
-  if (normalized === 'waiting') return 'waiting'
-  if (normalized === 'queue') return 'queued'
-  if (normalized === 'feedback') return 'feedback'
-  return 'running' // unknown/step labels treated as running
+  if (normalized === 'needs input') return 'needs_input'
+  if (normalized === 'in progress') return 'in_progress'
+  if (normalized === 'queue' || normalized === 'queued') return 'queued'
+  return 'in_progress' // unknown/step labels treated as in progress
 }
 
 const DEFAULT_RUN_CONCURRENCY = 16
@@ -139,6 +137,11 @@ function makePipeMismatchMessage(
   return `${PIPE_MISMATCH_ERROR_PREFIX} shared-board Pipe changed from ${task.workflowId} to ${remotePipe}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
 }
 
+function formatBoardComment(title: string, detail?: string): string {
+  const trimmedDetail = detail?.trim()
+  return trimmedDetail ? `${title}\n\n${trimmedDetail}` : title
+}
+
 function parseBoardConfig(configJson: string): {
   databaseId?: string
   url?: string
@@ -185,7 +188,7 @@ async function quarantineTask(
   await db
     .update(tasks)
     .set({
-      state: 'blocked',
+      state: 'needs_input',
       lastError: message,
       updatedAt: nowIso(),
     })
@@ -204,8 +207,12 @@ async function reflectTaskQuarantineOnBoard(
   detail: string,
 ): Promise<void> {
   try {
-    await notionUpdateTaskPageState(token, task.externalTaskId, 'blocked')
-    await notionAppendTaskPageLog(token, task.externalTaskId, title, detail)
+    await notionUpdateTaskPageState(token, task.externalTaskId, 'needs_input')
+    await notionPostComment(
+      token,
+      task.externalTaskId,
+      formatBoardComment(title, detail),
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(
@@ -427,7 +434,7 @@ async function upsertTask(
   boardId: string,
   externalTaskId: string,
   workflowId: string,
-  state: string,
+  state: TaskLifecycle,
 ): Promise<void> {
   const now = nowIso()
   const mismatchPrefix = `${PIPE_MISMATCH_ERROR_PREFIX}%`
@@ -452,8 +459,8 @@ async function upsertTask(
       set: {
         // Don't overwrite agent-managed states or ownership quarantine with a stale Notion value
         state: sql`CASE
-          WHEN ${tasks.lastError} LIKE ${mismatchPrefix} OR ${tasks.lastError} LIKE ${invalidPrefix} THEN 'blocked'
-          WHEN ${tasks.state} IN ('feedback', 'running') THEN ${tasks.state}
+          WHEN ${tasks.lastError} LIKE ${mismatchPrefix} OR ${tasks.lastError} LIKE ${invalidPrefix} THEN 'needs_input'
+          WHEN ${tasks.state} IN ('needs_input', 'in_progress') THEN ${tasks.state}
           ELSE ${state}
         END`,
         lastError: sql`CASE
@@ -643,7 +650,7 @@ export async function syncNotionBoards(options: {
   const feedbackTasks = await db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.boardId, board.id), eq(tasks.state, 'feedback')))
+    .where(and(eq(tasks.boardId, board.id), eq(tasks.state, 'needs_input')))
 
   for (const ft of feedbackTasks) {
     if (options.pipeId && ft.workflowId !== options.pipeId) continue
@@ -677,11 +684,13 @@ export async function syncNotionBoards(options: {
           ),
         )
       await notionUpdateTaskPageState(token, ft.externalTaskId, 'queued')
-      await notionAppendTaskPageLog(
+      await notionPostComment(
         token,
         ft.externalTaskId,
-        'Feedback received',
-        'Human reply detected. Task re-queued for resume.',
+        formatBoardComment(
+          'Feedback received',
+          'Human reply detected. Task re-queued for resume.',
+        ),
       )
       console.log(
         `[feedback] task ${ft.externalTaskId} has new comment reply -> re-queued`,
@@ -838,11 +847,13 @@ export async function repairQuarantinedSharedBoardTask(options: {
 
   try {
     await notionUpdateTaskPageState(token, task.externalTaskId, 'queued')
-    await notionAppendTaskPageLog(
+    await notionPostComment(
       token,
       task.externalTaskId,
-      'Pipe quarantine cleared',
-      `Pipe restored to ${task.workflowId}. Task re-queued after explicit repair.`,
+      formatBoardComment(
+        'Pipe quarantine cleared',
+        `Pipe restored to ${task.workflowId}. Task re-queued after explicit repair.`,
+      ),
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

@@ -32,7 +32,14 @@ type WorkflowCtx = {
 const input: PipeInput<WorkflowCtx> = {
   ctx: {score: 0, approved: false},
   workspace,
-  task: {id: 'task-1', title: 'Contract typing'},
+  task: {
+    id: 'task-1',
+    title: 'Contract typing',
+    readArtifact: async () => '',
+    writeArtifact: async () => undefined,
+    updateStatus: async () => undefined,
+    comment: async () => undefined,
+  },
   runId: 'run-1',
   tickId: 'tick-1',
 }
