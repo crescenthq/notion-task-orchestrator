@@ -1,10 +1,30 @@
-export type TaskBoardState =
+export type TaskLifecycle =
   | 'queued'
-  | 'running'
-  | 'feedback'
+  | 'in_progress'
+  | 'needs_input'
   | 'done'
-  | 'blocked'
   | 'failed'
+
+export type TaskLinkKind = 'pr' | 'branch' | 'other'
+
+export type TaskLink = {
+  kind: TaskLinkKind
+  url: string
+}
+
+export type TaskProgress = {
+  label: string
+  percent?: number
+}
+
+export type TaskComment = {
+  id: string
+  body: string
+  createdAt: string
+  authorId: string | null
+  authorName: string | null
+  role: 'human' | 'agent'
+}
 
 export type BoardTaskRef = {
   boardId: string
@@ -14,20 +34,22 @@ export type BoardTaskRef = {
 export type TaskSnapshot = {
   id: string
   title: string
-  bodyText: string
+  artifact: string
+  comments: TaskComment[]
 }
 
-export type TaskStateUpdate = {
-  state: TaskBoardState
-  label?: string
+export type TaskBoardPatch = {
+  lifecycle?: TaskLifecycle
+  currentAction?: string
+  progress?: TaskProgress
+  links?: TaskLink[]
 }
 
 export type TaskBoardAdapter = {
   kind: string
   getTask(ref: BoardTaskRef): Promise<TaskSnapshot>
-  updateState(ref: BoardTaskRef, update: TaskStateUpdate): Promise<void>
-  appendLog(ref: BoardTaskRef, title: string, detail?: string): Promise<void>
-  appendPageContent(ref: BoardTaskRef, markdown: string): Promise<void>
+  updateTask(ref: BoardTaskRef, patch: TaskBoardPatch): Promise<void>
+  writeArtifact(ref: BoardTaskRef, markdown: string): Promise<void>
   postComment(ref: BoardTaskRef, body: string): Promise<void>
 }
 
@@ -36,10 +58,10 @@ export const nullTaskBoardAdapter: TaskBoardAdapter = {
   getTask: async ref => ({
     id: ref.externalTaskId,
     title: ref.externalTaskId,
-    bodyText: '',
+    artifact: '',
+    comments: [],
   }),
-  updateState: async () => {},
-  appendLog: async () => {},
-  appendPageContent: async () => {},
+  updateTask: async () => {},
+  writeArtifact: async () => {},
   postComment: async () => {},
 }

@@ -32,7 +32,8 @@ import {
   type BoardTaskRef,
   nullTaskBoardAdapter,
   type TaskBoardAdapter,
-  type TaskBoardState,
+  type TaskBoardPatch,
+  type TaskLifecycle,
 } from './taskBoardAdapter'
 import {
   cleanupRunWorkspace,
@@ -76,6 +77,30 @@ const PIPE_FAILED_STATE_ID = '__pipe_failed__'
 const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
 const OWNERSHIP_QUARANTINE_PREFIXES = ['pipe_mismatch:', 'pipe_invalid:']
+
+type RuntimeBoardState =
+  | 'queued'
+  | 'running'
+  | 'feedback'
+  | 'done'
+  | 'blocked'
+  | 'failed'
+
+function toTaskLifecycle(state: RuntimeBoardState): TaskLifecycle {
+  switch (state) {
+    case 'queued':
+      return 'queued'
+    case 'running':
+      return 'in_progress'
+    case 'feedback':
+    case 'blocked':
+      return 'needs_input'
+    case 'done':
+      return 'done'
+    case 'failed':
+      return 'failed'
+  }
+}
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -447,11 +472,15 @@ export async function runPipeTaskByExternalId(
       : nullTaskBoardAdapter)
 
   const syncBoardState = async (
-    state: TaskBoardState,
+    state: RuntimeBoardState,
     stateLabel?: string,
   ): Promise<void> => {
     try {
-      await boardAdapter.updateState(taskRef, {state, label: stateLabel})
+      const patch: TaskBoardPatch = {lifecycle: toTaskLifecycle(state)}
+      if (stateLabel !== undefined) {
+        patch.currentAction = stateLabel
+      }
+      await boardAdapter.updateTask(taskRef, patch)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.log(
@@ -464,14 +493,9 @@ export async function runPipeTaskByExternalId(
     title: string,
     detail?: string,
   ): Promise<void> => {
-    try {
-      await boardAdapter.appendLog(taskRef, title, detail)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(
-        `[warn] failed to append board task log (${boardAdapter.kind}): ${message}`,
-      )
-    }
+    void taskRef
+    void title
+    void detail
   }
 
   const pipePath = await resolvePipePathById({
@@ -489,7 +513,7 @@ export async function runPipeTaskByExternalId(
     if (snapshot.title.trim().length > 0) {
       taskTitle = snapshot.title
     }
-    taskContext = snapshot.bodyText
+    taskContext = snapshot.artifact
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(
@@ -945,11 +969,11 @@ export async function runPipeTaskByExternalId(
       },
     })
     try {
-      await boardAdapter.appendPageContent(taskRef, markdown)
+      await boardAdapter.writeArtifact(taskRef, markdown)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.log(
-        `[warn] failed to append board page content (${boardAdapter.kind}): ${message}`,
+        `[warn] failed to write board artifact (${boardAdapter.kind}): ${message}`,
       )
     }
   }

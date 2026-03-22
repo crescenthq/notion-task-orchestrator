@@ -9,17 +9,18 @@ describe('taskBoardAdapter', () => {
     expect(snapshot).toEqual({
       id: 'task-1',
       title: 'task-1',
-      bodyText: '',
+      artifact: '',
+      comments: [],
     })
 
     await expect(
-      nullTaskBoardAdapter.updateState(ref, {state: 'running'}),
+      nullTaskBoardAdapter.updateTask(ref, {
+        lifecycle: 'in_progress',
+        currentAction: 'Planning',
+      }),
     ).resolves.toBeUndefined()
     await expect(
-      nullTaskBoardAdapter.appendLog(ref, 'runtime-started', 'details'),
-    ).resolves.toBeUndefined()
-    await expect(
-      nullTaskBoardAdapter.appendPageContent(ref, '# output'),
+      nullTaskBoardAdapter.writeArtifact(ref, '# output'),
     ).resolves.toBeUndefined()
     await expect(
       nullTaskBoardAdapter.postComment(ref, 'need feedback'),

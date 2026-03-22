@@ -209,11 +209,11 @@ describe('pipeRuntime (definePipe only)', () => {
       getTask: vi.fn(async (ref: {externalTaskId: string}) => ({
         id: ref.externalTaskId,
         title: 'Injected task title',
-        bodyText: 'Injected task body',
+        artifact: 'Injected task body',
+        comments: [],
       })),
-      updateState: vi.fn(async () => undefined),
-      appendLog: vi.fn(async () => undefined),
-      appendPageContent: vi.fn(async () => undefined),
+      updateTask: vi.fn(async () => undefined),
+      writeArtifact: vi.fn(async () => undefined),
       postComment: vi.fn(async () => undefined),
     }
 
@@ -225,19 +225,18 @@ describe('pipeRuntime (definePipe only)', () => {
       boardId: factoryId,
       externalTaskId,
     })
-    expect(adapter.updateState).toHaveBeenCalledWith(
+    expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
-      expect.objectContaining({state: 'running'}),
+      expect.objectContaining({lifecycle: 'in_progress'}),
     )
-    expect(adapter.updateState).toHaveBeenCalledWith(
+    expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
-      expect.objectContaining({state: 'done'}),
+      expect.objectContaining({lifecycle: 'done'}),
     )
-    expect(adapter.appendPageContent).toHaveBeenCalledWith(
+    expect(adapter.writeArtifact).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
       '# Adapter Output',
     )
-    expect(adapter.appendLog).toHaveBeenCalled()
   })
 
   it('provisions a workspace before direct pipe execution, keys it by run id, and cleans it up on success by default', async () => {

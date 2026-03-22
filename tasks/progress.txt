@@ -1,0 +1,23 @@
+# Task Model v2 — Progress
+
+## Current Status
+US-001 complete
+
+## Stories
+- [x] US-001: Define canonical task types and adapter interface
+- [ ] US-002: Update local database schema for new lifecycle
+- [ ] US-003: Markdown section helpers
+- [ ] US-004: Update Notion board schema for new properties
+- [ ] US-005: Update Notion adapter to new interface
+- [ ] US-006: Update pipe runtime to use new adapter interface
+- [ ] US-007: Expose TaskHandle to pipes
+- [ ] US-008: Update sync loop for new lifecycle and comment-based feedback
+
+## Notes
+- 2026-03-22: Completed US-001 by replacing the task-board contract with `TaskLifecycle`, `TaskBoardPatch`, and `{id, title, artifact, comments}` snapshots; updated the null adapter, the Notion adapter, and the runtime call sites to use `updateTask` / `writeArtifact`.
+- 2026-03-22: Tracer-bullet scope only. The runtime now maps legacy internal board states (`running`, `feedback`, `blocked`) into canonical lifecycle patches so the new adapter contract is live without pulling the later lifecycle/schema stories fully forward.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/taskBoardAdapter.test.ts src/adapters/notion.test.ts src/core/pipeRuntime.test.ts` ✅
+- Pre-release project — no migration or backward compatibility needed
+- US-002 moved before US-003 since DB schema is a dependency for runtime changes
+- US-003 (section helpers) has no dependencies and can land early as a pure utility
