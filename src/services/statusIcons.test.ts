@@ -14,9 +14,9 @@ describe('status icon helpers', () => {
   it('maps lifecycle statuses to their icons regardless of case', () => {
     const map: Record<LifecycleStatusKey, LifecycleStatusIcon> = {
       queued: '⏳',
-      running: '🚀',
+      in_progress: '🚀',
+      needs_input: '💬',
       done: '✅',
-      blocked: '🛑',
       failed: '❌',
     }
 
@@ -58,6 +58,7 @@ describe('status icon helpers', () => {
 
   it('formats status labels for presentation', () => {
     expect(formatStatusLabel('in_progress')).toBe('In Progress')
+    expect(formatStatusLabel('needs_input')).toBe('Needs Input')
     expect(formatStatusLabel('queue')).toBe('Queue')
     expect(formatStatusLabel('DONE')).toBe('Done')
     expect(formatStatusLabel('in progress')).toBe('In Progress')

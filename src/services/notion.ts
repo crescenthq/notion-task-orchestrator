@@ -482,17 +482,24 @@ export async function notionGetPage(
 }
 
 export function mapTaskStateToNotionStatus(state: string): string {
-  switch (state) {
+  const normalized = state.trim().toLowerCase().replace(/[\s-]+/g, '_')
+
+  switch (normalized) {
+    case 'queue':
     case 'queued':
       return 'Queue'
     case 'running':
+    case 'in_progress':
+    case 'inprogress':
       return 'In Progress'
     case 'feedback':
+    case 'needs_input':
+    case 'needsinput':
       return 'Feedback'
-    case 'done':
-      return 'Done'
     case 'blocked':
       return 'Blocked'
+    case 'done':
+      return 'Done'
     case 'failed':
       return 'Failed'
     default:

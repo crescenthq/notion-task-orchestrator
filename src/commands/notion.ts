@@ -26,23 +26,34 @@ import {
   pageState,
   pageTitle,
 } from '../services/notion'
+import type {TaskLifecycle} from '../core/taskBoardAdapter'
 import {runTaskByExternalId} from './run'
 
 function localStateToDisplayStatus(state: string): string {
-  return mapTaskStateToNotionStatus(localTaskStateFromNotion(state))
+  return mapTaskStateToNotionStatus(state)
 }
 
-function localTaskStateFromNotion(state: string): string {
-  const normalized = state.toLowerCase()
+function localTaskStateFromNotion(state: string): TaskLifecycle {
+  const normalized = state.trim().toLowerCase().replace(/[\s-]+/g, '_')
   if (normalized === 'done') return 'done'
   if (normalized === 'failed') return 'failed'
-  if (normalized === 'blocked') return 'blocked'
-  if (normalized === 'in progress' || normalized === 'in_progress')
-    return 'running'
-  if (normalized === 'waiting') return 'waiting'
-  if (normalized === 'queue') return 'queued'
-  if (normalized === 'feedback') return 'feedback'
-  return 'running' // unknown/step labels treated as running
+  if (
+    normalized === 'blocked' ||
+    normalized === 'feedback' ||
+    normalized === 'waiting' ||
+    normalized === 'needs_input'
+  ) {
+    return 'needs_input'
+  }
+  if (
+    normalized === 'running' ||
+    normalized === 'in_progress' ||
+    normalized === 'inprogress'
+  ) {
+    return 'in_progress'
+  }
+  if (normalized === 'queue' || normalized === 'queued') return 'queued'
+  return 'in_progress' // unknown/step labels treated as in progress
 }
 
 const DEFAULT_RUN_CONCURRENCY = 16
@@ -185,7 +196,7 @@ async function quarantineTask(
   await db
     .update(tasks)
     .set({
-      state: 'blocked',
+      state: 'needs_input',
       lastError: message,
       updatedAt: nowIso(),
     })
@@ -427,7 +438,7 @@ async function upsertTask(
   boardId: string,
   externalTaskId: string,
   workflowId: string,
-  state: string,
+  state: TaskLifecycle,
 ): Promise<void> {
   const now = nowIso()
   const mismatchPrefix = `${PIPE_MISMATCH_ERROR_PREFIX}%`
@@ -452,8 +463,8 @@ async function upsertTask(
       set: {
         // Don't overwrite agent-managed states or ownership quarantine with a stale Notion value
         state: sql`CASE
-          WHEN ${tasks.lastError} LIKE ${mismatchPrefix} OR ${tasks.lastError} LIKE ${invalidPrefix} THEN 'blocked'
-          WHEN ${tasks.state} IN ('feedback', 'running') THEN ${tasks.state}
+          WHEN ${tasks.lastError} LIKE ${mismatchPrefix} OR ${tasks.lastError} LIKE ${invalidPrefix} THEN 'needs_input'
+          WHEN ${tasks.state} IN ('needs_input', 'in_progress') THEN ${tasks.state}
           ELSE ${state}
         END`,
         lastError: sql`CASE
@@ -643,7 +654,7 @@ export async function syncNotionBoards(options: {
   const feedbackTasks = await db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.boardId, board.id), eq(tasks.state, 'feedback')))
+    .where(and(eq(tasks.boardId, board.id), eq(tasks.state, 'needs_input')))
 
   for (const ft of feedbackTasks) {
     if (options.pipeId && ft.workflowId !== options.pipeId) continue

@@ -393,7 +393,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-alpha-drifted',
       workflowId: 'alpha',
-      state: 'feedback',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: now,
@@ -440,7 +440,7 @@ describe('notion command shared board registration', () => {
     const queued = rows.find(row => row.externalTaskId === 'page-alpha-queued')
 
     expect(drifted?.workflowId).toBe('alpha')
-    expect(drifted?.state).toBe('blocked')
+    expect(drifted?.state).toBe('needs_input')
     expect(drifted?.lastError).toContain('pipe_mismatch:')
     expect(drifted?.lastError).toContain(
       'You may have changed the Pipe property by mistake.',
@@ -685,7 +685,7 @@ describe('notion command shared board registration', () => {
         boardId: 'notion-shared',
         externalTaskId: 'page-undeclared',
         workflowId: 'alpha',
-        state: 'feedback',
+        state: 'needs_input',
         currentStepId: null,
         stepVarsJson: null,
         waitingSince: now,
@@ -735,15 +735,15 @@ describe('notion command shared board registration', () => {
     )
 
     expect(mismatch?.workflowId).toBe('alpha')
-    expect(mismatch?.state).toBe('blocked')
+    expect(mismatch?.state).toBe('needs_input')
     expect(mismatch?.lastError).toContain('pipe_mismatch:')
 
     expect(missing?.workflowId).toBe('alpha')
-    expect(missing?.state).toBe('blocked')
+    expect(missing?.state).toBe('needs_input')
     expect(missing?.lastError).toContain('pipe_invalid: missing Pipe')
 
     expect(undeclared?.workflowId).toBe('alpha')
-    expect(undeclared?.state).toBe('blocked')
+    expect(undeclared?.state).toBe('needs_input')
     expect(undeclared?.lastError).toContain(
       'pipe_invalid: undeclared Pipe gamma',
     )
@@ -764,7 +764,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-quarantined',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -808,7 +808,7 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-quarantined'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('repair-task --task page-quarantined')
   })
 
@@ -821,7 +821,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: '__pipe_feedback__',
       stepVarsJson: JSON.stringify({attempts: 1}),
       waitingSince: now,
@@ -884,7 +884,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair-wrong',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -922,7 +922,7 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-wrong'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('pipe_mismatch:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
@@ -941,7 +941,7 @@ describe('notion command shared board registration', () => {
       boardId: 'notion-shared',
       externalTaskId: 'page-repair-missing',
       workflowId: 'alpha',
-      state: 'blocked',
+      state: 'needs_input',
       currentStepId: null,
       stepVarsJson: null,
       waitingSince: null,
@@ -976,7 +976,7 @@ describe('notion command shared board registration', () => {
       .select()
       .from(tasks)
       .where(eq(tasks.externalTaskId, 'page-repair-missing'))
-    expect(taskRow?.state).toBe('blocked')
+    expect(taskRow?.state).toBe('needs_input')
     expect(taskRow?.lastError).toContain('pipe_invalid:')
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),

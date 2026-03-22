@@ -585,7 +585,7 @@ export async function runPipeTaskByExternalId(
     await db.insert(runs).values({
       id: runId,
       taskId: task.id,
-      status: 'running',
+      status: 'in_progress',
       currentStateId,
       contextJson: JSON.stringify(ctx),
       leaseOwner: null,
@@ -600,7 +600,7 @@ export async function runPipeTaskByExternalId(
     await db
       .update(runs)
       .set({
-        status: 'running',
+        status: 'in_progress',
         currentStateId,
         contextJson: JSON.stringify(ctx),
         updatedAt: now,
@@ -748,10 +748,12 @@ export async function runPipeTaskByExternalId(
   ): Promise<void> => {
     const timestamp = nowIso()
     const isDone = status === 'done'
+    const lifecycle: 'needs_input' | 'done' | 'failed' =
+      status === 'blocked' ? 'needs_input' : status
     await db
       .update(tasks)
       .set({
-        state: status,
+        state: lifecycle,
         currentStepId: null,
         stepVarsJson: JSON.stringify(ctx),
         waitingSince: null,
@@ -764,7 +766,7 @@ export async function runPipeTaskByExternalId(
     await db
       .update(runs)
       .set({
-        status,
+        status: lifecycle,
         currentStateId: null,
         contextJson: JSON.stringify(ctx),
         leaseOwner: null,
@@ -777,7 +779,7 @@ export async function runPipeTaskByExternalId(
     await persistRunTrace({
       type: 'completed',
       stateId: currentStateId,
-      status,
+      status: lifecycle,
       message:
         status === 'done'
           ? 'Pipe reached terminal done state.'
@@ -871,7 +873,7 @@ export async function runPipeTaskByExternalId(
     reason?: RunTraceReasonCode | null
     attempt?: number
     loopIteration?: number
-    status?: 'running' | 'feedback' | 'done' | 'blocked' | 'failed' | null
+    status?: 'in_progress' | 'needs_input' | 'done' | 'failed' | null
     message?: string | null
     payload?: unknown
   }): Promise<void> => {
@@ -920,7 +922,7 @@ export async function runPipeTaskByExternalId(
   await db
     .update(tasks)
     .set({
-      state: 'running',
+      state: 'in_progress',
       currentStepId: currentStateId,
       stepVarsJson: JSON.stringify(ctx),
       updatedAt: nowIso(),
@@ -931,7 +933,7 @@ export async function runPipeTaskByExternalId(
   await db
     .update(runs)
     .set({
-      status: 'running',
+      status: 'in_progress',
       currentStateId,
       contextJson: JSON.stringify(ctx),
       updatedAt: nowIso(),
@@ -945,7 +947,7 @@ export async function runPipeTaskByExternalId(
   await persistRunTrace({
     type: 'started',
     stateId: currentStateId,
-    status: 'running',
+    status: 'in_progress',
     message: `Pipe: ${definition.id}`,
   })
   if (resumed) {
@@ -1087,7 +1089,7 @@ export async function runPipeTaskByExternalId(
       await db
         .update(tasks)
         .set({
-          state: 'feedback',
+          state: 'needs_input',
           currentStepId: currentStateId,
           stepVarsJson: JSON.stringify(ctx),
           waitingSince: nowIso(),
@@ -1098,7 +1100,7 @@ export async function runPipeTaskByExternalId(
       await db
         .update(runs)
         .set({
-          status: 'feedback',
+          status: 'needs_input',
           currentStateId,
           contextJson: JSON.stringify(ctx),
           leaseOwner: null,

@@ -1,11 +1,11 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-001 complete
+US-002 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
-- [ ] US-002: Update local database schema for new lifecycle
+- [x] US-002: Update local database schema for new lifecycle
 - [ ] US-003: Markdown section helpers
 - [ ] US-004: Update Notion board schema for new properties
 - [ ] US-005: Update Notion adapter to new interface
@@ -18,6 +18,10 @@ US-001 complete
 - 2026-03-22: Tracer-bullet scope only. The runtime now maps legacy internal board states (`running`, `feedback`, `blocked`) into canonical lifecycle patches so the new adapter contract is live without pulling the later lifecycle/schema stories fully forward.
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/core/taskBoardAdapter.test.ts src/adapters/notion.test.ts src/core/pipeRuntime.test.ts` ✅
+- 2026-03-22: Completed US-002 by migrating local SQLite lifecycle storage from legacy `running` / `feedback` / `blocked` values to canonical `in_progress` / `needs_input`, adding bootstrap migration updates for existing `tasks`, `runs`, and `run_traces` rows, and updating the runtime, Notion sync loop, and dashboard queries to persist/query the canonical lifecycle values.
+- 2026-03-22: Kept the current Notion board schema as a compatibility layer for now. Local state is canonical, while shared-board writes still translate through the older board status labels until the later Notion schema stories land.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/app/context.test.ts src/commands/notion.test.ts src/core/pipeRuntime.test.ts src/core/runTraces.test.ts src/dashboard/snapshot.test.ts src/services/statusIcons.test.ts` ✅
 - Pre-release project — no migration or backward compatibility needed
 - US-002 moved before US-003 since DB schema is a dependency for runtime changes
 - US-003 (section helpers) has no dependencies and can land early as a pure utility

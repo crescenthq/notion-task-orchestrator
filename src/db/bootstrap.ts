@@ -156,4 +156,34 @@ CREATE TABLE IF NOT EXISTS transition_events (
     'lease_heartbeat_at',
     'ALTER TABLE runs ADD COLUMN lease_heartbeat_at TEXT;',
   )
+
+  await client.executeMultiple(`
+UPDATE tasks
+SET state = CASE lower(state)
+  WHEN 'running' THEN 'in_progress'
+  WHEN 'feedback' THEN 'needs_input'
+  WHEN 'blocked' THEN 'needs_input'
+  ELSE state
+END
+WHERE lower(state) IN ('running', 'feedback', 'blocked');
+
+UPDATE runs
+SET status = CASE lower(status)
+  WHEN 'running' THEN 'in_progress'
+  WHEN 'feedback' THEN 'needs_input'
+  WHEN 'blocked' THEN 'needs_input'
+  ELSE status
+END
+WHERE lower(status) IN ('running', 'feedback', 'blocked');
+
+UPDATE run_traces
+SET status = CASE lower(status)
+  WHEN 'running' THEN 'in_progress'
+  WHEN 'feedback' THEN 'needs_input'
+  WHEN 'blocked' THEN 'needs_input'
+  ELSE status
+END
+WHERE status IS NOT NULL
+  AND lower(status) IN ('running', 'feedback', 'blocked');
+`)
 }

@@ -387,7 +387,7 @@ export default {
         externalTaskId: 'task-workspace-retained-feedback-1',
         factoryId: 'runtime-workspace-retained-feedback',
         shouldThrow: false,
-        state: 'feedback',
+        state: 'needs_input',
         source:
           `export default {\n` +
           `  id: "runtime-workspace-retained-feedback",\n` +
@@ -403,7 +403,7 @@ export default {
         externalTaskId: 'task-workspace-retained-blocked-1',
         factoryId: 'runtime-workspace-retained-blocked',
         shouldThrow: false,
-        state: 'blocked',
+        state: 'needs_input',
         source:
           `export default {\n` +
           `  id: "runtime-workspace-retained-blocked",\n` +
@@ -515,7 +515,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
     expect(paused?.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -636,7 +636,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const pausedCtx = JSON.parse(pausedTask?.stepVarsJson ?? '{}') as Record<
       string,
@@ -647,7 +647,7 @@ export default {
       .from(schema.runs)
       .where(eq(schema.runs.taskId, pausedTask!.id))
 
-    expect(feedbackRun?.status).toBe('feedback')
+    expect(feedbackRun?.status).toBe('needs_input')
     expect(pausedCtx.firstRunId).toBe(feedbackRun?.id)
     expect(pausedCtx.firstWorkspaceRoot).toBe(
       path.join(paths.workspacesDir, feedbackRun!.id),
@@ -760,7 +760,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const [feedbackRun] = await db
       .select()
@@ -867,7 +867,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(pausedTask?.state).toBe('feedback')
+    expect(pausedTask?.state).toBe('needs_input')
 
     const [feedbackRun] = await db
       .select()
@@ -1015,7 +1015,7 @@ export default {
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
     expect(paused?.currentStepId).toBe('__pipe_feedback__')
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1089,7 +1089,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(firstPause?.state).toBe('feedback')
+    expect(firstPause?.state).toBe('needs_input')
 
     const firstCtx = JSON.parse(firstPause?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1117,7 +1117,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(secondPause?.state).toBe('feedback')
+    expect(secondPause?.state).toBe('needs_input')
 
     const secondCtx = JSON.parse(secondPause?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1196,7 +1196,7 @@ export default definePipe({
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.externalTaskId, externalTaskId))
-    expect(paused?.state).toBe('feedback')
+    expect(paused?.state).toBe('needs_input')
 
     const pausedCtx = JSON.parse(paused?.stepVarsJson ?? '{}') as Record<
       string,
@@ -1240,6 +1240,8 @@ export default definePipe({
     const terminalStates = ['done', 'blocked', 'failed'] as const
 
     for (const terminalState of terminalStates) {
+      const expectedLifecycle =
+        terminalState === 'blocked' ? 'needs_input' : terminalState
       const factoryId = `runtime-terminal-${terminalState}`
       const externalTaskId = `task-terminal-${terminalState}`
       const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
@@ -1271,13 +1273,13 @@ export default definePipe({
         .from(schema.tasks)
         .where(eq(schema.tasks.externalTaskId, externalTaskId))
       expect(updatedTask).toBeTruthy()
-      expect(updatedTask?.state).toBe(terminalState)
+      expect(updatedTask?.state).toBe(expectedLifecycle)
 
       const [run] = await db
         .select()
         .from(schema.runs)
         .where(eq(schema.runs.taskId, updatedTask!.id))
-      expect(run?.status).toBe(terminalState)
+      expect(run?.status).toBe(expectedLifecycle)
       expect(run?.currentStateId).toBeNull()
       expect(run?.endedAt).toBeTruthy()
     }
@@ -1431,7 +1433,7 @@ export default definePipe({
     await db
       .update(schema.tasks)
       .set({
-        state: 'blocked',
+        state: 'needs_input',
         lastError: 'pipe_mismatch: local=alpha remote=beta task=page-1',
         updatedAt: new Date().toISOString(),
       })

@@ -64,7 +64,7 @@ describe('runTraces', () => {
         reason: null,
         attempt: 0,
         loopIteration: 0,
-        status: 'running',
+        status: 'in_progress',
         message: 'Pipe: demo',
         payloadJson: null,
         timestamp: now,
@@ -179,7 +179,7 @@ describe('runTraces', () => {
         reason: null,
         attempt: 0,
         loopIteration: 0,
-        status: 'running',
+        status: 'in_progress',
         message: null,
         payloadJson: null,
         timestamp: now,
@@ -221,7 +221,7 @@ describe('runTraces', () => {
         timestamp: now,
       },
     ])
-    expect(replayed).toBe('feedback')
+    expect(replayed).toBe('needs_input')
   })
 
   it('fails replay when state continuity breaks without feedback', () => {
@@ -241,7 +241,7 @@ describe('runTraces', () => {
           reason: null,
           attempt: 0,
           loopIteration: 0,
-          status: 'running',
+          status: 'in_progress',
           message: null,
           payloadJson: null,
           timestamp: now,
