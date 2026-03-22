@@ -1,0 +1,25 @@
+src/services/notion.test.ts
+  22f9e3986f23a15b 1,10,13,15,43-45,54,68,87-88,90-91,97,114,122,125-128,178-183,305,330,334-468,683-685,698-700,714-716
+src/services/notion.ts
+  22f9e3986f23a15b 210,248,252-255,265,268-270,316-318,411,413-417,420,506-513,516-523,526,528-531,533-539,541-546,561-580,806,821-824,847-883,894-895,902,906-911,938-942
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "36385b9284919005109b789dfc9212299b79776e",
+  "prompts": {
+    "22f9e3986f23a15b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d150b-a2e3-7161-b102-27aebebb8074",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 517,
+      "total_deletions": 223,
+      "accepted_lines": 517,
+      "overriden_lines": 0
+    }
+  }
+}
