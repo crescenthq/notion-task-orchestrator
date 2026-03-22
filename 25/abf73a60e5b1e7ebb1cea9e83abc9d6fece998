@@ -1,0 +1,23 @@
+src/commands/notion.test.ts
+  ca660c869dd1fefa 40-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "25abf73a60e5b1e7ebb1cea9e83abc9d6fece998",
+  "prompts": {
+    "ca660c869dd1fefa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d153f-67c1-7fb3-aff5-91180d01ba9d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 1,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
