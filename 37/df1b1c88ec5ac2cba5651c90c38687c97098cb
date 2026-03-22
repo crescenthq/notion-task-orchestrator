@@ -1,0 +1,27 @@
+src/core/pipeRuntime.ts
+  4faaa7f0b311f18c 985
+src/commands/notion.test.ts
+  4faaa7f0b311f18c 19-52,69,146,197,266,344-347,357,442-443,453,524,605,637,639,654,743-745,752,822,829,872,877,935,940,992,997
+src/core/pipeRuntime.test.ts
+  4faaa7f0b311f18c 475,480-481,483-520,527,530,542,550-552,566,572,577-579,592-595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "37df1b1c88ec5ac2cba5651c90c38687c97098cb",
+  "prompts": {
+    "4faaa7f0b311f18c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d152f-40c0-73a3-b07f-3c62253770f9",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 121,
+      "total_deletions": 46,
+      "accepted_lines": 121,
+      "overriden_lines": 0
+    }
+  }
+}
