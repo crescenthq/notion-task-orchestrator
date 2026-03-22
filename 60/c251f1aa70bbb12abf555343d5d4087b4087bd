@@ -1,0 +1,34 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "60c251f1aa70bbb12abf555343d5d4087b4087bd",
+  "prompts": {
+    "00691318022e683e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d1364-1b04-7631-9cec-96c13d69286e",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    },
+    "73beb89c7d335b2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d1236-85d2-7a63-80a1-d0df5744a58c",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Kamal Mukkamala <kamalnrf@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 56,
+      "overriden_lines": 0
+    }
+  }
+}
