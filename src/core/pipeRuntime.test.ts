@@ -193,9 +193,14 @@ describe('pipeRuntime (definePipe only)', () => {
       `export default {
   id: "${factoryId}",
   initial: { visits: 0 },
-  run: async ({ ctx, writePage }) => {
+  run: async ({ ctx, writePage, task }) => {
     await writePage({ markdown: "# Adapter Output" });
-    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1 };
+    return {
+      ...ctx,
+      visits: Number(ctx.visits ?? 0) + 1,
+      taskContext: task?.context ?? null,
+      taskPrompt: task?.prompt ?? null,
+    };
   },
 };
 `,
@@ -221,10 +226,20 @@ describe('pipeRuntime (definePipe only)', () => {
       taskBoardAdapter: adapter,
     })
 
+    const [updatedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+    const persistedCtx = JSON.parse(
+      updatedTask?.stepVarsJson ?? '{}',
+    ) as Record<string, unknown>
+
     expect(adapter.getTask).toHaveBeenCalledWith({
       boardId: factoryId,
       externalTaskId,
     })
+    expect(persistedCtx.taskContext).toBe('Injected task body')
+    expect(persistedCtx.taskPrompt).toBe('Injected task body')
     expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
       expect.objectContaining({lifecycle: 'in_progress'}),
@@ -237,6 +252,72 @@ describe('pipeRuntime (definePipe only)', () => {
       expect.objectContaining({externalTaskId}),
       '# Adapter Output',
     )
+    expect(adapter.postComment).not.toHaveBeenCalled()
+  })
+
+  it('posts board comments only for explicit feedback prompts', async () => {
+    const {db, paths, runtime, schema, timestamp} = await setupRuntime()
+    const factoryId = 'runtime-board-feedback-comment'
+    const externalTaskId = 'task-board-feedback-comment-1'
+    const factoryPath = path.join(paths.workflowsDir, `${factoryId}.mjs`)
+
+    await writeFile(
+      factoryPath,
+      `export default {\n` +
+        `  id: "${factoryId}",\n` +
+        `  initial: { attempts: 0 },\n` +
+        `  run: async ({ ctx }) => {\n` +
+        `    const controlBrand = Symbol.for("pipes.control");\n` +
+        `    return {\n` +
+        `      [controlBrand]: true,\n` +
+        `      type: "await_feedback",\n` +
+        `      prompt: "Need approval",\n` +
+        `      ctx: { ...ctx, attempts: Number(ctx.attempts ?? 0) + 1 },\n` +
+        `    };\n` +
+        `  },\n` +
+        `};\n`,
+      'utf8',
+    )
+
+    await insertQueuedTask({db, schema, timestamp, factoryId, externalTaskId})
+
+    const adapter = {
+      kind: 'mock',
+      getTask: vi.fn(async (ref: {externalTaskId: string}) => ({
+        id: ref.externalTaskId,
+        title: 'Injected task title',
+        artifact: 'Current artifact',
+        comments: [],
+      })),
+      updateTask: vi.fn(async () => undefined),
+      writeArtifact: vi.fn(async () => undefined),
+      postComment: vi.fn(async () => undefined),
+    }
+
+    await runtime.runPipeTaskByExternalId(externalTaskId, {
+      taskBoardAdapter: adapter,
+    })
+
+    const [pausedTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.externalTaskId, externalTaskId))
+
+    expect(pausedTask?.state).toBe('needs_input')
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({lifecycle: 'in_progress'}),
+    )
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({lifecycle: 'needs_input'}),
+    )
+    expect(adapter.postComment).toHaveBeenCalledTimes(1)
+    expect(adapter.postComment).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      'Need approval',
+    )
+    expect(adapter.writeArtifact).not.toHaveBeenCalled()
   })
 
   it('provisions a workspace before direct pipe execution, keys it by run id, and cleans it up on success by default', async () => {

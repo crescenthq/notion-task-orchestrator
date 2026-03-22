@@ -78,28 +78,10 @@ const PIPE_FEEDBACK_PROMPT_KEY = '__nf_feedback_prompt'
 const PIPE_CHECKPOINT_KEY = '__nf_checkpoint'
 const OWNERSHIP_QUARANTINE_PREFIXES = ['pipe_mismatch:', 'pipe_invalid:']
 
-type RuntimeBoardState =
-  | 'queued'
-  | 'running'
-  | 'feedback'
-  | 'done'
-  | 'blocked'
-  | 'failed'
-
-function toTaskLifecycle(state: RuntimeBoardState): TaskLifecycle {
-  switch (state) {
-    case 'queued':
-      return 'queued'
-    case 'running':
-      return 'in_progress'
-    case 'feedback':
-    case 'blocked':
-      return 'needs_input'
-    case 'done':
-      return 'done'
-    case 'failed':
-      return 'failed'
-  }
+function taskLifecycleFromPipeEndStatus(
+  status: 'done' | 'blocked' | 'failed',
+): 'needs_input' | 'done' | 'failed' {
+  return status === 'blocked' ? 'needs_input' : status
 }
 
 function isRecord(value: unknown): value is JsonObject {
@@ -472,13 +454,13 @@ export async function runPipeTaskByExternalId(
       : nullTaskBoardAdapter)
 
   const syncBoardState = async (
-    state: RuntimeBoardState,
-    stateLabel?: string,
+    lifecycle: TaskLifecycle,
+    currentAction?: string,
   ): Promise<void> => {
     try {
-      const patch: TaskBoardPatch = {lifecycle: toTaskLifecycle(state)}
-      if (stateLabel !== undefined) {
-        patch.currentAction = stateLabel
+      const patch: TaskBoardPatch = {lifecycle}
+      if (currentAction !== undefined) {
+        patch.currentAction = currentAction
       }
       await boardAdapter.updateTask(taskRef, patch)
     } catch (error) {
@@ -487,15 +469,6 @@ export async function runPipeTaskByExternalId(
         `[warn] failed to sync board task state (${boardAdapter.kind}): ${message}`,
       )
     }
-  }
-
-  const syncBoardLog = async (
-    title: string,
-    detail?: string,
-  ): Promise<void> => {
-    void taskRef
-    void title
-    void detail
   }
 
   const pipePath = await resolvePipePathById({
@@ -740,7 +713,7 @@ export async function runPipeTaskByExternalId(
     if (!stepLabel || stepLabel === activeStepLabel) return
 
     activeStepLabel = stepLabel
-    await syncBoardState('running', stepLabel)
+    await syncBoardState('in_progress', stepLabel)
   }
 
   const finalizeRun = async (
@@ -748,8 +721,7 @@ export async function runPipeTaskByExternalId(
   ): Promise<void> => {
     const timestamp = nowIso()
     const isDone = status === 'done'
-    const lifecycle: 'needs_input' | 'done' | 'failed' =
-      status === 'blocked' ? 'needs_input' : status
+    const lifecycle = taskLifecycleFromPipeEndStatus(status)
     await db
       .update(tasks)
       .set({
@@ -785,13 +757,7 @@ export async function runPipeTaskByExternalId(
           ? 'Pipe reached terminal done state.'
           : String(ctx.last_error ?? 'no detail'),
     })
-    await syncBoardState(status)
-    await syncBoardLog(
-      status === 'done' ? 'Task complete' : `Task ${status}`,
-      status === 'done'
-        ? 'Pipe reached terminal done state.'
-        : String(ctx.last_error ?? 'no detail'),
-    )
+    await syncBoardState(lifecycle)
   }
 
   const cleanupSuccessfulRunWorkspace = async (): Promise<void> => {
@@ -852,7 +818,6 @@ export async function runPipeTaskByExternalId(
       message,
     })
     await syncBoardState('failed')
-    await syncBoardLog('Task failed', message)
     throw new Error(message)
   }
 
@@ -939,11 +904,7 @@ export async function runPipeTaskByExternalId(
       updatedAt: nowIso(),
     })
     .where(eq(runs.id, runId))
-  await syncBoardState('running')
-  await syncBoardLog(
-    resumed ? `Resuming from state ${currentStateId}` : 'Run started',
-    `Pipe: ${definition.id}`,
-  )
+  await syncBoardState('in_progress')
   await persistRunTrace({
     type: 'started',
     stateId: currentStateId,
@@ -1109,8 +1070,7 @@ export async function runPipeTaskByExternalId(
           updatedAt: nowIso(),
         })
         .where(eq(runs.id, runId))
-      await syncBoardState('feedback')
-      await syncBoardLog(`Feedback needed: ${currentStateId}`, result.prompt)
+      await syncBoardState('needs_input')
       return
     }
 

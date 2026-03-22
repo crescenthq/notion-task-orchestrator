@@ -1,7 +1,7 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-005 complete
+US-006 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
@@ -9,7 +9,7 @@ US-005 complete
 - [x] US-003: Markdown section helpers
 - [x] US-004: Update Notion board schema for new properties
 - [x] US-005: Update Notion adapter to new interface
-- [ ] US-006: Update pipe runtime to use new adapter interface
+- [x] US-006: Update pipe runtime to use new adapter interface
 - [ ] US-007: Expose TaskHandle to pipes
 - [ ] US-008: Update sync loop for new lifecycle and comment-based feedback
 
@@ -37,3 +37,7 @@ US-005 complete
 - 2026-03-22: Removed the old append-only Notion log helpers and moved the remaining board-note call sites onto rich-text comments. Updated live/e2e references to the new markdown helper names so the repo typechecks cleanly.
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/adapters/notion.test.ts src/commands/notion.test.ts` ✅
+- 2026-03-22: Completed US-006 by finishing the pipe runtime migration onto the canonical task-board adapter primitives. `pipeRuntime.ts` now syncs board lifecycle with direct `TaskLifecycle` values, writes artifacts through `writeArtifact()`, reads task context from `snapshot.artifact`, and removes the leftover runtime board-log path.
+- 2026-03-22: Tracer-bullet scope only. Runtime board comments are now reserved for explicit feedback prompts, while execution logs stay local in `runTraces`; `blocked` and feedback outcomes both map to `needs_input` at the adapter boundary.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts` ✅
