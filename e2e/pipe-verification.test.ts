@@ -317,14 +317,14 @@ function summarizeScenario(
     throw new Error(`Scenario ${scenario} missing started run trace`)
   }
   if (
-    ['done', 'failed', 'blocked'].includes(task.state) &&
+    ['done', 'failed', 'needs_input'].includes(task.state) &&
     !traceTypes.has('completed')
   ) {
     throw new Error(`Scenario ${scenario} missing completed run trace`)
   }
   if (
     replayState &&
-    ['done', 'failed', 'blocked', 'feedback'].includes(task.state) &&
+    ['done', 'failed', 'needs_input'].includes(task.state) &&
     replayState !== task.state
   ) {
     throw new Error(
@@ -469,7 +469,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     const paused = await runUntilState(
       factoryId,
       taskExternalId,
-      ['feedback'],
+      ['needs_input'],
       {
         maxTicks: 6,
       },
@@ -527,7 +527,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     })
     const {run, events} = await fetchTaskWithArtifacts(taskExternalId)
 
-    expect(paused.state).toBe('feedback')
+    expect(paused.state).toBe('needs_input')
     expect(task.state).toBe('done')
     const eventNames = new Set(events.map(e => e.event))
     expect(eventNames.has('feedback')).toBe(true)
@@ -672,7 +672,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     const firstPause = await runUntilState(
       factoryId,
       taskExternalId,
-      ['feedback'],
+      ['needs_input'],
       {
         maxTicks: 6,
       },
@@ -691,7 +691,7 @@ let globalWritesBefore: FilesystemSnapshot | null = null
     const secondPause = await runUntilState(
       factoryId,
       taskExternalId,
-      ['feedback'],
+      ['needs_input'],
       {
         maxTicks: 6,
       },

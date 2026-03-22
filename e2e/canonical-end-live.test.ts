@@ -38,7 +38,7 @@ if (liveSuiteEnabled) {
     await finishLiveBoardSuite()
   })
 
-  it('syncs terminal done/blocked/failed states to Notion task State', async () => {
+  it('syncs terminal done/blocked/failed outcomes to Notion task State', async () => {
     fixture = await createTempProjectFixture('pipes-end-live-')
     await execCli(['init'], fixture.projectDir)
     await initGitRepo(fixture.projectDir)
@@ -50,9 +50,21 @@ if (liveSuiteEnabled) {
     await mkdir(pipesDir, {recursive: true})
 
     const scenarios = [
-      {status: 'done', factoryId: 'end-live-done'},
-      {status: 'blocked', factoryId: 'end-live-blocked'},
-      {status: 'failed', factoryId: 'end-live-failed'},
+      {
+        status: 'done',
+        expectedPageState: 'done',
+        factoryId: 'end-live-done',
+      },
+      {
+        status: 'blocked',
+        expectedPageState: 'needs input',
+        factoryId: 'end-live-blocked',
+      },
+      {
+        status: 'failed',
+        expectedPageState: 'failed',
+        factoryId: 'end-live-failed',
+      },
     ] as const
 
     for (const {factoryId, status} of scenarios) {
@@ -83,7 +95,7 @@ if (liveSuiteEnabled) {
       throw new Error('NOTION_API_TOKEN is required for live end e2e')
     }
 
-    for (const {factoryId, status} of scenarios) {
+    for (const {factoryId, status, expectedPageState} of scenarios) {
       const created = await execCli(
         [
           'integrations',
@@ -102,8 +114,12 @@ if (liveSuiteEnabled) {
 
       await execCli(['run', '--task', taskExternalId], fixture.projectDir)
 
-      const syncedState = await waitForPageState(token, taskExternalId, status)
-      expect(syncedState).toBe(status)
+      const syncedState = await waitForPageState(
+        token,
+        taskExternalId,
+        expectedPageState,
+      )
+      expect(syncedState).toBe(expectedPageState)
     }
   }, 240_000)
 })
@@ -111,7 +127,7 @@ if (liveSuiteEnabled) {
 async function waitForPageState(
   token: string,
   pageId: string,
-  expected: 'done' | 'blocked' | 'failed',
+  expected: 'done' | 'needs input' | 'failed',
 ): Promise<string> {
   const maxAttempts = 12
   const delayMs = 1_000
