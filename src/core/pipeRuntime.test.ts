@@ -134,8 +134,8 @@ describe('pipeRuntime (definePipe only)', () => {
       `export default {\n` +
         `  id: "${factoryId}",\n` +
         `  initial: { visits: 0 },\n` +
-        `  run: async ({ ctx, writePage }) => {\n` +
-        `    await writePage({ markdown: "# Pipe Output" });\n` +
+        `  run: async ({ ctx, task }) => {\n` +
+        `    await task.writeArtifact("# Pipe Output");\n` +
         `    return { ...ctx, visits: Number(ctx.visits ?? 0) + 1, finishedBy: "pipe" };\n` +
         `  },\n` +
         `};\n`,
@@ -193,13 +193,24 @@ describe('pipeRuntime (definePipe only)', () => {
       `export default {
   id: "${factoryId}",
   initial: { visits: 0 },
-  run: async ({ ctx, writePage, task }) => {
-    await writePage({ markdown: "# Adapter Output" });
+  run: async ({ ctx, task }) => {
+    const initialArtifact = await task.readArtifact();
+    await task.updateStatus({
+      lifecycle: "in_progress",
+      currentAction: "Reviewing artifact",
+      progress: { label: "Halfway", percent: 50 },
+      links: [{ kind: "pr", url: "https://example.com/pr/1" }],
+    });
+    await task.comment("Adapter note");
+    await task.writeArtifact("# Adapter Output");
+    const updatedArtifact = await task.readArtifact();
     return {
       ...ctx,
       visits: Number(ctx.visits ?? 0) + 1,
-      taskContext: task?.context ?? null,
-      taskPrompt: task?.prompt ?? null,
+      taskId: task.id,
+      taskTitle: task.title,
+      initialArtifact,
+      updatedArtifact,
     };
   },
 };
@@ -238,8 +249,10 @@ describe('pipeRuntime (definePipe only)', () => {
       boardId: factoryId,
       externalTaskId,
     })
-    expect(persistedCtx.taskContext).toBe('Injected task body')
-    expect(persistedCtx.taskPrompt).toBe('Injected task body')
+    expect(persistedCtx.initialArtifact).toBe('Injected task body')
+    expect(persistedCtx.updatedArtifact).toBe('# Adapter Output')
+    expect(persistedCtx.taskId).toBe(externalTaskId)
+    expect(persistedCtx.taskTitle).toBe('Injected task title')
     expect(adapter.updateTask).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
       expect.objectContaining({lifecycle: 'in_progress'}),
@@ -248,11 +261,23 @@ describe('pipeRuntime (definePipe only)', () => {
       expect.objectContaining({externalTaskId}),
       expect.objectContaining({lifecycle: 'done'}),
     )
+    expect(adapter.updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      expect.objectContaining({
+        lifecycle: 'in_progress',
+        currentAction: 'Reviewing artifact',
+        progress: {label: 'Halfway', percent: 50},
+        links: [{kind: 'pr', url: 'https://example.com/pr/1'}],
+      }),
+    )
     expect(adapter.writeArtifact).toHaveBeenCalledWith(
       expect.objectContaining({externalTaskId}),
       '# Adapter Output',
     )
-    expect(adapter.postComment).not.toHaveBeenCalled()
+    expect(adapter.postComment).toHaveBeenCalledWith(
+      expect.objectContaining({externalTaskId}),
+      'Adapter note',
+    )
   })
 
   it('posts board comments only for explicit feedback prompts', async () => {

@@ -1,7 +1,7 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-006 complete
+US-007 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
@@ -10,7 +10,7 @@ US-006 complete
 - [x] US-004: Update Notion board schema for new properties
 - [x] US-005: Update Notion adapter to new interface
 - [x] US-006: Update pipe runtime to use new adapter interface
-- [ ] US-007: Expose TaskHandle to pipes
+- [x] US-007: Expose TaskHandle to pipes
 - [ ] US-008: Update sync loop for new lifecycle and comment-based feedback
 
 ## Notes
@@ -41,3 +41,8 @@ US-006 complete
 - 2026-03-22: Tracer-bullet scope only. Runtime board comments are now reserved for explicit feedback prompts, while execution logs stay local in `runTraces`; `blocked` and feedback outcomes both map to `needs_input` at the adapter boundary.
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts` ✅
+- 2026-03-22: Completed US-007 by replacing the public pipe `run()` input shape with a `TaskHandle` that exposes `id`, `title`, `readArtifact()`, `writeArtifact()`, `updateStatus()`, and `comment()`. The canonical `write()` primitive now routes through `task.writeArtifact()`, the runtime constructs the handle around the task-board adapter with warning-only error handling, and the package barrel now exports `TaskHandle` for pipe authors.
+- 2026-03-22: Tracer-bullet scope only. This lands the end-to-end pipe/runtime contract and focused contract coverage without changing the later Notion sync-loop story or adding extra lifecycle semantics beyond the board patch passthrough.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` ✅
+- 2026-03-22 verification: `npx vitest run --config vitest.e2e.config.ts e2e/canonical-write.test.ts e2e/canonical-decide.test.ts e2e/canonical-loop.test.ts` ✅

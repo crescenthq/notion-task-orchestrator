@@ -9,6 +9,7 @@ import {
   step,
   write,
   type PipeInput,
+  type TaskHandle,
   type PipeWorkspace,
 } from './canonical'
 
@@ -28,15 +29,28 @@ const testWorkspace: PipeWorkspace = {
   },
 }
 
+function createTaskHandle(
+  overrides: Partial<TaskHandle> & Pick<TaskHandle, 'id' | 'title'>,
+): TaskHandle {
+  return {
+    id: overrides.id,
+    title: overrides.title,
+    readArtifact: overrides.readArtifact ?? (async () => ''),
+    writeArtifact: overrides.writeArtifact ?? (async () => undefined),
+    updateStatus: overrides.updateStatus ?? (async () => undefined),
+    comment: overrides.comment ?? (async () => undefined),
+  }
+}
+
 const baseInput: PipeInput<TestCtx> = {
   ctx: {score: 0, trail: []},
   workspace: testWorkspace,
   runId: 'run-1',
   tickId: 'tick-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-1',
     title: 'Canonical flow test task',
-  },
+  }),
 }
 
 describe('canonical flow helper', () => {
@@ -162,6 +176,10 @@ describe('canonical flow helper', () => {
       workspace: testWorkspace,
       runId: 'run-collision-1',
       tickId: 'tick-collision-1',
+      task: createTaskHandle({
+        id: 'task-collision-1',
+        title: 'Collision test task',
+      }),
     })
 
     expect(result).toEqual({type: 'end', status: 'done', data: 'updated!'})
@@ -184,6 +202,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-flow',
       tickId: 'tick-checkpoint-flow',
+      task: createTaskHandle({
+        id: 'task-checkpoint-flow',
+        title: 'Checkpoint flow test task',
+      }),
     }
 
     const stepA = vi.fn((ctx: CheckpointCtx) => ({
@@ -294,6 +316,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-decide',
       tickId: 'tick-checkpoint-decide',
+      task: createTaskHandle({
+        id: 'task-checkpoint-decide',
+        title: 'Checkpoint decide test task',
+      }),
     })
 
     if (!('type' in first) || first.type !== 'await_feedback') {
@@ -307,6 +333,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-decide',
       tickId: 'tick-checkpoint-decide-2',
+      task: createTaskHandle({
+        id: 'task-checkpoint-decide',
+        title: 'Checkpoint decide test task',
+      }),
     })
 
     expect(second).toEqual({route: 'approve', approved: true})
@@ -334,6 +364,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop',
+      task: createTaskHandle({
+        id: 'task-checkpoint-loop',
+        title: 'Checkpoint loop test task',
+      }),
     })
     expect(until).toHaveBeenCalledTimes(1)
 
@@ -350,6 +384,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop-2',
+      task: createTaskHandle({
+        id: 'task-checkpoint-loop',
+        title: 'Checkpoint loop test task',
+      }),
     })
     expect(until).toHaveBeenCalledTimes(2)
 
@@ -366,6 +404,10 @@ describe('checkpoint-aware resume behavior', () => {
       workspace: testWorkspace,
       runId: 'run-checkpoint-loop',
       tickId: 'tick-checkpoint-loop-3',
+      task: createTaskHandle({
+        id: 'task-checkpoint-loop',
+        title: 'Checkpoint loop test task',
+      }),
     })
     expect(until).toHaveBeenCalledTimes(3)
     expect(third).toEqual({iterations: 2})
@@ -404,10 +446,10 @@ const askBaseInput: PipeInput<AskCtx> = {
   workspace: testWorkspace,
   runId: 'run-ask-1',
   tickId: 'tick-ask-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-ask-1',
     title: 'Canonical ask test task',
-  },
+  }),
 }
 
 describe('canonical ask primitive', () => {
@@ -533,10 +575,10 @@ const decideBaseInput: PipeInput<DecideCtx> = {
   workspace: testWorkspace,
   runId: 'run-decide-1',
   tickId: 'tick-decide-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-decide-1',
     title: 'Canonical decide test task',
-  },
+  }),
 }
 
 describe('canonical decide primitive', () => {
@@ -646,10 +688,10 @@ const loopBaseInput: PipeInput<LoopCtx> = {
   workspace: testWorkspace,
   runId: 'run-loop-1',
   tickId: 'tick-loop-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-loop-1',
     title: 'Canonical loop test task',
-  },
+  }),
 }
 
 describe('canonical loop primitive', () => {
@@ -776,49 +818,54 @@ const writeBaseInput: PipeInput<WriteCtx> = {
   workspace: testWorkspace,
   runId: 'run-write-1',
   tickId: 'tick-write-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-write-1',
     title: 'Canonical write test task',
-  },
+  }),
 }
 
 describe('canonical write primitive', () => {
-  it('forwards rendered string output through configured writePage service', async () => {
-    const writePage = vi.fn(async () => undefined)
+  it('forwards rendered string output through task.writeArtifact()', async () => {
+    const writeArtifact = vi.fn(async () => undefined)
     const render = vi.fn((ctx: WriteCtx) => `# score ${ctx.score}`)
 
     const result = await write<WriteCtx>(render)({
       ...writeBaseInput,
-      writePage,
+      task: createTaskHandle({
+        id: 'task-write-1',
+        title: 'Canonical write test task',
+        writeArtifact,
+      }),
     })
 
     expect(result).toEqual(writeBaseInput.ctx)
     expect(render).toHaveBeenCalledWith(writeBaseInput.ctx)
-    expect(writePage).toHaveBeenCalledTimes(1)
-    expect(writePage).toHaveBeenCalledWith('# score 3')
+    expect(writeArtifact).toHaveBeenCalledTimes(1)
+    expect(writeArtifact).toHaveBeenCalledWith('# score 3')
   })
 
-  it('forwards rendered markdown object output through configured writePage service', async () => {
-    const writePage = vi.fn(async () => undefined)
+  it('writes the markdown field from markdown-object output', async () => {
+    const writeArtifact = vi.fn(async () => undefined)
 
     const result = await write<WriteCtx>(ctx => ({
       markdown: `# score ${ctx.score}`,
       body: `trail=${ctx.trail.length}`,
     }))({
       ...writeBaseInput,
-      writePage,
+      task: createTaskHandle({
+        id: 'task-write-1',
+        title: 'Canonical write test task',
+        writeArtifact,
+      }),
     })
 
     expect(result).toEqual(writeBaseInput.ctx)
-    expect(writePage).toHaveBeenCalledTimes(1)
-    expect(writePage).toHaveBeenCalledWith({
-      markdown: '# score 3',
-      body: 'trail=0',
-    })
+    expect(writeArtifact).toHaveBeenCalledTimes(1)
+    expect(writeArtifact).toHaveBeenCalledWith('# score 3')
   })
 
   it('does not interrupt flow sequencing after write emits output', async () => {
-    const outputs: unknown[] = []
+    const outputs: string[] = []
     const run = flow(
       write<WriteCtx>(ctx => `emitted:${ctx.score}`),
       step<WriteCtx>('increment', ctx => ({
@@ -830,9 +877,13 @@ describe('canonical write primitive', () => {
 
     const result = await run({
       ...writeBaseInput,
-      writePage: async output => {
-        outputs.push(output)
-      },
+      task: createTaskHandle({
+        id: 'task-write-1',
+        title: 'Canonical write test task',
+        writeArtifact: async markdown => {
+          outputs.push(markdown)
+        },
+      }),
     })
 
     expect(outputs).toEqual(['emitted:3'])
@@ -857,10 +908,10 @@ const endBaseInput: PipeInput<EndCtx> = {
   workspace: testWorkspace,
   runId: 'run-end-1',
   tickId: 'tick-end-1',
-  task: {
+  task: createTaskHandle({
     id: 'task-end-1',
     title: 'Canonical end test task',
-  },
+  }),
 }
 
 describe('canonical step lifecycle observer', () => {
@@ -887,10 +938,13 @@ describe('canonical step lifecycle observer', () => {
       workspace: testWorkspace,
       runId: 'run-life-1',
       tickId: 'tick-life-1',
+      task: createTaskHandle({
+        id: 'task-life-1',
+        title: 'Canonical lifecycle test task',
+      }),
       onStepStart: event => {
         events.push(`${event.kind}:${event.name}`)
       },
-      writePage: async () => undefined,
     })
 
     expect(result).toEqual({

@@ -1,3 +1,4 @@
+import type {TaskBoardPatch} from '../core/taskBoardAdapter'
 import type {PageOutput} from './helpers'
 import {
   CheckpointMismatchError,
@@ -46,8 +47,6 @@ export type EndSignal<C> = {
 
 export type Control<C> = AwaitFeedback<C> | EndSignal<C>
 
-export type WritePage = (output: PageOutput) => PipeResult<void>
-
 export type PipeWorkspaceSource = {
   mode: 'project' | 'repo'
   repo: string
@@ -61,13 +60,21 @@ export type PipeWorkspace = {
   source: PipeWorkspaceSource
 }
 
+export type TaskHandle = {
+  id: string
+  title: string
+  readArtifact: () => PipeResult<string>
+  writeArtifact: (markdown: string) => PipeResult<void>
+  updateStatus: (patch: TaskBoardPatch) => PipeResult<void>
+  comment: (body: string) => PipeResult<void>
+}
+
 export type PipeInput<C> = {
   ctx: C
   feedback?: string
   checkpoint?: Checkpoint
-  task?: {id: string; title?: string; prompt?: string; context?: string}
+  task: TaskHandle
   workspace: PipeWorkspace
-  writePage?: WritePage
   onStepStart?: StepLifecycleObserver<C>
   runId: string
   tickId: string
@@ -518,9 +525,9 @@ export function write<C>(render: (ctx: C) => PipeResult<PageOutput>): Step<C> {
     assertNoCheckpointRemainder(checkpoint, 'write')
     await notifyStepStart(input, 'write', 'write')
     const pageOutput = normalizePageOutput(await render(input.ctx))
-    if (input.writePage) {
-      await input.writePage(pageOutput)
-    }
+    const markdown =
+      typeof pageOutput === 'string' ? pageOutput : pageOutput.markdown
+    await input.task.writeArtifact(markdown)
     return input.ctx
   }
 }

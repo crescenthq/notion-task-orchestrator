@@ -13,6 +13,7 @@ export {
   type EndSignal,
   type PipeDefinition,
   type PipeInput,
+  type TaskHandle,
   type PipeWorkspace,
   type PipeWorkspaceSource,
   type Step,

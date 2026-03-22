@@ -11,7 +11,7 @@ import {
   parseCheckpoint,
 } from '../pipe/checkpoint'
 import {brandControlSignal, hasControlSignalBrand} from '../pipe/controlSignal'
-import type {PipeWorkspace} from '../pipe/canonical'
+import type {PipeWorkspace, TaskHandle} from '../pipe/canonical'
 import {
   type ResolvedProjectConfig,
   resolveProjectConfig,
@@ -44,8 +44,6 @@ import {
 } from './workspaceRuntime'
 
 type JsonObject = Record<string, unknown>
-
-type PageContent = {markdown: string; body?: string} | string
 
 type LeaseMode = 'strict' | 'best-effort'
 
@@ -479,14 +477,18 @@ export async function runPipeTaskByExternalId(
   const {definition} = await loadPipeFromPath(pipePath)
   const pipeDefinition: PipeModuleDefinition = definition
 
+  let taskHandleId = task.externalTaskId
   let taskTitle = task.externalTaskId
-  let taskContext = ''
+  let taskArtifact = ''
   try {
     const snapshot = await boardAdapter.getTask(taskRef)
+    if (snapshot.id.trim().length > 0) {
+      taskHandleId = snapshot.id
+    }
     if (snapshot.title.trim().length > 0) {
       taskTitle = snapshot.title
     }
-    taskContext = snapshot.artifact
+    taskArtifact = snapshot.artifact
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(
@@ -494,7 +496,7 @@ export async function runPipeTaskByExternalId(
     )
   }
 
-  const promptLine = taskContext
+  const promptLine = taskArtifact
     .split('\n')
     .map(line => line.trim())
     .find(line => line.length > 0)
@@ -514,7 +516,7 @@ export async function runPipeTaskByExternalId(
     task_id: task.externalTaskId,
     task_title: taskTitle,
     task_prompt: taskPrompt,
-    task_context: taskContext,
+    task_context: taskArtifact,
   }
 
   if (task.stepVarsJson) {
@@ -919,26 +921,50 @@ export async function runPipeTaskByExternalId(
     })
   }
 
-  const writePage = async (output: PageContent): Promise<void> => {
-    const markdown = typeof output === 'string' ? output : output.markdown
-    if (!markdown || markdown.trim().length === 0) return
-    await persistRunTrace({
-      type: 'write',
-      stateId: currentStateId,
-      message: 'Pipe emitted page output',
-      payload: {
-        markdownLength: markdown.length,
-        format: typeof output === 'string' ? 'string' : 'markdown',
-      },
-    })
-    try {
-      await boardAdapter.writeArtifact(taskRef, markdown)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(
-        `[warn] failed to write board artifact (${boardAdapter.kind}): ${message}`,
-      )
-    }
+  const taskHandle: TaskHandle = {
+    id: taskHandleId,
+    title: taskTitle,
+    readArtifact: async () => taskArtifact,
+    writeArtifact: async (markdown: string): Promise<void> => {
+      await persistRunTrace({
+        type: 'write',
+        stateId: currentStateId,
+        message: 'Pipe emitted page output',
+        payload: {
+          markdownLength: markdown.length,
+          format: 'markdown',
+        },
+      })
+      try {
+        await boardAdapter.writeArtifact(taskRef, markdown)
+        taskArtifact = markdown
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to write board artifact (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
+    updateStatus: async (patch: TaskBoardPatch): Promise<void> => {
+      try {
+        await boardAdapter.updateTask(taskRef, patch)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to update board task (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
+    comment: async (body: string): Promise<void> => {
+      try {
+        await boardAdapter.postComment(taskRef, body)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.log(
+          `[warn] failed to post board comment (${boardAdapter.kind}): ${message}`,
+        )
+      }
+    },
   }
 
   const parsePipeContext = (value: unknown, label: string): JsonObject => {
@@ -976,14 +1002,8 @@ export async function runPipeTaskByExternalId(
           ctx,
           feedback,
           checkpoint,
-          task: {
-            id: task.externalTaskId,
-            title: taskTitle,
-            prompt: taskPrompt,
-            context: taskContext,
-          },
+          task: taskHandle,
           workspace: provisionedWorkspace.workspace,
-          writePage,
           onStepStart: onPipeStepStart,
           runId,
           tickId,

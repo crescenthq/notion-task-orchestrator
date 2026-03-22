@@ -7,6 +7,7 @@ import {
   step,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {createMockTaskHandle} from './helpers/mockTaskHandle'
 import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type DecideE2ECtx = {
@@ -24,10 +25,10 @@ function createInput(
     workspace: mockPipeWorkspace,
     runId: 'run-decide-e2e-1',
     tickId,
-    task: {
+    task: createMockTaskHandle({
       id: 'task-decide-e2e-1',
       title: 'Canonical decide e2e',
-    },
+    }),
   }
 }
 

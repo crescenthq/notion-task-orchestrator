@@ -19,6 +19,7 @@ import {
   registerLiveBoardSuite,
   resolveSharedBoardConnection,
 } from './helpers/sharedNotionBoard'
+import {createMockTaskHandle} from './helpers/mockTaskHandle'
 import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 loadDotEnv()
@@ -96,14 +97,13 @@ if (liveSuiteEnabled) {
         workspace: mockPipeWorkspace,
         runId: `run-${Date.now()}`,
         tickId: `tick-${Date.now()}`,
-        task: {
+        task: createMockTaskHandle({
           id: taskExternalId,
           title: 'Canonical write live e2e task',
-        },
-        writePage: async output => {
-          const markdown = typeof output === 'string' ? output : output.markdown
-          await notionReplacePageMarkdown(token, taskExternalId, markdown)
-        },
+          writeArtifact: async markdown => {
+            await notionReplacePageMarkdown(token, taskExternalId, markdown)
+          },
+        }),
       })
 
       expect(result).toEqual({score: 9})

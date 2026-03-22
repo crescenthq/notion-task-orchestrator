@@ -6,6 +6,7 @@ import {
   write,
   type PipeInput,
 } from '../src/pipe/canonical'
+import {createMockTaskHandle} from './helpers/mockTaskHandle'
 import {mockPipeWorkspace} from './helpers/mockPipeWorkspace'
 
 type WriteE2ECtx = {
@@ -16,24 +17,24 @@ type WriteE2ECtx = {
 
 function createInput(
   ctx: WriteE2ECtx,
-  writePage?: PipeInput<WriteE2ECtx>['writePage'],
+  writeArtifact?: PipeInput<WriteE2ECtx>['task']['writeArtifact'],
 ): PipeInput<WriteE2ECtx> {
   return {
     ctx,
     workspace: mockPipeWorkspace,
     runId: 'run-write-e2e-1',
     tickId: 'tick-write-e2e-1',
-    writePage,
-    task: {
+    task: createMockTaskHandle({
       id: 'task-write-e2e-1',
       title: 'Canonical write e2e',
-    },
+      writeArtifact,
+    }),
   }
 }
 
 describe('canonical write e2e scenarios', () => {
   it('scenario: write emits string output and flow continues', async () => {
-    const outputs: unknown[] = []
+    const outputs: string[] = []
     const pipe = definePipe({
       id: 'write-e2e-string',
       initial: {score: 0, trail: [] as string[]},
@@ -53,8 +54,8 @@ describe('canonical write e2e scenarios', () => {
     })
 
     const result = await pipe.run(
-      createInput({score: 0, trail: []}, async output => {
-        outputs.push(output)
+      createInput({score: 0, trail: []}, async markdown => {
+        outputs.push(markdown)
       }),
     )
 
@@ -67,7 +68,7 @@ describe('canonical write e2e scenarios', () => {
   })
 
   it('scenario: write emits markdown object output', async () => {
-    const outputs: unknown[] = []
+    const outputs: string[] = []
     const pipe = definePipe({
       id: 'write-e2e-markdown',
       initial: {score: 0, trail: [] as string[]},
@@ -85,17 +86,12 @@ describe('canonical write e2e scenarios', () => {
     })
 
     const result = await pipe.run(
-      createInput({score: 0, trail: []}, async output => {
-        outputs.push(output)
+      createInput({score: 0, trail: []}, async markdown => {
+        outputs.push(markdown)
       }),
     )
 
-    expect(outputs).toEqual([
-      {
-        markdown: '# score 4',
-        body: 'trail=1',
-      },
-    ])
+    expect(outputs).toEqual(['# score 4'])
     expect(result).toEqual({
       score: 4,
       trail: ['prepared'],
