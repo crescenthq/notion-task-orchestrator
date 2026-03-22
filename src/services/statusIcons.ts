@@ -40,14 +40,8 @@ export function iconForStatus(
 ): LifecycleStatusIcon | typeof STEP_STATUS_ICON | null {
   const normalized = status.trim().toLowerCase()
   if (!normalized) return null
-  const lifecycleKey =
-    normalized === 'running'
-      ? 'in_progress'
-      : normalized === 'feedback' || normalized === 'blocked'
-        ? 'needs_input'
-        : normalized
-  if (lifecycleKey in lifecycleStatusIcons) {
-    return lifecycleStatusIcons[lifecycleKey as LifecycleStatusKey]
+  if (normalized in lifecycleStatusIcons) {
+    return lifecycleStatusIcons[normalized as LifecycleStatusKey]
   }
   return STEP_STATUS_ICON
 }

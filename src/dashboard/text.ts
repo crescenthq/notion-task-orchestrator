@@ -270,8 +270,7 @@ function formatTaskDetail(task: DashboardTaskRow): string {
   }
   if (task.runStatus) {
     const lease =
-      task.leaseOwner &&
-      (task.state === 'in_progress' || task.state === 'running')
+      task.leaseOwner && task.state === 'in_progress'
         ? ` via ${compactId(task.leaseOwner, 8, 4)}`
         : ''
     return fit(`Run ${formatStatusLabel(task.runStatus)}${lease}`, 34)

@@ -546,15 +546,9 @@ export function mapTaskStateToNotionStatus(state: string): string {
     case 'queue':
     case 'queued':
       return 'Queue'
-    case 'running':
     case 'in_progress':
-    case 'inprogress':
       return 'In Progress'
-    case 'blocked':
-    case 'feedback':
-    case 'waiting':
     case 'needs_input':
-    case 'needsinput':
       return 'Needs Input'
     case 'done':
       return 'Done'
