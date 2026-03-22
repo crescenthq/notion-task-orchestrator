@@ -321,7 +321,7 @@ describe('notion command shared board registration', () => {
       notionQueryAllDataSourcePages: queryAllPages,
       notionGetNewComments: vi.fn(async () => ''),
       notionEnsureBoardSchema: vi.fn(async () => undefined),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -419,7 +419,7 @@ describe('notion command shared board registration', () => {
       notionQueryAllDataSourcePages: queryAllPages,
       notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
       notionEnsureBoardSchema: vi.fn(async () => undefined),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -456,14 +456,14 @@ describe('notion command shared board registration', () => {
     expect(queued?.state).toBe('queued')
 
     expect(vi.mocked(notionService.notionGetNewComments)).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).toHaveBeenCalledWith(
+    expect(vi.mocked(notionService.notionPostComment)).toHaveBeenCalledWith(
       'test-token',
       'page-alpha-drifted',
-      'Pipe property changed',
-      expect.stringContaining('Restore Pipe to `alpha`'),
+      expect.stringContaining('Pipe property changed\n\n'),
     )
+    expect(
+      vi.mocked(notionService.notionPostComment).mock.calls[0]?.[2],
+    ).toContain('Restore Pipe to `alpha`')
   })
 
   it('setup --url allows same-board reuse and blocks switching boards when local tasks exist', async () => {
@@ -718,7 +718,7 @@ describe('notion command shared board registration', () => {
         ]),
         notionGetNewComments: vi.fn(async () => 'should-not-be-used'),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
+        notionPostComment: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
         notionGetDataSource: vi.fn(async () =>
           buildSharedBoardDataSource('ds-shared'),
@@ -795,7 +795,7 @@ describe('notion command shared board registration', () => {
         ]),
         notionGetNewComments: vi.fn(async () => ''),
         notionEnsureBoardSchema: vi.fn(async () => undefined),
-        notionAppendTaskPageLog: vi.fn(async () => undefined),
+        notionPostComment: vi.fn(async () => undefined),
         notionUpdateTaskPageState: vi.fn(async () => undefined),
         notionGetDataSource: vi.fn(async () =>
           buildSharedBoardDataSource('ds-shared'),
@@ -843,7 +843,7 @@ describe('notion command shared board registration', () => {
       notionGetPage: vi.fn(async () =>
         buildNotionPage('page-repair', 'Repair me', 'Blocked', 'alpha'),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -871,13 +871,10 @@ describe('notion command shared board registration', () => {
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).toHaveBeenCalledWith('test-token', 'page-repair', 'queued')
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).toHaveBeenCalledWith(
+    expect(vi.mocked(notionService.notionPostComment)).toHaveBeenCalledWith(
       'test-token',
       'page-repair',
-      'Pipe quarantine cleared',
-      'Pipe restored to alpha. Task re-queued after explicit repair.',
+      'Pipe quarantine cleared\n\nPipe restored to alpha. Task re-queued after explicit repair.',
     )
   })
 
@@ -906,7 +903,7 @@ describe('notion command shared board registration', () => {
       notionGetPage: vi.fn(async () =>
         buildNotionPage('page-repair-wrong', 'Repair wrong', 'Blocked', 'beta'),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -933,9 +930,7 @@ describe('notion command shared board registration', () => {
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).not.toHaveBeenCalled()
+    expect(vi.mocked(notionService.notionPostComment)).not.toHaveBeenCalled()
   })
 
   it('repair-task fails when Pipe is missing and leaves task blocked', async () => {
@@ -963,7 +958,7 @@ describe('notion command shared board registration', () => {
       notionGetPage: vi.fn(async () =>
         buildNotionPage('page-repair-missing', 'Repair missing', 'Blocked'),
       ),
-      notionAppendTaskPageLog: vi.fn(async () => undefined),
+      notionPostComment: vi.fn(async () => undefined),
       notionUpdateTaskPageState: vi.fn(async () => undefined),
       notionGetDataSource: vi.fn(async () =>
         buildSharedBoardDataSource('ds-shared'),
@@ -987,8 +982,6 @@ describe('notion command shared board registration', () => {
     expect(
       vi.mocked(notionService.notionUpdateTaskPageState),
     ).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(notionService.notionAppendTaskPageLog),
-    ).not.toHaveBeenCalled()
+    expect(vi.mocked(notionService.notionPostComment)).not.toHaveBeenCalled()
   })
 })

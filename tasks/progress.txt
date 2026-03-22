@@ -1,14 +1,14 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-004 complete
+US-005 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
 - [x] US-002: Update local database schema for new lifecycle
 - [x] US-003: Markdown section helpers
 - [x] US-004: Update Notion board schema for new properties
-- [ ] US-005: Update Notion adapter to new interface
+- [x] US-005: Update Notion adapter to new interface
 - [ ] US-006: Update pipe runtime to use new adapter interface
 - [ ] US-007: Expose TaskHandle to pipes
 - [ ] US-008: Update sync loop for new lifecycle and comment-based feedback
@@ -33,3 +33,7 @@ US-004 complete
 - 2026-03-22: Tracer-bullet scope only. Added compatibility shims so existing flows can still read legacy `State` values while new boards and updates move onto `Status` and `Current Action`.
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/commands/notion.test.ts` ✅
+- 2026-03-22: Completed US-005 by finishing the Notion adapter around the canonical 4-method contract: `updateTask()` now maps lifecycle/current action/progress/PR properties, `writeArtifact()` does full-page markdown replace, `getTask()` reads markdown artifacts plus comment author metadata, and `postComment()` remains the board comment primitive.
+- 2026-03-22: Removed the old append-only Notion log helpers and moved the remaining board-note call sites onto rich-text comments. Updated live/e2e references to the new markdown helper names so the repo typechecks cleanly.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/adapters/notion.test.ts src/commands/notion.test.ts` ✅

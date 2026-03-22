@@ -9,7 +9,6 @@ import {notionToken} from '../src/config/env'
 import {replayRunTraces} from '../src/core/runTraces'
 import {runTraces, runs, tasks, workflows} from '../src/db/schema'
 import {
-  notionAppendTaskPageLog,
   notionPostComment,
   notionUpdateTaskPageState,
 } from '../src/services/notion'
@@ -505,14 +504,16 @@ let globalWritesBefore: FilesystemSnapshot | null = null
         .where(eq(tasks.id, paused.id))
       await notionUpdateTaskPageState(token, taskExternalId, 'queued')
       try {
-        await notionAppendTaskPageLog(
+        await notionPostComment(
           token,
           taskExternalId,
-          'Feedback received (local verification mode)',
-          'Feedback was injected locally to resume deterministic verification.',
+          [
+            'Feedback received (local verification mode)',
+            'Feedback was injected locally to resume deterministic verification.',
+          ].join('\n\n'),
         )
       } catch {
-        // Notion API append logs can occasionally return transient gateway errors.
+        // Notion API comment writes can occasionally return transient gateway errors.
         // Behavioral resumption assertions should not depend on this optional side effect.
       }
     } else {

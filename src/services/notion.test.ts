@@ -7,9 +7,13 @@ import {
   notionResolveDatabaseConnection,
   notionEnsureBoardSchema,
   notionExtractDatabaseIdFromUrl,
+  notionGetPageMarkdown,
+  notionListComments,
   notionQueryAllDataSourcePages,
   notionQueryDataSource,
+  notionReplacePageMarkdown,
   notionResolveDatabaseConnectionFromUrl,
+  notionUpdateTaskPage,
   notionWaitForTaskPipe,
   pagePipeId,
 } from './notion'
@@ -64,6 +68,139 @@ const STATE_OPTIONS = [
   {name: 'Done', color: 'green'},
   {name: 'Failed', color: 'red'},
 ]
+
+describe('notion task page helpers', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('updates task properties for the task board adapter contract', async () => {
+    const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      calls.push({input, init})
+      return jsonResponse({})
+    }) as typeof fetch
+
+    await notionUpdateTaskPage('token-1', 'page-1', {
+      state: 'in_progress',
+      currentAction: 'Implement adapter',
+      progress: '50% Implementing',
+      prUrl: 'https://github.com/example/repo/pull/123',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(String(calls[0]?.input)).toContain('/v1/pages/page-1')
+    expect(calls[0]?.init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      properties: {
+        Status: {select: {name: 'In Progress'}},
+        'Current Action': {
+          rich_text: [{type: 'text', text: {content: 'Implement adapter'}}],
+        },
+        Progress: {
+          rich_text: [{type: 'text', text: {content: '50% Implementing'}}],
+        },
+        PR: {url: 'https://github.com/example/repo/pull/123'},
+      },
+    })
+  })
+
+  it('reads page markdown from the markdown api', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        object: 'page_markdown',
+        id: 'page-1',
+        markdown: '# Fresh Start\n\nThis is the artifact.',
+      })) as typeof fetch
+
+    await expect(notionGetPageMarkdown('token-1', 'page-1')).resolves.toBe(
+      '# Fresh Start\n\nThis is the artifact.',
+    )
+  })
+
+  it('replaces page markdown using replace_content', async () => {
+    const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      calls.push({input, init})
+      return jsonResponse({})
+    }) as typeof fetch
+
+    await notionReplacePageMarkdown(
+      'token-1',
+      'page-1',
+      '# Fresh Start\n\nThis replaces all previous content.',
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(String(calls[0]?.input)).toContain('/v1/pages/page-1/markdown')
+    expect(calls[0]?.init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      type: 'replace_content',
+      replace_content: {
+        new_str: '# Fresh Start\n\nThis replaces all previous content.',
+      },
+    })
+  })
+
+  it('lists comments across pagination and preserves author metadata', async () => {
+    let callCount = 0
+    globalThis.fetch = (async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return jsonResponse({
+          results: [
+            {
+              id: 'comment-1',
+              created_time: '2026-03-22T10:00:00.000Z',
+              created_by: {id: 'user-1'},
+              display_name: {type: 'user', resolved_name: 'Reviewer'},
+              rich_text: [{plain_text: 'Looks good'}],
+            },
+          ],
+          has_more: true,
+          next_cursor: 'cursor-2',
+        })
+      }
+
+      return jsonResponse({
+        results: [
+          {
+            id: 'comment-2',
+            created_time: '2026-03-22T10:05:00.000Z',
+            created_by: {id: 'bot-1', type: 'bot'},
+            display_name: {type: 'integration', resolved_name: 'Notionflow'},
+            rich_text: [{plain_text: 'Queued for work'}],
+          },
+        ],
+        has_more: false,
+        next_cursor: null,
+      })
+    }) as typeof fetch
+
+    await expect(notionListComments('token-1', 'page-1')).resolves.toEqual([
+      {
+        id: 'comment-1',
+        created_time: '2026-03-22T10:00:00.000Z',
+        created_by: {id: 'user-1'},
+        display_name: {type: 'user', resolved_name: 'Reviewer'},
+        rich_text: [{plain_text: 'Looks good'}],
+      },
+      {
+        id: 'comment-2',
+        created_time: '2026-03-22T10:05:00.000Z',
+        created_by: {id: 'bot-1', type: 'bot'},
+        display_name: {type: 'integration', resolved_name: 'Notionflow'},
+        rich_text: [{plain_text: 'Queued for work'}],
+      },
+    ])
+  })
+})
 
 describe('notion board schema provisioning', () => {
   afterEach(() => {

@@ -9,7 +9,6 @@ import {boards, tasks, workflows} from '../db/schema'
 import {loadDeclaredPipes, loadProjectConfig} from '../project/projectConfig'
 import {
   mapTaskStateToNotionStatus,
-  notionAppendTaskPageLog,
   notionCreateTaskPage,
   notionAssertSharedBoardSchema,
   notionCreateBoardDataSource,
@@ -20,6 +19,7 @@ import {
   notionResolveDatabaseConnectionFromUrl,
   notionGetDataSource,
   notionGetNewComments,
+  notionPostComment,
   notionQueryAllDataSourcePages,
   notionUpdateTaskPageState,
   pagePipeId,
@@ -150,6 +150,11 @@ function makePipeMismatchMessage(
   return `${PIPE_MISMATCH_ERROR_PREFIX} shared-board Pipe changed from ${task.workflowId} to ${remotePipe}. ${ownershipRepairHint(task.externalTaskId, task.workflowId)}`
 }
 
+function formatBoardComment(title: string, detail?: string): string {
+  const trimmedDetail = detail?.trim()
+  return trimmedDetail ? `${title}\n\n${trimmedDetail}` : title
+}
+
 function parseBoardConfig(configJson: string): {
   databaseId?: string
   url?: string
@@ -216,7 +221,11 @@ async function reflectTaskQuarantineOnBoard(
 ): Promise<void> {
   try {
     await notionUpdateTaskPageState(token, task.externalTaskId, 'blocked')
-    await notionAppendTaskPageLog(token, task.externalTaskId, title, detail)
+    await notionPostComment(
+      token,
+      task.externalTaskId,
+      formatBoardComment(title, detail),
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(
@@ -688,11 +697,13 @@ export async function syncNotionBoards(options: {
           ),
         )
       await notionUpdateTaskPageState(token, ft.externalTaskId, 'queued')
-      await notionAppendTaskPageLog(
+      await notionPostComment(
         token,
         ft.externalTaskId,
-        'Feedback received',
-        'Human reply detected. Task re-queued for resume.',
+        formatBoardComment(
+          'Feedback received',
+          'Human reply detected. Task re-queued for resume.',
+        ),
       )
       console.log(
         `[feedback] task ${ft.externalTaskId} has new comment reply -> re-queued`,
@@ -849,11 +860,13 @@ export async function repairQuarantinedSharedBoardTask(options: {
 
   try {
     await notionUpdateTaskPageState(token, task.externalTaskId, 'queued')
-    await notionAppendTaskPageLog(
+    await notionPostComment(
       token,
       task.externalTaskId,
-      'Pipe quarantine cleared',
-      `Pipe restored to ${task.workflowId}. Task re-queued after explicit repair.`,
+      formatBoardComment(
+        'Pipe quarantine cleared',
+        `Pipe restored to ${task.workflowId}. Task re-queued after explicit repair.`,
+      ),
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
