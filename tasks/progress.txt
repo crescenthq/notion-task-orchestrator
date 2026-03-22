@@ -1,12 +1,12 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-002 complete
+US-003 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
 - [x] US-002: Update local database schema for new lifecycle
-- [ ] US-003: Markdown section helpers
+- [x] US-003: Markdown section helpers
 - [ ] US-004: Update Notion board schema for new properties
 - [ ] US-005: Update Notion adapter to new interface
 - [ ] US-006: Update pipe runtime to use new adapter interface
@@ -25,3 +25,7 @@ US-002 complete
 - Pre-release project — no migration or backward compatibility needed
 - US-002 moved before US-003 since DB schema is a dependency for runtime changes
 - US-003 (section helpers) has no dependencies and can land early as a pure utility
+- 2026-03-22: Completed US-003 by adding pure markdown `##` section helpers in `src/core/artifactSections.ts` for reading, replacing/appending, and removing artifact sections with canonical serialization.
+- 2026-03-22: Tracer-bullet scope only. This lands the helper API and test coverage without wiring section-level artifact editing into the runtime yet.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/core/artifactSections.test.ts` ✅
