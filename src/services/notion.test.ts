@@ -25,19 +25,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function buildSharedBoardDataSource(
   overrides: Partial<{
-    stateOptions: Array<{name: string; color?: string; id?: string}>
     statusOptions: Array<{name: string; color?: string; id?: string}>
     pipeOptions: Array<{name: string; color?: string; id?: string}>
+    currentActionType: string
+    progressType: string
+    prType: string
   }> = {},
 ) {
   return {
     id: 'ds-1',
     properties: {
       Name: {type: 'title'},
-      State: {
-        type: 'select',
-        select: {options: overrides.stateOptions ?? []},
-      },
       Status: {
         type: 'select',
         select: {options: overrides.statusOptions ?? []},
@@ -46,6 +44,15 @@ function buildSharedBoardDataSource(
         type: 'select',
         select: {options: overrides.pipeOptions ?? []},
       },
+      'Current Action': {
+        type: overrides.currentActionType ?? 'rich_text',
+      },
+      Progress: {
+        type: overrides.progressType ?? 'rich_text',
+      },
+      PR: {
+        type: overrides.prType ?? 'url',
+      },
     },
   }
 }
@@ -53,9 +60,8 @@ function buildSharedBoardDataSource(
 const STATE_OPTIONS = [
   {name: 'Queue', color: 'gray'},
   {name: 'In Progress', color: 'blue'},
-  {name: 'Feedback', color: 'purple'},
+  {name: 'Needs Input', color: 'orange'},
   {name: 'Done', color: 'green'},
-  {name: 'Blocked', color: 'orange'},
   {name: 'Failed', color: 'red'},
 ]
 
@@ -64,7 +70,7 @@ describe('notion board schema provisioning', () => {
     globalThis.fetch = originalFetch
   })
 
-  it('updates board schema with State (operational) and Status (steps) properties', async () => {
+  it('updates board schema with lifecycle status and task metadata properties', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -83,15 +89,17 @@ describe('notion board schema provisioning', () => {
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload).toEqual({
       properties: {
+        'Current Action': {rich_text: {}},
         Pipe: {select: {options: []}},
-        State: {select: {options: STATE_OPTIONS}},
-        Status: {select: {options: []}},
+        PR: {url: {}},
+        Progress: {rich_text: {}},
+        Status: {select: {options: STATE_OPTIONS}},
       },
     })
     expect(payload.properties.Ready).toBeUndefined()
   })
 
-  it('includes step options in Status when provided', async () => {
+  it('keeps lifecycle Status options even when legacy step options are provided', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -119,8 +127,7 @@ describe('notion board schema provisioning', () => {
     await notionEnsureBoardSchema('token-1', 'ds-1', stepOptions, pipeOptions)
 
     const payload = JSON.parse(String(calls[1]?.init?.body))
-    expect(payload.properties.State.select.options).toEqual(STATE_OPTIONS)
-    expect(payload.properties.Status.select.options).toEqual(stepOptions)
+    expect(payload.properties.Status.select.options).toEqual(STATE_OPTIONS)
     expect(payload.properties.Pipe.select.options).toEqual([
       {name: 'demo', color: 'default', id: 'opt-demo'},
       {name: 'research', color: 'green'},
@@ -170,9 +177,11 @@ describe('notion board schema provisioning', () => {
     })
 
     const patchPayload = JSON.parse(String(calls[2]?.init?.body))
-    expect(patchPayload.properties.State.select.options).toEqual(STATE_OPTIONS)
-    expect(patchPayload.properties.Status.select.options).toEqual([])
+    expect(patchPayload.properties.Status.select.options).toEqual(STATE_OPTIONS)
     expect(patchPayload.properties.Pipe.select.options).toEqual([])
+    expect(patchPayload.properties['Current Action']).toEqual({rich_text: {}})
+    expect(patchPayload.properties.Progress).toEqual({rich_text: {}})
+    expect(patchPayload.properties.PR).toEqual({url: {}})
     expect(patchPayload.properties.Ready).toBeUndefined()
   })
 
@@ -275,7 +284,7 @@ describe('notion board schema provisioning', () => {
       return jsonResponse(
         buildSharedBoardDataSource({
           pipeOptions: [{name: 'verify-happy', color: 'pink', id: 'pipe-1'}],
-          statusOptions: [{name: 'complete', color: 'orange', id: 'status-1'}],
+          statusOptions: [{name: 'Done', color: 'orange', id: 'status-1'}],
         }),
       )
     }) as typeof fetch
@@ -292,7 +301,11 @@ describe('notion board schema provisioning', () => {
 
     const payload = JSON.parse(String(calls[1]?.init?.body))
     expect(payload.properties.Status.select.options).toEqual([
-      {name: 'complete', color: 'orange', id: 'status-1'},
+      {name: 'Queue', color: 'gray'},
+      {name: 'In Progress', color: 'blue'},
+      {name: 'Needs Input', color: 'orange'},
+      {name: 'Done', color: 'orange', id: 'status-1'},
+      {name: 'Failed', color: 'red'},
     ])
     expect(payload.properties.Pipe.select.options).toEqual([
       {name: 'verify-happy', color: 'pink', id: 'pipe-1'},
@@ -300,7 +313,7 @@ describe('notion board schema provisioning', () => {
     ])
   })
 
-  it('writes Pipe when creating a task page', async () => {
+  it('writes Status and Pipe when creating a task page', async () => {
     const calls: Array<{input: RequestInfo | URL; init?: RequestInit}> = []
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -317,7 +330,9 @@ describe('notion board schema provisioning', () => {
     })
 
     const payload = JSON.parse(String(calls[0]?.init?.body))
+    expect(payload.properties.Status).toEqual({select: {name: 'Queue'}})
     expect(payload.properties.Pipe).toEqual({select: {name: 'demo'}})
+    expect(payload.properties.State).toBeUndefined()
   })
 
   it('waits for a created task page to report the expected Pipe', async () => {
@@ -531,9 +546,11 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
           Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
+          PR: {type: 'url'},
         },
       }),
     ).not.toThrow()
@@ -544,12 +561,14 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: missing Pipe',
+      'Shared Notion board schema is invalid for data source ds-1: missing PR',
     )
   })
 
@@ -558,13 +577,15 @@ describe('notion board schema provisioning', () => {
       notionAssertSharedBoardSchema({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
-          Pipe: {type: 'rich_text'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'select'},
+          PR: {type: 'url'},
         },
       }),
     ).toThrow(
-      'Shared Notion board schema is invalid for data source ds-1: Pipe must be select (found rich_text)',
+      'Shared Notion board schema is invalid for data source ds-1: Progress must be rich_text (found select)',
     )
   })
 

@@ -179,7 +179,7 @@ export function buildNotionPage(
         type: 'title',
         title: [{plain_text: title}],
       },
-      State: {
+      Status: {
         type: 'select',
         select: {name: state},
       },
@@ -200,9 +200,11 @@ export function buildSharedBoardDataSource(id: string) {
     id,
     properties: {
       Name: {type: 'title'},
-      State: {type: 'select', select: {options: []}},
       Status: {type: 'select', select: {options: []}},
       Pipe: {type: 'select', select: {options: []}},
+      'Current Action': {type: 'rich_text'},
+      Progress: {type: 'rich_text'},
+      PR: {type: 'url'},
     },
   }
 }

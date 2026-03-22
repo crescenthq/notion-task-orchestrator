@@ -25,6 +25,8 @@ type NotionSelectOption = {
 type NotionDataSourceProperty = {
   type: string
   select?: {options?: NotionSelectOption[]}
+  rich_text?: Record<string, never>
+  url?: Record<string, never>
 }
 
 export type NotionDatabaseConnection = {
@@ -210,9 +212,8 @@ export async function notionArchiveDatabase(
 const STATE_OPTIONS = [
   {name: 'Queue', color: 'gray'},
   {name: 'In Progress', color: 'blue'},
-  {name: 'Feedback', color: 'purple'},
+  {name: 'Needs Input', color: 'orange'},
   {name: 'Done', color: 'green'},
-  {name: 'Blocked', color: 'orange'},
   {name: 'Failed', color: 'red'},
 ]
 
@@ -242,10 +243,47 @@ function mergeSelectOptions(
   return merged
 }
 
+function reconcileSelectOptions(
+  existing: NotionSelectOption[] | undefined,
+  desired: Array<{name: string; color: string}>,
+): NotionSelectOption[] {
+  const existingByName = new Map<string, NotionSelectOption>()
+
+  for (const option of existing ?? []) {
+    const name = option.name?.trim()
+    if (!name) continue
+    const normalized = name.toLowerCase()
+    if (existingByName.has(normalized)) continue
+    existingByName.set(normalized, option)
+  }
+
+  const reconciled: NotionSelectOption[] = []
+  const seen = new Set<string>()
+
+  for (const option of desired) {
+    const normalized = option.name.trim().toLowerCase()
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    const current = existingByName.get(normalized)
+    if (current) {
+      reconciled.push({
+        ...current,
+        name: option.name,
+        color: current.color ?? option.color,
+      })
+      continue
+    }
+
+    reconciled.push(option)
+  }
+
+  return reconciled
+}
+
 export async function notionEnsureBoardSchema(
   token: string,
   dataSourceId: string,
-  stepOptions: Array<{name: string; color: string}> = [],
+  _legacyStepOptions: Array<{name: string; color: string}> = [],
   pipeOptions: Array<{name: string; color: string}> = [],
 ): Promise<void> {
   const currentDataSource = await notionGetDataSource(token, dataSourceId)
@@ -256,19 +294,11 @@ export async function notionEnsureBoardSchema(
       headers: notionHeaders(token),
       body: JSON.stringify({
         properties: {
-          State: {
-            select: {
-              options: mergeSelectOptions(
-                currentDataSource.properties.State?.select?.options,
-                STATE_OPTIONS,
-              ),
-            },
-          },
           Status: {
             select: {
-              options: mergeSelectOptions(
+              options: reconcileSelectOptions(
                 currentDataSource.properties.Status?.select?.options,
-                stepOptions,
+                STATE_OPTIONS,
               ),
             },
           },
@@ -280,6 +310,9 @@ export async function notionEnsureBoardSchema(
               ),
             },
           },
+          'Current Action': {rich_text: {}},
+          Progress: {rich_text: {}},
+          PR: {url: {}},
         },
       }),
     },
@@ -316,9 +349,11 @@ export function notionAssertSharedBoardSchema(
   dataSource: NotionDataSource,
 ): void {
   const expectedTypes: Array<[property: string, type: string]> = [
-    ['State', 'select'],
     ['Status', 'select'],
     ['Pipe', 'select'],
+    ['Current Action', 'rich_text'],
+    ['Progress', 'rich_text'],
+    ['PR', 'url'],
   ]
 
   const issues = expectedTypes.flatMap(([propertyName, expectedType]) => {
@@ -414,7 +449,7 @@ export async function notionCreateTaskPage(
 ): Promise<NotionCreatePageResult> {
   const properties: Record<string, unknown> = {
     Name: {title: [{text: {content: input.title}}]},
-    State: {select: {name: input.state}},
+    Status: {select: {name: input.state}},
   }
   if (input.pipeId !== undefined) {
     properties.Pipe = {select: {name: input.pipeId}}
@@ -492,12 +527,12 @@ export function mapTaskStateToNotionStatus(state: string): string {
     case 'in_progress':
     case 'inprogress':
       return 'In Progress'
+    case 'blocked':
     case 'feedback':
+    case 'waiting':
     case 'needs_input':
     case 'needsinput':
-      return 'Feedback'
-    case 'blocked':
-      return 'Blocked'
+      return 'Needs Input'
     case 'done':
       return 'Done'
     case 'failed':
@@ -525,10 +560,12 @@ export async function notionUpdateTaskPageState(
 ): Promise<void> {
   const notionState = mapTaskStateToNotionStatus(state)
   const properties: Record<string, unknown> = {
-    State: {select: {name: notionState}},
+    Status: {select: {name: notionState}},
   }
   if (stepLabel !== undefined) {
-    properties.Status = {select: {name: stepLabel}}
+    properties['Current Action'] = {
+      rich_text: [{type: 'text', text: {content: clipNotionText(stepLabel)}}],
+    }
   }
 
   const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
@@ -766,8 +803,16 @@ export function pageTitle(page: NotionPage): string {
 }
 
 export function pageState(page: NotionPage): string | null {
-  const prop = page.properties.State
-  if (prop?.type === 'select') return prop.select?.name?.toLowerCase() ?? null
+  const statusProp = page.properties.Status
+  if (statusProp?.type === 'select') {
+    return statusProp.select?.name?.toLowerCase() ?? null
+  }
+
+  const legacyProp = page.properties.State
+  if (legacyProp?.type === 'select') {
+    return legacyProp.select?.name?.toLowerCase() ?? null
+  }
+
   return null
 }
 

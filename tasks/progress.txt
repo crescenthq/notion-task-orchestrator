@@ -1,13 +1,13 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-003 complete
+US-004 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
 - [x] US-002: Update local database schema for new lifecycle
 - [x] US-003: Markdown section helpers
-- [ ] US-004: Update Notion board schema for new properties
+- [x] US-004: Update Notion board schema for new properties
 - [ ] US-005: Update Notion adapter to new interface
 - [ ] US-006: Update pipe runtime to use new adapter interface
 - [ ] US-007: Expose TaskHandle to pipes
@@ -29,3 +29,7 @@ US-003 complete
 - 2026-03-22: Tracer-bullet scope only. This lands the helper API and test coverage without wiring section-level artifact editing into the runtime yet.
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/core/artifactSections.test.ts` ✅
+- 2026-03-22: Completed US-004 by updating shared Notion board provisioning to the new property set: `Status`, `Pipe`, `Current Action`, `Progress`, and `PR`; lifecycle status options now use `Queue` / `In Progress` / `Needs Input` / `Done` / `Failed`, and task creation now writes `Status` instead of `State`.
+- 2026-03-22: Tracer-bullet scope only. Added compatibility shims so existing flows can still read legacy `State` values while new boards and updates move onto `Status` and `Current Action`.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/services/notion.test.ts src/commands/notion.test.ts` ✅

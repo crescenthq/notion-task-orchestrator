@@ -202,9 +202,11 @@ describe('notion command shared board registration', () => {
       notionGetDataSource: vi.fn(async () => ({
         id: 'ds-1',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
-          Pipe: {type: 'rich_text'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
+          PR: {type: 'rich_text'},
         },
       })),
     }))
@@ -289,8 +291,10 @@ describe('notion command shared board registration', () => {
       notionGetDataSource: vi.fn(async () => ({
         id: 'ds-shared',
         properties: {
-          State: {type: 'select'},
           Status: {type: 'select'},
+          Pipe: {type: 'select'},
+          'Current Action': {type: 'rich_text'},
+          Progress: {type: 'rich_text'},
         },
       })),
     }))
@@ -360,9 +364,11 @@ describe('notion command shared board registration', () => {
         notionGetDataSource: vi.fn(async () => ({
           id: 'ds-shared',
           properties: {
-            State: {type: 'select'},
             Status: {type: 'rich_text'},
             Pipe: {type: 'select'},
+            'Current Action': {type: 'rich_text'},
+            Progress: {type: 'rich_text'},
+            PR: {type: 'url'},
           },
         })),
         notionQueryAllDataSourcePages: vi.fn(async () => []),
