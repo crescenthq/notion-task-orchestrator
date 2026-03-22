@@ -34,24 +34,11 @@ function localStateToDisplayStatus(state: string): string {
 }
 
 function localTaskStateFromNotion(state: string): TaskLifecycle {
-  const normalized = state.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  const normalized = state.trim().toLowerCase().replace(/\s+/g, ' ')
   if (normalized === 'done') return 'done'
   if (normalized === 'failed') return 'failed'
-  if (
-    normalized === 'blocked' ||
-    normalized === 'feedback' ||
-    normalized === 'waiting' ||
-    normalized === 'needs_input'
-  ) {
-    return 'needs_input'
-  }
-  if (
-    normalized === 'running' ||
-    normalized === 'in_progress' ||
-    normalized === 'inprogress'
-  ) {
-    return 'in_progress'
-  }
+  if (normalized === 'needs input') return 'needs_input'
+  if (normalized === 'in progress') return 'in_progress'
   if (normalized === 'queue' || normalized === 'queued') return 'queued'
   return 'in_progress' // unknown/step labels treated as in progress
 }
@@ -220,7 +207,7 @@ async function reflectTaskQuarantineOnBoard(
   detail: string,
 ): Promise<void> {
   try {
-    await notionUpdateTaskPageState(token, task.externalTaskId, 'blocked')
+    await notionUpdateTaskPageState(token, task.externalTaskId, 'needs_input')
     await notionPostComment(
       token,
       task.externalTaskId,

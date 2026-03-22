@@ -1,7 +1,7 @@
 # Task Model v2 — Progress
 
 ## Current Status
-US-007 complete
+US-008 complete
 
 ## Stories
 - [x] US-001: Define canonical task types and adapter interface
@@ -11,7 +11,7 @@ US-007 complete
 - [x] US-005: Update Notion adapter to new interface
 - [x] US-006: Update pipe runtime to use new adapter interface
 - [x] US-007: Expose TaskHandle to pipes
-- [ ] US-008: Update sync loop for new lifecycle and comment-based feedback
+- [x] US-008: Update sync loop for new lifecycle and comment-based feedback
 
 ## Notes
 - 2026-03-22: Completed US-001 by replacing the task-board contract with `TaskLifecycle`, `TaskBoardPatch`, and `{id, title, artifact, comments}` snapshots; updated the null adapter, the Notion adapter, and the runtime call sites to use `updateTask` / `writeArtifact`.
@@ -46,3 +46,7 @@ US-007 complete
 - 2026-03-22 verification: `npm run check` ✅
 - 2026-03-22 verification: `npx vitest run src/core/pipeRuntime.test.ts src/pipe/canonical.test.ts src/pipe/example-factories.smoke.test.ts` ✅
 - 2026-03-22 verification: `npx vitest run --config vitest.e2e.config.ts e2e/canonical-write.test.ts e2e/canonical-decide.test.ts e2e/canonical-loop.test.ts` ✅
+- 2026-03-22: Completed US-008 by tightening the shared-board sync loop to the new `Status` lifecycle labels (`Queue`, `In Progress`, `Needs Input`, `Done`, `Failed`), keeping comment polling as the feedback mechanism, and re-queuing `needs_input` tasks when new human comments arrive.
+- 2026-03-22: Tracer-bullet scope only. Quarantine reflection now writes canonical `needs_input` lifecycle updates back to Notion, and the focused sync tests cover both lifecycle imports and the comment-triggered resume path without broadening the adapter/service contract.
+- 2026-03-22 verification: `npm run check` ✅
+- 2026-03-22 verification: `npx vitest run src/commands/notion.test.ts` ✅
